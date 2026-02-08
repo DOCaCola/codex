@@ -337,7 +337,7 @@ fn create_shell_tool(include_prefix_rule: bool) -> ToolSpec {
     properties.extend(create_approval_parameters(include_prefix_rule));
 
     let description  = if cfg!(windows) {
-        r#"Runs a Powershell command (Windows) and returns its output. Arguments to `shell` will be passed to CreateProcessW(). Most commands should be prefixed with ["powershell.exe", "-Command"].
+        r#"Runs a shell command on Windows and returns its output. Arguments to `shell` are passed to CreateProcessW(). Common prefixes are ["powershell.exe", "-Command"], ["pwsh.exe", "-Command"], ["cmd.exe", "/C"], or ["C:\\Program Files\\Git\\bin\\bash.exe", "-lc"].
         
 Examples of valid command strings:
 
@@ -400,7 +400,7 @@ fn create_shell_command_tool(include_prefix_rule: bool) -> ToolSpec {
     properties.extend(create_approval_parameters(include_prefix_rule));
 
     let description = if cfg!(windows) {
-        r#"Runs a Powershell command (Windows) and returns its output.
+        r#"Runs a shell command (Windows) and returns its output. The command runs in the user's selected shell (PowerShell, pwsh, cmd, or Git Bash if configured).
         
 Examples of valid command strings:
 
@@ -2476,7 +2476,7 @@ mod tests {
         assert_eq!(name, "shell");
 
         let expected = if cfg!(windows) {
-            r#"Runs a Powershell command (Windows) and returns its output. Arguments to `shell` will be passed to CreateProcessW(). Most commands should be prefixed with ["powershell.exe", "-Command"].
+            r#"Runs a shell command on Windows and returns its output. Arguments to `shell` are passed to CreateProcessW(). Common prefixes are ["powershell.exe", "-Command"], ["pwsh.exe", "-Command"], ["cmd.exe", "/C"], or ["C:\\Program Files\\Git\\bin\\bash.exe", "-lc"].
         
 Examples of valid command strings:
 
@@ -2506,7 +2506,7 @@ Examples of valid command strings:
         assert_eq!(name, "shell_command");
 
         let expected = if cfg!(windows) {
-            r#"Runs a Powershell command (Windows) and returns its output.
+            r#"Runs a shell command (Windows) and returns its output. The command runs in the user's selected shell (PowerShell, pwsh, cmd, or Git Bash if configured).
         
 Examples of valid command strings:
 

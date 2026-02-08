@@ -110,6 +110,14 @@ fn get_user_shell_path() -> Option<PathBuf> {
 
 #[cfg(not(unix))]
 fn get_user_shell_path() -> Option<PathBuf> {
+    if let Some(shell) = std::env::var_os("SHELL") {
+        return Some(PathBuf::from(shell));
+    }
+
+    if cfg!(windows) && std::env::var_os("MSYSTEM").is_some() {
+        return Some(PathBuf::from("bash"));
+    }
+
     None
 }
 
@@ -167,7 +175,18 @@ fn get_zsh_shell(path: Option<&PathBuf>) -> Option<Shell> {
 }
 
 fn get_bash_shell(path: Option<&PathBuf>) -> Option<Shell> {
-    let shell_path = get_shell_path(ShellType::Bash, path, "bash", vec!["/bin/bash"]);
+    let fallback_paths = if cfg!(windows) {
+        vec![
+            r"C:\Program Files\Git\bin\bash.exe",
+            r"C:\Program Files\Git\usr\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\bin\bash.exe",
+            r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+        ]
+    } else {
+        vec!["/bin/bash"]
+    };
+
+    let shell_path = get_shell_path(ShellType::Bash, path, "bash", fallback_paths);
 
     shell_path.map(|shell_path| Shell {
         shell_type: ShellType::Bash,
@@ -271,7 +290,15 @@ pub fn default_user_shell() -> Shell {
 
 fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
     if cfg!(windows) {
-        get_shell(ShellType::PowerShell, None).unwrap_or(ultimate_fallback_shell())
+        let user_default_shell = user_shell_path
+            .as_ref()
+            .and_then(detect_shell_type)
+            .and_then(|shell_type| get_shell(shell_type, user_shell_path.as_ref()));
+
+        user_default_shell
+            .or_else(|| get_shell(ShellType::PowerShell, None))
+            .or_else(|| get_shell(ShellType::Cmd, None))
+            .unwrap_or(ultimate_fallback_shell())
     } else {
         let user_default_shell = user_shell_path
             .and_then(|shell| detect_shell_type(&shell))
@@ -321,6 +348,10 @@ mod detect_shell_type_tests {
         );
         assert_eq!(
             detect_shell_type(&PathBuf::from("/bin/bash")),
+            Some(ShellType::Bash)
+        );
+        assert_eq!(
+            detect_shell_type(&PathBuf::from("C:\\Program Files\\Git\\bin\\bash.exe")),
             Some(ShellType::Bash)
         );
         assert_eq!(
