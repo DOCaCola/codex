@@ -8,6 +8,7 @@ export type { AgentMessageDeltaNotification } from "./AgentMessageDeltaNotificat
 export type { AnalyticsConfig } from "./AnalyticsConfig";
 export type { AppDisabledReason } from "./AppDisabledReason";
 export type { AppInfo } from "./AppInfo";
+export type { AppListUpdatedNotification } from "./AppListUpdatedNotification";
 export type { AppsConfig } from "./AppsConfig";
 export type { AppsListParams } from "./AppsListParams";
 export type { AppsListResponse } from "./AppsListResponse";
@@ -123,6 +124,7 @@ export type { SkillToolDependency } from "./SkillToolDependency";
 export type { SkillsConfigWriteParams } from "./SkillsConfigWriteParams";
 export type { SkillsConfigWriteResponse } from "./SkillsConfigWriteResponse";
 export type { SkillsListEntry } from "./SkillsListEntry";
+export type { SkillsListExtraRootsForCwd } from "./SkillsListExtraRootsForCwd";
 export type { SkillsListParams } from "./SkillsListParams";
 export type { SkillsListResponse } from "./SkillsListResponse";
 export type { SkillsRemoteReadParams } from "./SkillsRemoteReadParams";
