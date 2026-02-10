@@ -291,6 +291,7 @@ fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
             .and_then(|shell_type| get_shell(shell_type, user_shell_path.as_ref()));
 
         user_default_shell
+            .or_else(|| get_shell(ShellType::Bash, None))
             .or_else(|| get_shell(ShellType::PowerShell, None))
             .or_else(|| get_shell(ShellType::Cmd, None))
             .unwrap_or(ultimate_fallback_shell())
