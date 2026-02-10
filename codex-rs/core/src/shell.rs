@@ -175,18 +175,13 @@ fn get_zsh_shell(path: Option<&PathBuf>) -> Option<Shell> {
 }
 
 fn get_bash_shell(path: Option<&PathBuf>) -> Option<Shell> {
-    let fallback_paths = if cfg!(windows) {
-        vec![
-            r"C:\Program Files\Git\bin\bash.exe",
-            r"C:\Program Files\Git\usr\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\bin\bash.exe",
-            r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
-        ]
+    let (binary_name, fallback_paths) = if cfg!(windows) {
+        ("bash.exe", vec![])
     } else {
-        vec!["/bin/bash"]
+        ("bash", vec!["/bin/bash"])
     };
 
-    let shell_path = get_shell_path(ShellType::Bash, path, "bash", fallback_paths);
+    let shell_path = get_shell_path(ShellType::Bash, path, binary_name, fallback_paths);
 
     shell_path.map(|shell_path| Shell {
         shell_type: ShellType::Bash,

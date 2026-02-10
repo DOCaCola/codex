@@ -337,7 +337,7 @@ fn create_shell_tool(include_prefix_rule: bool) -> ToolSpec {
     properties.extend(create_approval_parameters(include_prefix_rule));
 
     let description  = if cfg!(windows) {
-        r#"Runs a shell command on Windows and returns its output. Arguments to `shell` are passed to CreateProcessW(). Common prefixes are ["powershell.exe", "-Command"], ["pwsh.exe", "-Command"], ["cmd.exe", "/C"], or ["C:\\Program Files\\Git\\bin\\bash.exe", "-lc"].
+        r#"Runs a shell command on Windows and returns its output. Arguments to `shell` are passed to CreateProcessW(). Common prefixes are ["powershell.exe", "-Command"], ["pwsh.exe", "-Command"], ["cmd.exe", "/C"], or ["bash.exe", "-lc"].
         
 Examples of valid command strings:
 
@@ -2476,7 +2476,7 @@ mod tests {
         assert_eq!(name, "shell");
 
         let expected = if cfg!(windows) {
-            r#"Runs a shell command on Windows and returns its output. Arguments to `shell` are passed to CreateProcessW(). Common prefixes are ["powershell.exe", "-Command"], ["pwsh.exe", "-Command"], ["cmd.exe", "/C"], or ["C:\\Program Files\\Git\\bin\\bash.exe", "-lc"].
+            r#"Runs a shell command on Windows and returns its output. Arguments to `shell` are passed to CreateProcessW(). Common prefixes are ["powershell.exe", "-Command"], ["pwsh.exe", "-Command"], ["cmd.exe", "/C"], or ["bash.exe", "-lc"].
         
 Examples of valid command strings:
 
