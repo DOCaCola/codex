@@ -4,6 +4,7 @@ use crate::codex_message_processor::read_summary_from_rollout;
 use crate::codex_message_processor::summary_to_thread;
 use crate::error_code::INTERNAL_ERROR_CODE;
 use crate::error_code::INVALID_REQUEST_ERROR_CODE;
+use crate::outgoing_message::ClientRequestResult;
 use crate::outgoing_message::ThreadScopedOutgoingMessageSender;
 use crate::thread_state::ThreadState;
 use crate::thread_state::TurnSummary;
@@ -40,6 +41,7 @@ use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpToolCallError;
 use codex_app_server_protocol::McpToolCallResult;
 use codex_app_server_protocol::McpToolCallStatus;
+use codex_app_server_protocol::ModelReroutedNotification;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind as V2PatchChangeKind;
 use codex_app_server_protocol::PlanDeltaNotification;
@@ -121,6 +123,21 @@ pub(crate) async fn apply_bespoke_event_handling(
         EventMsg::TurnComplete(_ev) => {
             handle_turn_complete(conversation_id, event_turn_id, &outgoing, &thread_state).await;
         }
+        EventMsg::Warning(_warning_event) => {}
+        EventMsg::ModelReroute(event) => {
+            if let ApiVersion::V2 = api_version {
+                let notification = ModelReroutedNotification {
+                    thread_id: conversation_id.to_string(),
+                    turn_id: event_turn_id.clone(),
+                    from_model: event.from_model,
+                    to_model: event.to_model,
+                    reason: event.reason.into(),
+                };
+                outgoing
+                    .send_server_notification(ServerNotification::ModelRerouted(notification))
+                    .await;
+            }
+        }
         EventMsg::ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent {
             call_id,
             turn_id,
@@ -197,75 +214,88 @@ pub(crate) async fn apply_bespoke_event_handling(
                 });
             }
         },
-        EventMsg::ExecApprovalRequest(ExecApprovalRequestEvent {
-            call_id,
-            turn_id,
-            command,
-            cwd,
-            reason,
-            proposed_execpolicy_amendment,
-            parsed_cmd,
-        }) => match api_version {
-            ApiVersion::V1 => {
-                let params = ExecCommandApprovalParams {
-                    conversation_id,
-                    call_id: call_id.clone(),
-                    command,
-                    cwd,
-                    reason,
-                    parsed_cmd,
-                };
-                let rx = outgoing
-                    .send_request(ServerRequestPayload::ExecCommandApproval(params))
-                    .await;
-                tokio::spawn(async move {
-                    on_exec_approval_response(call_id, event_turn_id, rx, conversation).await;
-                });
-            }
-            ApiVersion::V2 => {
-                let item_id = call_id.clone();
-                let command_actions = parsed_cmd
-                    .iter()
-                    .cloned()
-                    .map(V2ParsedCommand::from)
-                    .collect::<Vec<_>>();
-                let command_string = shlex_join(&command);
-                let proposed_execpolicy_amendment_v2 =
-                    proposed_execpolicy_amendment.map(V2ExecPolicyAmendment::from);
-
-                let params = CommandExecutionRequestApprovalParams {
-                    thread_id: conversation_id.to_string(),
-                    turn_id: turn_id.clone(),
-                    // Until we migrate the core to be aware of a first class CommandExecutionItem
-                    // and emit the corresponding EventMsg, we repurpose the call_id as the item_id.
-                    item_id: item_id.clone(),
-                    reason,
-                    command: Some(command_string.clone()),
-                    cwd: Some(cwd.clone()),
-                    command_actions: Some(command_actions.clone()),
-                    proposed_execpolicy_amendment: proposed_execpolicy_amendment_v2,
-                };
-                let rx = outgoing
-                    .send_request(ServerRequestPayload::CommandExecutionRequestApproval(
-                        params,
-                    ))
-                    .await;
-                tokio::spawn(async move {
-                    on_command_execution_request_approval_response(
-                        event_turn_id,
+        EventMsg::ExecApprovalRequest(ev) => {
+            let approval_id_for_op = ev.effective_approval_id();
+            let ExecApprovalRequestEvent {
+                call_id,
+                approval_id,
+                turn_id,
+                command,
+                cwd,
+                reason,
+                proposed_execpolicy_amendment,
+                parsed_cmd,
+                ..
+            } = ev;
+            match api_version {
+                ApiVersion::V1 => {
+                    let params = ExecCommandApprovalParams {
                         conversation_id,
-                        item_id,
-                        command_string,
+                        call_id: call_id.clone(),
+                        approval_id,
+                        command,
                         cwd,
-                        command_actions,
-                        rx,
-                        conversation,
-                        outgoing,
-                    )
-                    .await;
-                });
+                        reason,
+                        parsed_cmd,
+                    };
+                    let rx = outgoing
+                        .send_request(ServerRequestPayload::ExecCommandApproval(params))
+                        .await;
+                    tokio::spawn(async move {
+                        on_exec_approval_response(
+                            approval_id_for_op,
+                            event_turn_id,
+                            rx,
+                            conversation,
+                        )
+                        .await;
+                    });
+                }
+                ApiVersion::V2 => {
+                    let command_actions = parsed_cmd
+                        .iter()
+                        .cloned()
+                        .map(V2ParsedCommand::from)
+                        .collect::<Vec<_>>();
+                    let command_string = shlex_join(&command);
+                    let proposed_execpolicy_amendment_v2 =
+                        proposed_execpolicy_amendment.map(V2ExecPolicyAmendment::from);
+
+                    let params = CommandExecutionRequestApprovalParams {
+                        thread_id: conversation_id.to_string(),
+                        turn_id: turn_id.clone(),
+                        item_id: call_id.clone(),
+                        approval_id: approval_id.clone(),
+                        reason,
+                        command: Some(command_string.clone()),
+                        cwd: Some(cwd.clone()),
+                        command_actions: Some(command_actions.clone()),
+                        proposed_execpolicy_amendment: proposed_execpolicy_amendment_v2,
+                    };
+                    let rx = outgoing
+                        .send_request(ServerRequestPayload::CommandExecutionRequestApproval(
+                            params,
+                        ))
+                        .await;
+                    tokio::spawn(async move {
+                        on_command_execution_request_approval_response(
+                            event_turn_id,
+                            conversation_id,
+                            approval_id,
+                            call_id,
+                            command_string,
+                            cwd,
+                            command_actions,
+                            rx,
+                            conversation,
+                            outgoing,
+                            thread_state.clone(),
+                        )
+                        .await;
+                    });
+                }
             }
-        },
+        }
         EventMsg::RequestUserInput(request) => {
             if matches!(api_version, ApiVersion::V2) {
                 let questions = request
@@ -717,6 +747,10 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
             };
 
+            if !ev.affects_turn_status() {
+                return;
+            }
+
             let turn_error = TurnError {
                 message: ev.message,
                 codex_error_info: ev.codex_error_info.map(V2CodexErrorInfo::from),
@@ -887,11 +921,7 @@ pub(crate) async fn apply_bespoke_event_handling(
             // and emit the corresponding EventMsg, we repurpose the call_id as the item_id.
             let item_id = patch_end_event.call_id.clone();
 
-            let status = if patch_end_event.success {
-                PatchApplyStatus::Completed
-            } else {
-                PatchApplyStatus::Failed
-            };
+            let status: PatchApplyStatus = (&patch_end_event.status).into();
             let changes = convert_patch_changes(&patch_end_event.changes);
             complete_file_change_item(
                 conversation_id,
@@ -914,6 +944,14 @@ pub(crate) async fn apply_bespoke_event_handling(
             let command = shlex_join(&exec_command_begin_event.command);
             let cwd = exec_command_begin_event.cwd;
             let process_id = exec_command_begin_event.process_id;
+
+            {
+                let mut state = thread_state.lock().await;
+                state
+                    .turn_summary
+                    .command_execution_started
+                    .insert(item_id.clone());
+            }
 
             let item = ThreadItem::CommandExecution {
                 id: item_id,
@@ -998,14 +1036,19 @@ pub(crate) async fn apply_bespoke_event_handling(
                 aggregated_output,
                 exit_code,
                 duration,
+                status,
                 ..
             } = exec_command_end_event;
 
-            let status = if exit_code == 0 {
-                CommandExecutionStatus::Completed
-            } else {
-                CommandExecutionStatus::Failed
-            };
+            {
+                let mut state = thread_state.lock().await;
+                state
+                    .turn_summary
+                    .command_execution_started
+                    .remove(&call_id);
+            }
+
+            let status: CommandExecutionStatus = (&status).into();
             let command_actions = parsed_cmd
                 .into_iter()
                 .map(V2ParsedCommand::from)
@@ -1411,12 +1454,25 @@ async fn handle_error(
 
 async fn on_patch_approval_response(
     call_id: String,
-    receiver: oneshot::Receiver<JsonValue>,
+    receiver: oneshot::Receiver<ClientRequestResult>,
     codex: Arc<CodexThread>,
 ) {
     let response = receiver.await;
     let value = match response {
-        Ok(value) => value,
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => {
+            error!("request failed with client error: {err:?}");
+            if let Err(submit_err) = codex
+                .submit(Op::PatchApproval {
+                    id: call_id.clone(),
+                    decision: ReviewDecision::Denied,
+                })
+                .await
+            {
+                error!("failed to submit denied PatchApproval after request failure: {submit_err}");
+            }
+            return;
+        }
         Err(err) => {
             error!("request failed: {err:?}");
             if let Err(submit_err) = codex
@@ -1454,12 +1510,16 @@ async fn on_patch_approval_response(
 async fn on_exec_approval_response(
     call_id: String,
     turn_id: String,
-    receiver: oneshot::Receiver<JsonValue>,
+    receiver: oneshot::Receiver<ClientRequestResult>,
     conversation: Arc<CodexThread>,
 ) {
     let response = receiver.await;
     let value = match response {
-        Ok(value) => value,
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => {
+            error!("request failed with client error: {err:?}");
+            return;
+        }
         Err(err) => {
             error!("request failed: {err:?}");
             return;
@@ -1491,12 +1551,28 @@ async fn on_exec_approval_response(
 
 async fn on_request_user_input_response(
     event_turn_id: String,
-    receiver: oneshot::Receiver<JsonValue>,
+    receiver: oneshot::Receiver<ClientRequestResult>,
     conversation: Arc<CodexThread>,
 ) {
     let response = receiver.await;
     let value = match response {
-        Ok(value) => value,
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => {
+            error!("request failed with client error: {err:?}");
+            let empty = CoreRequestUserInputResponse {
+                answers: HashMap::new(),
+            };
+            if let Err(err) = conversation
+                .submit(Op::UserInputAnswer {
+                    id: event_turn_id,
+                    response: empty,
+                })
+                .await
+            {
+                error!("failed to submit UserInputAnswer: {err}");
+            }
+            return;
+        }
         Err(err) => {
             error!("request failed: {err:?}");
             let empty = CoreRequestUserInputResponse {
@@ -1631,14 +1707,14 @@ async fn on_file_change_request_approval_response(
     conversation_id: ThreadId,
     item_id: String,
     changes: Vec<FileUpdateChange>,
-    receiver: oneshot::Receiver<JsonValue>,
+    receiver: oneshot::Receiver<ClientRequestResult>,
     codex: Arc<CodexThread>,
     outgoing: ThreadScopedOutgoingMessageSender,
     thread_state: Arc<Mutex<ThreadState>>,
 ) {
     let response = receiver.await;
     let (decision, completion_status) = match response {
-        Ok(value) => {
+        Ok(Ok(value)) => {
             let response = serde_json::from_value::<FileChangeRequestApprovalResponse>(value)
                 .unwrap_or_else(|err| {
                     error!("failed to deserialize FileChangeRequestApprovalResponse: {err}");
@@ -1652,6 +1728,10 @@ async fn on_file_change_request_approval_response(
             // Allow EventMsg::PatchApplyEnd to emit ItemCompleted for accepted patches.
             // Only short-circuit on declines/cancels/failures.
             (decision, completion_status)
+        }
+        Ok(Err(err)) => {
+            error!("request failed with client error: {err:?}");
+            (ReviewDecision::Denied, Some(PatchApplyStatus::Failed))
         }
         Err(err) => {
             error!("request failed: {err:?}");
@@ -1687,17 +1767,19 @@ async fn on_file_change_request_approval_response(
 async fn on_command_execution_request_approval_response(
     event_turn_id: String,
     conversation_id: ThreadId,
+    approval_id: Option<String>,
     item_id: String,
     command: String,
     cwd: PathBuf,
     command_actions: Vec<V2ParsedCommand>,
-    receiver: oneshot::Receiver<JsonValue>,
+    receiver: oneshot::Receiver<ClientRequestResult>,
     conversation: Arc<CodexThread>,
     outgoing: ThreadScopedOutgoingMessageSender,
+    thread_state: Arc<Mutex<ThreadState>>,
 ) {
     let response = receiver.await;
     let (decision, completion_status) = match response {
-        Ok(value) => {
+        Ok(Ok(value)) => {
             let response = serde_json::from_value::<CommandExecutionRequestApprovalResponse>(value)
                 .unwrap_or_else(|err| {
                     error!("failed to deserialize CommandExecutionRequestApprovalResponse: {err}");
@@ -1732,13 +1814,34 @@ async fn on_command_execution_request_approval_response(
             };
             (decision, completion_status)
         }
+        Ok(Err(err)) => {
+            error!("request failed with client error: {err:?}");
+            (ReviewDecision::Denied, Some(CommandExecutionStatus::Failed))
+        }
         Err(err) => {
             error!("request failed: {err:?}");
             (ReviewDecision::Denied, Some(CommandExecutionStatus::Failed))
         }
     };
 
-    if let Some(status) = completion_status {
+    let suppress_subcommand_completion_item = {
+        // For regular shell/unified_exec approvals, approval_id is null.
+        // For zsh-fork subcommand approvals, approval_id is present and
+        // item_id points to the parent command item.
+        if approval_id.is_some() {
+            let state = thread_state.lock().await;
+            state
+                .turn_summary
+                .command_execution_started
+                .contains(&item_id)
+        } else {
+            false
+        }
+    };
+
+    if let Some(status) = completion_status
+        && !suppress_subcommand_completion_item
+    {
         complete_command_execution_item(
             conversation_id,
             event_turn_id.clone(),
@@ -1755,7 +1858,7 @@ async fn on_command_execution_request_approval_response(
 
     if let Err(err) = conversation
         .submit(Op::ExecApproval {
-            id: item_id,
+            id: approval_id.unwrap_or_else(|| item_id.clone()),
             turn_id: Some(event_turn_id),
             decision,
         })
