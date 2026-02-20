@@ -15,6 +15,7 @@ use crate::state_db::StateDbHandle;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::unified_exec::UnifiedExecProcessManager;
+use arc_swap::ArcSwap;
 use codex_hooks::Hooks;
 use codex_otel::OtelManager;
 use tokio::sync::Mutex;
@@ -29,7 +30,7 @@ pub(crate) struct SessionServices {
     pub(crate) analytics_events_client: AnalyticsEventsClient,
     pub(crate) hooks: Hooks,
     pub(crate) rollout: Mutex<Option<RolloutRecorder>>,
-    pub(crate) user_shell: Arc<crate::shell::Shell>,
+    pub(crate) user_shell: ArcSwap<crate::shell::Shell>,
     pub(crate) shell_snapshot_tx: watch::Sender<Option<Arc<crate::shell_snapshot::ShellSnapshot>>>,
     pub(crate) show_raw_agent_reasoning: bool,
     pub(crate) exec_policy: ExecPolicyManager,

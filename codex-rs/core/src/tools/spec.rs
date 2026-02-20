@@ -400,7 +400,16 @@ fn create_shell_command_tool() -> ToolSpec {
             "command".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "The shell script to execute in the user's default shell".to_string(),
+                    "The shell script to execute in the session's selected shell".to_string(),
+                ),
+            },
+        ),
+        (
+            "shell".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional shell switch for this and subsequent shell_command calls. Examples: bash, bash.exe, pwsh, powershell, cmd."
+                        .to_string(),
                 ),
             },
         ),
@@ -429,7 +438,7 @@ fn create_shell_command_tool() -> ToolSpec {
     properties.extend(create_approval_parameters());
 
     let description = if cfg!(windows) {
-        r#"Runs a shell command (Windows) and returns its output. The command runs in the user's selected shell (PowerShell, pwsh, cmd, or Git Bash if configured).
+        r#"Runs a shell command (Windows) and returns its output. The command runs in the session's selected shell (PowerShell, pwsh, cmd, or Git Bash if configured). If `shell` is set, the session shell is switched for this and future `shell_command` calls.
         
 Examples of valid command strings:
 
@@ -2852,7 +2861,7 @@ Examples of valid command strings:
         assert_eq!(name, "shell_command");
 
         let expected = if cfg!(windows) {
-            r#"Runs a shell command (Windows) and returns its output. The command runs in the user's selected shell (PowerShell, pwsh, cmd, or Git Bash if configured).
+            r#"Runs a shell command (Windows) and returns its output. The command runs in the session's selected shell (PowerShell, pwsh, cmd, or Git Bash if configured). If `shell` is set, the session shell is switched for this and future `shell_command` calls.
         
 Examples of valid command strings:
 

@@ -3,6 +3,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ShellCommandToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::codex::TurnContext;
@@ -13,6 +14,7 @@ use crate::function_tool::FunctionCallError;
 use crate::is_safe_command::is_known_safe_command;
 use crate::protocol::ExecCommandSource;
 use crate::shell::Shell;
+use crate::shell::get_shell_by_model_provided_path;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
@@ -69,6 +71,32 @@ impl ShellCommandHandler {
         shell.derive_exec_args(command, use_login_shell)
     }
 
+    fn shell_from_requested_path(shell: &str) -> Shell {
+        let mut parsed_shell = get_shell_by_model_provided_path(&PathBuf::from(shell));
+        parsed_shell.shell_snapshot = crate::shell::empty_shell_snapshot_receiver();
+        parsed_shell
+    }
+
+    fn effective_shell_for_command(
+        params: &ShellCommandToolCallParams,
+        session_shell: Arc<Shell>,
+    ) -> Shell {
+        params
+            .shell
+            .as_ref()
+            .map(|shell_str| Self::shell_from_requested_path(shell_str))
+            .unwrap_or_else(|| session_shell.as_ref().clone())
+    }
+
+    fn maybe_update_session_shell(
+        params: &ShellCommandToolCallParams,
+        session: &crate::codex::Session,
+    ) {
+        if let Some(requested_shell) = params.shell.as_deref() {
+            session.set_user_shell(Self::shell_from_requested_path(requested_shell));
+        }
+    }
+
     fn to_exec_params(
         params: &ShellCommandToolCallParams,
         session: &crate::codex::Session,
@@ -76,7 +104,7 @@ impl ShellCommandHandler {
         thread_id: ThreadId,
     ) -> ExecParams {
         let shell = session.user_shell();
-        let command = Self::base_command(shell.as_ref(), &params.command, params.login);
+        let command = Self::base_command(&shell, &params.command, params.login);
 
         ExecParams {
             command,
@@ -185,8 +213,9 @@ impl ToolHandler for ShellCommandHandler {
 
         serde_json::from_str::<ShellCommandToolCallParams>(arguments)
             .map(|params| {
-                let shell = invocation.session.user_shell();
-                let command = Self::base_command(shell.as_ref(), &params.command, params.login);
+                let shell =
+                    Self::effective_shell_for_command(&params, invocation.session.user_shell());
+                let command = Self::base_command(&shell, &params.command, params.login);
                 !is_known_safe_command(&command)
             })
             .unwrap_or(true)
@@ -209,6 +238,7 @@ impl ToolHandler for ShellCommandHandler {
         };
 
         let params: ShellCommandToolCallParams = parse_arguments(&arguments)?;
+        Self::maybe_update_session_shell(&params, session.as_ref());
         let prefix_rule = params.prefix_rule.clone();
         let exec_params = Self::to_exec_params(
             &params,
@@ -344,6 +374,7 @@ impl ShellHandler {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -429,6 +460,7 @@ mod tests {
 
         let params = ShellCommandToolCallParams {
             command,
+            shell: None,
             workdir,
             login,
             timeout_ms,
@@ -480,5 +512,39 @@ mod tests {
             non_login_command,
             shell.derive_exec_args("echo non login shell", false)
         );
+    }
+
+    #[tokio::test]
+    async fn shell_command_handler_switches_global_shell_when_requested() {
+        let (session, _turn_context) = make_session_and_context().await;
+        let params = ShellCommandToolCallParams {
+            command: "echo hello".to_string(),
+            shell: None,
+            workdir: None,
+            login: None,
+            timeout_ms: None,
+            sandbox_permissions: None,
+            prefix_rule: None,
+            justification: None,
+        };
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("codex-shell-override-test-{}", std::process::id()));
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let shell_path = temp_dir.join(if cfg!(windows) { "bash.exe" } else { "bash" });
+        fs::write(&shell_path, "echo").expect("create temporary bash file");
+
+        let params = ShellCommandToolCallParams {
+            shell: Some(shell_path.to_string_lossy().to_string()),
+            ..params
+        };
+
+        ShellCommandHandler::maybe_update_session_shell(&params, &session);
+
+        let updated_shell = session.user_shell();
+        assert_eq!(updated_shell.shell_type, ShellType::Bash);
+        assert_eq!(updated_shell.shell_path, shell_path);
+
+        let _ = fs::remove_dir_all(temp_dir);
     }
 }

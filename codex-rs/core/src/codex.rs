@@ -40,6 +40,7 @@ use crate::terminal;
 use crate::truncate::TruncationPolicy;
 use crate::turn_metadata::TurnMetadataState;
 use crate::util::error_or_panic;
+use arc_swap::ArcSwap;
 use async_channel::Receiver;
 use async_channel::Sender;
 use codex_hooks::HookEvent;
@@ -1274,7 +1275,7 @@ impl Session {
                 legacy_notify_argv: config.notify.clone(),
             }),
             rollout: Mutex::new(rollout_recorder),
-            user_shell: Arc::new(default_shell),
+            user_shell: ArcSwap::from(Arc::new(default_shell)),
             shell_snapshot_tx,
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             exec_policy,
@@ -1742,7 +1743,7 @@ impl Session {
             codex_home.to_path_buf(),
             self.conversation_id,
             next_cwd.to_path_buf(),
-            self.services.user_shell.as_ref().clone(),
+            self.services.user_shell.load_full().as_ref().clone(),
             self.services.shell_snapshot_tx.clone(),
             self.services.otel_manager.clone(),
         );
@@ -2977,7 +2978,13 @@ impl Session {
     }
 
     pub(crate) fn user_shell(&self) -> Arc<shell::Shell> {
-        Arc::clone(&self.services.user_shell)
+        self.services.user_shell.load_full()
+    }
+
+    pub(crate) fn set_user_shell(&self, mut next_shell: shell::Shell) {
+        let current_shell = self.services.user_shell.load_full();
+        next_shell.shell_snapshot = current_shell.shell_snapshot.clone();
+        self.services.user_shell.store(Arc::new(next_shell));
     }
 
     async fn refresh_mcp_servers_inner(
@@ -7282,7 +7289,7 @@ mod tests {
                 legacy_notify_argv: config.notify.clone(),
             }),
             rollout: Mutex::new(None),
-            user_shell: Arc::new(default_user_shell()),
+            user_shell: ArcSwap::from(Arc::new(default_user_shell())),
             shell_snapshot_tx: watch::channel(None).0,
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             exec_policy,
@@ -7430,7 +7437,7 @@ mod tests {
                 legacy_notify_argv: config.notify.clone(),
             }),
             rollout: Mutex::new(None),
-            user_shell: Arc::new(default_user_shell()),
+            user_shell: ArcSwap::from(Arc::new(default_user_shell())),
             shell_snapshot_tx: watch::channel(None).0,
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             exec_policy,

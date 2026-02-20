@@ -751,6 +751,9 @@ pub struct ShellToolCallParams {
 #[derive(Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 pub struct ShellCommandToolCallParams {
     pub command: String,
+    /// Optional shell executable or shell name to switch the session shell
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
     pub workdir: Option<String>,
 
     /// Whether to run the shell with login shell semantics
