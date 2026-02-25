@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::AuthManager;
@@ -18,6 +19,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
 use arc_swap::ArcSwap;
 use codex_hooks::Hooks;
 use codex_otel::OtelManager;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use std::path::PathBuf;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::sync::watch;
@@ -27,6 +30,10 @@ pub(crate) struct SessionServices {
     pub(crate) mcp_connection_manager: Arc<RwLock<McpConnectionManager>>,
     pub(crate) mcp_startup_cancellation_token: Mutex<CancellationToken>,
     pub(crate) unified_exec_manager: UnifiedExecProcessManager,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) shell_zsh_path: Option<PathBuf>,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) main_execve_wrapper_exe: Option<PathBuf>,
     pub(crate) analytics_events_client: AnalyticsEventsClient,
     pub(crate) hooks: Hooks,
     pub(crate) rollout: Mutex<Option<RolloutRecorder>>,
@@ -38,6 +45,8 @@ pub(crate) struct SessionServices {
     pub(crate) models_manager: Arc<ModelsManager>,
     pub(crate) otel_manager: OtelManager,
     pub(crate) tool_approvals: Mutex<ApprovalStore>,
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(crate) execve_session_approvals: RwLock<HashSet<AbsolutePathBuf>>,
     pub(crate) skills_manager: Arc<SkillsManager>,
     pub(crate) file_watcher: Arc<FileWatcher>,
     pub(crate) agent_control: AgentControl,
