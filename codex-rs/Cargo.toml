@@ -68,7 +68,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.106.0-doca"
+version = "0.107.0-doca"
 # Track the edition for all workspace crates in one place. Individual
 # crates can still override this value, but keeping it here means new
 # crates created with `cargo new -w ...` automatically inherit the 2024
@@ -186,6 +186,7 @@ icu_locale_core = "2.1"
 icu_provider = { version = "2.1", features = ["sync"] }
 ignore = "0.4.23"
 image = { version = "^0.25.9", default-features = false }
+iana-time-zone = "0.1.64"
 include_dir = "0.7.4"
 indexmap = "2.12.0"
 insta = "1.46.3"
