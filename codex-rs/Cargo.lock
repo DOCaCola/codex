@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server-client"
-version = "0.0.0"
+version = "0.113.0-doca"
 dependencies = [
  "codex-app-server",
  "codex-app-server-protocol",
@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "codex-artifacts"
-version = "0.0.0"
+version = "0.113.0-doca"
 dependencies = [
  "codex-package-manager",
  "pretty_assertions",
@@ -2237,7 +2237,7 @@ dependencies = [
 
 [[package]]
 name = "codex-package-manager"
-version = "0.0.0"
+version = "0.113.0-doca"
 dependencies = [
  "fd-lock",
  "flate2",
