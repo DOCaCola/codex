@@ -402,7 +402,7 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "app_test_support"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1373,7 +1373,7 @@ checksum = "e9b18233253483ce2f65329a24072ec414db782531bdbb7d0bbc4bd2ce6b7e21"
 
 [[package]]
 name = "codex-ansi-escape"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "ansi-to-tui",
  "ratatui",
@@ -1382,7 +1382,7 @@ dependencies = [
 
 [[package]]
 name = "codex-api"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -1412,7 +1412,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "app_test_support",
@@ -1427,6 +1427,7 @@ dependencies = [
  "codex-chatgpt",
  "codex-cloud-requirements",
  "codex-core",
+ "codex-environment",
  "codex-feedback",
  "codex-file-search",
  "codex-login",
@@ -1462,13 +1463,12 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
- "walkdir",
  "wiremock",
 ]
 
 [[package]]
 name = "codex-app-server-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-app-server",
  "codex-app-server-protocol",
@@ -1476,17 +1476,20 @@ dependencies = [
  "codex-core",
  "codex-feedback",
  "codex-protocol",
+ "futures",
  "pretty_assertions",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "toml 0.9.11+spec-1.1.0",
  "tracing",
+ "url",
 ]
 
 [[package]]
 name = "codex-app-server-protocol"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -1513,7 +1516,7 @@ dependencies = [
 
 [[package]]
 name = "codex-app-server-test-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -1534,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "codex-apply-patch"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1550,7 +1553,7 @@ dependencies = [
 
 [[package]]
 name = "codex-arg0"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-apply-patch",
@@ -1564,14 +1567,16 @@ dependencies = [
 
 [[package]]
 name = "codex-artifacts"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-package-manager",
+ "flate2",
  "pretty_assertions",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
+ "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -1583,7 +1588,7 @@ dependencies = [
 
 [[package]]
 name = "codex-async-utils"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "async-trait",
  "pretty_assertions",
@@ -1593,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "codex-backend-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-backend-openapi-models",
@@ -1608,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "codex-backend-openapi-models"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "serde",
  "serde_json",
@@ -1617,7 +1622,7 @@ dependencies = [
 
 [[package]]
 name = "codex-chatgpt"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -1635,7 +1640,7 @@ dependencies = [
 
 [[package]]
 name = "codex-cli"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1660,6 +1665,7 @@ dependencies = [
  "codex-state",
  "codex-stdio-to-uds",
  "codex-tui",
+ "codex-tui-app-server",
  "codex-utils-cargo-bin",
  "codex-utils-cli",
  "codex-windows-sandbox",
@@ -1681,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "codex-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1711,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "codex-cloud-requirements"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1734,7 +1740,7 @@ dependencies = [
 
 [[package]]
 name = "codex-cloud-tasks"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1764,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "codex-cloud-tasks-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1779,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "codex-config"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-app-server-protocol",
@@ -1802,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "codex-connectors"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-app-server-protocol",
@@ -1814,7 +1820,7 @@ dependencies = [
 
 [[package]]
 name = "codex-core"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -1837,6 +1843,7 @@ dependencies = [
  "codex-client",
  "codex-config",
  "codex-connectors",
+ "codex-environment",
  "codex-execpolicy",
  "codex-file-search",
  "codex-git",
@@ -1930,7 +1937,7 @@ dependencies = [
 
 [[package]]
 name = "codex-debug-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -1941,8 +1948,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-environment"
+version = "0.116.0-doca"
+dependencies = [
+ "async-trait",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "codex-exec"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1987,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "codex-execpolicy"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -2004,7 +2022,7 @@ dependencies = [
 
 [[package]]
 name = "codex-execpolicy-legacy"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "allocative",
  "anyhow",
@@ -2024,7 +2042,7 @@ dependencies = [
 
 [[package]]
 name = "codex-experimental-api-macros"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2033,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "codex-feedback"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-protocol",
@@ -2045,7 +2063,7 @@ dependencies = [
 
 [[package]]
 name = "codex-file-search"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -2061,7 +2079,7 @@ dependencies = [
 
 [[package]]
 name = "codex-git"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "assert_matches",
  "once_cell",
@@ -2077,7 +2095,7 @@ dependencies = [
 
 [[package]]
 name = "codex-hooks"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2095,7 +2113,7 @@ dependencies = [
 
 [[package]]
 name = "codex-keyring-store"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "keyring",
  "tracing",
@@ -2103,7 +2121,7 @@ dependencies = [
 
 [[package]]
 name = "codex-linux-sandbox"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "cc",
  "clap",
@@ -2124,7 +2142,7 @@ dependencies = [
 
 [[package]]
 name = "codex-lmstudio"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-core",
  "reqwest",
@@ -2137,7 +2155,7 @@ dependencies = [
 
 [[package]]
 name = "codex-login"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2164,7 +2182,7 @@ dependencies = [
 
 [[package]]
 name = "codex-mcp-server"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-arg0",
@@ -2191,7 +2209,7 @@ dependencies = [
 
 [[package]]
 name = "codex-network-proxy"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2222,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "codex-ollama"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "assert_matches",
  "async-stream",
@@ -2240,7 +2258,7 @@ dependencies = [
 
 [[package]]
 name = "codex-otel"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "chrono",
  "codex-api",
@@ -2271,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "codex-package-manager"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "fd-lock",
  "flate2",
@@ -2291,7 +2309,7 @@ dependencies = [
 
 [[package]]
 name = "codex-process-hardening"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "libc",
  "pretty_assertions",
@@ -2299,7 +2317,7 @@ dependencies = [
 
 [[package]]
 name = "codex-protocol"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-execpolicy",
@@ -2326,7 +2344,7 @@ dependencies = [
 
 [[package]]
 name = "codex-responses-api-proxy"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "clap",
@@ -2342,7 +2360,7 @@ dependencies = [
 
 [[package]]
 name = "codex-rmcp-client"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "axum",
@@ -2376,7 +2394,7 @@ dependencies = [
 
 [[package]]
 name = "codex-secrets"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "age",
  "anyhow",
@@ -2396,7 +2414,7 @@ dependencies = [
 
 [[package]]
 name = "codex-shell-command"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -2416,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "codex-shell-escalation"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2437,7 +2455,7 @@ dependencies = [
 
 [[package]]
 name = "codex-skills"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-utils-absolute-path",
  "include_dir",
@@ -2446,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "codex-state"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2467,7 +2485,7 @@ dependencies = [
 
 [[package]]
 name = "codex-stdio-to-uds"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-utils-cargo-bin",
@@ -2478,7 +2496,7 @@ dependencies = [
 
 [[package]]
 name = "codex-test-macros"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2487,7 +2505,98 @@ dependencies = [
 
 [[package]]
 name = "codex-tui"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "assert_matches",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "codex-ansi-escape",
+ "codex-app-server-protocol",
+ "codex-arg0",
+ "codex-backend-client",
+ "codex-chatgpt",
+ "codex-cli",
+ "codex-client",
+ "codex-cloud-requirements",
+ "codex-core",
+ "codex-feedback",
+ "codex-file-search",
+ "codex-login",
+ "codex-otel",
+ "codex-protocol",
+ "codex-shell-command",
+ "codex-state",
+ "codex-tui-app-server",
+ "codex-utils-absolute-path",
+ "codex-utils-approval-presets",
+ "codex-utils-cargo-bin",
+ "codex-utils-cli",
+ "codex-utils-elapsed",
+ "codex-utils-fuzzy-match",
+ "codex-utils-oss",
+ "codex-utils-pty",
+ "codex-utils-sandbox-summary",
+ "codex-utils-sleep-inhibitor",
+ "codex-utils-string",
+ "codex-windows-sandbox",
+ "color-eyre",
+ "cpal",
+ "crossterm",
+ "derive_more 2.1.1",
+ "diffy",
+ "dirs",
+ "dunce",
+ "hound",
+ "image",
+ "insta",
+ "itertools 0.14.0",
+ "lazy_static",
+ "libc",
+ "pathdiff",
+ "pretty_assertions",
+ "pulldown-cmark",
+ "rand 0.9.2",
+ "ratatui",
+ "ratatui-macros",
+ "regex-lite",
+ "reqwest",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "shlex",
+ "strum 0.27.2",
+ "strum_macros 0.28.0",
+ "supports-color 3.0.2",
+ "syntect",
+ "tempfile",
+ "textwrap 0.16.2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "toml 0.9.11+spec-1.1.0",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "two-face",
+ "unicode-segmentation",
+ "unicode-width 0.2.1",
+ "url",
+ "uuid",
+ "vt100",
+ "webbrowser",
+ "which",
+ "windows-sys 0.52.0",
+ "winsplit",
+]
+
+[[package]]
+name = "codex-tui-app-server"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2499,7 +2608,6 @@ dependencies = [
  "codex-app-server-client",
  "codex-app-server-protocol",
  "codex-arg0",
- "codex-backend-client",
  "codex-chatgpt",
  "codex-cli",
  "codex-client",
@@ -2578,7 +2686,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-absolute-path"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "dirs",
  "path-absolutize",
@@ -2592,14 +2700,14 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-approval-presets"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-protocol",
 ]
 
 [[package]]
 name = "codex-utils-cache"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "lru 0.16.3",
  "sha1",
@@ -2608,7 +2716,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-cargo-bin"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "assert_cmd",
  "runfiles",
@@ -2617,7 +2725,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-cli"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "clap",
  "codex-protocol",
@@ -2628,15 +2736,15 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-elapsed"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 
 [[package]]
 name = "codex-utils-fuzzy-match"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 
 [[package]]
 name = "codex-utils-home-dir"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "dirs",
  "pretty_assertions",
@@ -2645,19 +2753,18 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-image"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "base64 0.22.1",
  "codex-utils-cache",
  "image",
- "tempfile",
  "thiserror 2.0.18",
  "tokio",
 ]
 
 [[package]]
 name = "codex-utils-json-to-toml"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "pretty_assertions",
  "serde_json",
@@ -2666,7 +2773,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-oss"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-core",
  "codex-lmstudio",
@@ -2675,7 +2782,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-pty"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "filedescriptor",
@@ -2691,7 +2798,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-readiness"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "assert_matches",
  "async-trait",
@@ -2702,14 +2809,14 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-rustls-provider"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "rustls",
 ]
 
 [[package]]
 name = "codex-utils-sandbox-summary"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "codex-core",
  "codex-protocol",
@@ -2719,7 +2826,7 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-sleep-inhibitor"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "core-foundation 0.9.4",
  "libc",
@@ -2729,14 +2836,14 @@ dependencies = [
 
 [[package]]
 name = "codex-utils-stream-parser"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "pretty_assertions",
 ]
 
 [[package]]
 name = "codex-utils-string"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "pretty_assertions",
  "regex-lite",
@@ -2744,13 +2851,14 @@ dependencies = [
 
 [[package]]
 name = "codex-windows-sandbox"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
  "codex-protocol",
  "codex-utils-absolute-path",
+ "codex-utils-pty",
  "codex-utils-string",
  "dirs-next",
  "dunce",
@@ -2759,6 +2867,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
  "windows 0.58.0",
  "windows-sys 0.52.0",
  "winres",
@@ -2947,7 +3056,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "core_test_support"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -5682,7 +5791,7 @@ checksum = "b3eede3bdf92f3b4f9dc04072a9ce5ab557d5ec9038773bf9ffcd5588b3cc05b"
 
 [[package]]
 name = "mcp_test_support"
-version = "0.115.0-doca"
+version = "0.116.0-doca"
 dependencies = [
  "anyhow",
  "codex-core",
