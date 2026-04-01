@@ -1,3 +1,8 @@
+[build]
+# Keep the target dir on C: so the v8 build does not need a Windows symlink
+# when the workspace lives on D:.
+target-dir = "C:\\temp\\codex-target-0.117"
+
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "link-arg=/STACK:8388608"]
 
