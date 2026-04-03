@@ -256,16 +256,21 @@ pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
 
     let description = if cfg!(windows) {
         format!(
-            r#"Runs a Powershell command (Windows) and returns its output.
+            r#"Runs a command in the user's default shell (Windows) and returns its output.
+Use syntax appropriate for the active shell, which is typically PowerShell or Bash.
 
 Examples of valid command strings:
 
-- ls -a (show hidden): "Get-ChildItem -Force"
-- recursive find by name: "Get-ChildItem -Recurse -Filter *.py"
-- recursive grep: "Get-ChildItem -Path C:\\myrepo -Recurse | Select-String -Pattern 'TODO' -CaseSensitive"
-- ps aux | grep python: "Get-Process | Where-Object {{ $_.ProcessName -like '*python*' }}"
-- setting an env var: "$env:FOO='bar'; echo $env:FOO"
-- running an inline Python script: "@'\\nprint('Hello, world!')\\n'@ | python -"
+- PowerShell ls -a (show hidden): "Get-ChildItem -Force"
+- Bash ls -a (show hidden): "ls -a"
+- PowerShell recursive find by name: "Get-ChildItem -Recurse -Filter *.py"
+- Bash recursive find by name: "find . -name '*.py'"
+- PowerShell recursive grep: "Get-ChildItem -Path C:\\myrepo -Recurse | Select-String -Pattern 'TODO' -CaseSensitive"
+- Bash recursive grep: "rg -n 'TODO' ."
+- PowerShell ps aux | grep python: "Get-Process | Where-Object {{ $_.ProcessName -like '*python*' }}"
+- Bash ps aux | grep python: "ps aux | grep python"
+- PowerShell setting an env var: "$env:FOO='bar'; echo $env:FOO"
+- Bash setting an env var: "export FOO=bar; echo $FOO"
 
 {}"#,
             windows_destructive_filesystem_guidance()
