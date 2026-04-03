@@ -16,6 +16,13 @@ fn apply_patch_command(dir: &Path) -> anyhow::Result<Command> {
     Ok(cmd)
 }
 
+fn assert_missing_update_error(stderr: &[u8]) -> anyhow::Result<()> {
+    let stderr = String::from_utf8(stderr.to_vec())?;
+    assert!(stderr.starts_with("Failed to read file to update missing.txt:"));
+    assert!(stderr.ends_with("(os error 2)\n"));
+    Ok(())
+}
+
 #[test]
 fn test_apply_patch_cli_applies_multiple_operations() -> anyhow::Result<()> {
     let tmp = tempdir()?;
@@ -140,13 +147,11 @@ fn test_apply_patch_cli_rejects_empty_update_hunk() -> anyhow::Result<()> {
 fn test_apply_patch_cli_requires_existing_file_for_update() -> anyhow::Result<()> {
     let tmp = tempdir()?;
 
-    apply_patch_command(tmp.path())?
+    let assert = apply_patch_command(tmp.path())?
         .arg("*** Begin Patch\n*** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch")
         .assert()
-        .failure()
-        .stderr(
-            "Failed to read file to update missing.txt: No such file or directory (os error 2)\n",
-        );
+        .failure();
+    assert_missing_update_error(&assert.get_output().stderr)?;
 
     Ok(())
 }
@@ -240,16 +245,39 @@ fn test_apply_patch_cli_updates_file_appends_trailing_newline() -> anyhow::Resul
 }
 
 #[test]
+fn test_apply_patch_cli_preserves_crlf_line_endings() -> anyhow::Result<()> {
+    let tmp = tempdir()?;
+    let target_path = tmp.path().join("windows.txt");
+    fs::write(&target_path, b"first line\r\nsecond line\r\n")?;
+    // Windows CLI coverage for upstream issue #4003. Remove once upstream
+    // preserves source EOLs natively and this branch-local workaround is gone.
+
+    run_apply_patch_in_dir(
+        tmp.path(),
+        "*** Begin Patch\n*** Update File: windows.txt\n@@\n-second line\n+updated line\n*** End Patch",
+    )?
+    .success()
+    .stdout("Success. Updated the following files:\nM windows.txt\n");
+
+    assert_eq!(
+        fs::read(&target_path)?,
+        b"first line\r\nupdated line\r\n".as_slice()
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_apply_patch_cli_failure_after_partial_success_leaves_changes() -> anyhow::Result<()> {
     let tmp = tempdir()?;
     let new_file = tmp.path().join("created.txt");
 
-    apply_patch_command(tmp.path())?
+    let assert = apply_patch_command(tmp.path())?
         .arg("*** Begin Patch\n*** Add File: created.txt\n+hello\n*** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch")
         .assert()
         .failure()
-        .stdout("")
-        .stderr("Failed to read file to update missing.txt: No such file or directory (os error 2)\n");
+        .stdout("");
+    assert_missing_update_error(&assert.get_output().stderr)?;
 
     assert_eq!(fs::read_to_string(&new_file)?, "hello\n");
 

@@ -343,6 +343,42 @@ struct AppliedPatch {
     new_contents: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LineEnding {
+    Lf,
+    Crlf,
+}
+
+impl LineEnding {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Lf => "\n",
+            Self::Crlf => "\r\n",
+        }
+    }
+}
+
+fn detect_dominant_line_ending(contents: &str) -> LineEnding {
+    let crlf_count = contents.match_indices("\r\n").count();
+    let lf_count = contents.bytes().filter(|byte| *byte == b'\n').count() - crlf_count;
+
+    if crlf_count > lf_count {
+        LineEnding::Crlf
+    } else {
+        LineEnding::Lf
+    }
+}
+
+fn normalize_contents_for_matching(
+    contents: &str,
+    line_ending: LineEnding,
+) -> std::borrow::Cow<'_, str> {
+    match line_ending {
+        LineEnding::Lf => std::borrow::Cow::Borrowed(contents),
+        LineEnding::Crlf => std::borrow::Cow::Owned(contents.replace("\r\n", "\n")),
+    }
+}
+
 /// Return *only* the new file contents (joined into a single `String`) after
 /// applying the chunks to the file at `path`.
 fn derive_new_contents_from_chunks(
@@ -359,7 +395,14 @@ fn derive_new_contents_from_chunks(
         }
     };
 
-    let mut original_lines: Vec<String> = original_contents.split('\n').map(String::from).collect();
+    // Downstream workaround for upstream issue #4003:
+    // keep the file's dominant EOL style when rewriting patched contents.
+    // If upstream lands an equivalent fix, prefer reverting this branch-local
+    // compatibility layer back to upstream code during the next merge.
+    let line_ending = detect_dominant_line_ending(&original_contents);
+    let normalized_contents = normalize_contents_for_matching(&original_contents, line_ending);
+    let mut original_lines: Vec<String> =
+        normalized_contents.split('\n').map(String::from).collect();
 
     // Drop the trailing empty element that results from the final newline so
     // that line counts match the behaviour of standard `diff`.
@@ -373,7 +416,7 @@ fn derive_new_contents_from_chunks(
     if !new_lines.last().is_some_and(String::is_empty) {
         new_lines.push(String::new());
     }
-    let new_contents = new_lines.join("\n");
+    let new_contents = new_lines.join(line_ending.as_str());
     Ok(AppliedPatch {
         original_contents,
         new_contents,
@@ -637,6 +680,35 @@ mod tests {
         assert_eq!(stderr_str, "");
         let contents = fs::read_to_string(&path).unwrap();
         assert_eq!(contents, "foo\nbaz\n");
+    }
+
+    #[test]
+    fn test_update_file_hunk_preserves_crlf_line_endings() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("update-crlf.txt");
+        fs::write(&path, b"foo\r\nbar\r\n").unwrap();
+        // Keep this regression test until upstream issue #4003 is fixed and
+        // this downstream compatibility patch is removed in favor of upstream.
+        let patch = wrap_patch(&format!(
+            r#"*** Update File: {}
+@@
+ foo
+-bar
++baz"#,
+            path.display()
+        ));
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        apply_patch(&patch, &mut stdout, &mut stderr).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"foo\r\nbaz\r\n");
+        assert_eq!(String::from_utf8(stderr).unwrap(), "");
+    }
+
+    #[test]
+    fn test_detect_dominant_line_ending_prefers_crlf_when_it_wins() {
+        let contents = "a\r\nb\r\nc\n";
+        assert_eq!(detect_dominant_line_ending(contents), LineEnding::Crlf);
     }
 
     #[test]
