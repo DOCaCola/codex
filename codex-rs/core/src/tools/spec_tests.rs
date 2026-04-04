@@ -341,6 +341,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         create_exec_command_tool(CommandToolOptions {
             allow_login_shell: true,
             exec_permission_approvals_enabled: false,
+            active_shell_name: None,
         }),
         create_write_stdin_tool(),
         PLAN_TOOL.clone(),
@@ -1646,6 +1647,36 @@ fn shell_zsh_fork_prefers_shell_command_over_unified_exec() {
             UnifiedExecShellMode::Direct
         }
     );
+}
+
+#[test]
+fn active_shell_name_tracks_session_shell_for_tool_descriptions() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let user_shell = Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    };
+
+    let tools_config = tools_config.with_unified_exec_shell_mode_for_session(
+        &user_shell,
+        /*shell_zsh_path*/ None,
+        /*main_execve_wrapper_exe*/ None,
+    );
+
+    assert_eq!(tools_config.active_shell_name, Some("bash"));
 }
 
 #[test]

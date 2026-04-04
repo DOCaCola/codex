@@ -110,6 +110,7 @@ fn exec_command_tool_matches_expected_spec() {
     let tool = create_exec_command_tool(CommandToolOptions {
         allow_login_shell: true,
         exec_permission_approvals_enabled: false,
+        active_shell_name: None,
     });
 
     let description = if cfg!(windows) {
@@ -368,6 +369,7 @@ fn shell_command_tool_matches_expected_spec() {
     let tool = create_shell_command_tool(CommandToolOptions {
         allow_login_shell: true,
         exec_permission_approvals_enabled: false,
+        active_shell_name: None,
     });
 
     let description = if cfg!(windows) {
@@ -382,7 +384,7 @@ Examples of valid command strings:
 - Bash recursive find by name: "find . -name '*.py'"
 - PowerShell recursive grep: "Get-ChildItem -Path C:\\myrepo -Recurse | Select-String -Pattern 'TODO' -CaseSensitive"
 - Bash recursive grep: "rg -n 'TODO' ."
-- PowerShell ps aux | grep python: "Get-Process | Where-Object { $_.ProcessName -like '*python*' }"
+- PowerShell ps aux | grep python: "Get-Process | Where-Object {{ $_.ProcessName -like '*python*' }}"
 - Bash ps aux | grep python: "ps aux | grep python"
 - PowerShell setting an env var: "$env:FOO='bar'; echo $env:FOO"
 - Bash setting an env var: "export FOO=bar; echo $FOO""#
@@ -444,4 +446,36 @@ Examples of valid command strings:
             output_schema: None,
         })
     );
+}
+
+#[test]
+fn shell_command_tool_uses_bash_specific_windows_description_when_requested() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let tool = create_shell_command_tool(CommandToolOptions {
+        allow_login_shell: true,
+        exec_permission_approvals_enabled: false,
+        active_shell_name: Some("bash"),
+    });
+    let ToolSpec::Function(tool) = tool else {
+        panic!("expected function tool");
+    };
+
+    let description =
+        r#"Runs a command in the user's default shell (Windows) and returns its output.
+Use bash-style syntax for this session.
+
+Examples of valid command strings:
+
+- ls -a (show hidden): "ls -a"
+- recursive find by name: "find . -name '*.py'"
+- recursive grep: "rg -n 'TODO' ."
+- ps aux | grep python: "ps aux | grep python"
+- setting an env var: "export FOO=bar; echo $FOO""#
+            .to_string()
+            + &windows_shell_safety_description();
+
+    assert_eq!(tool.description, description);
 }

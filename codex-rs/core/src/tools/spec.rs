@@ -147,6 +147,7 @@ pub(crate) struct ToolsConfig {
     pub available_models: Vec<ModelPreset>,
     pub shell_type: ConfigShellToolType,
     shell_command_backend: ShellCommandBackendConfig,
+    active_shell_name: Option<&'static str>,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
     pub allow_login_shell: bool,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
@@ -281,6 +282,7 @@ impl ToolsConfig {
             available_models: available_models_ref.to_vec(),
             shell_type,
             shell_command_backend,
+            active_shell_name: None,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,
             allow_login_shell: true,
             apply_patch_tool_type,
@@ -332,6 +334,7 @@ impl ToolsConfig {
         shell_zsh_path: Option<&PathBuf>,
         main_execve_wrapper_exe: Option<&PathBuf>,
     ) -> Self {
+        self.active_shell_name = Some(user_shell.name());
         self.unified_exec_shell_mode = UnifiedExecShellMode::for_session(
             self.shell_command_backend,
             user_shell,
@@ -518,6 +521,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 create_exec_command_tool(CommandToolOptions {
                     allow_login_shell: config.allow_login_shell,
                     exec_permission_approvals_enabled,
+                    active_shell_name: config.active_shell_name,
                 }),
                 /*supports_parallel_tool_calls*/ true,
                 config.code_mode_enabled,
@@ -540,6 +544,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
                 create_shell_command_tool(CommandToolOptions {
                     allow_login_shell: config.allow_login_shell,
                     exec_permission_approvals_enabled,
+                    active_shell_name: config.active_shell_name,
                 }),
                 /*supports_parallel_tool_calls*/ true,
                 config.code_mode_enabled,

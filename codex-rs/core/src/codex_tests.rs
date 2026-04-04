@@ -2719,13 +2719,14 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let skills_input =
         crate::skills_load_input_from_config(&per_turn_config, effective_skill_roots);
     let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&skills_input));
+    let user_shell = services.user_shell.load_full();
     let turn_context = Session::make_turn_context(
         conversation_id,
         Some(Arc::clone(&auth_manager)),
         &session_telemetry,
         session_configuration.provider.clone(),
         &session_configuration,
-        services.user_shell.as_ref(),
+        user_shell.as_ref(),
         services.shell_zsh_path.as_ref(),
         services.main_execve_wrapper_exe.as_ref(),
         per_turn_config,
@@ -3562,13 +3563,14 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let skills_input =
         crate::skills_load_input_from_config(&per_turn_config, effective_skill_roots);
     let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&skills_input));
+    let user_shell = services.user_shell.load_full();
     let turn_context = Arc::new(Session::make_turn_context(
         conversation_id,
         Some(Arc::clone(&auth_manager)),
         &session_telemetry,
         session_configuration.provider.clone(),
         &session_configuration,
-        services.user_shell.as_ref(),
+        user_shell.as_ref(),
         services.shell_zsh_path.as_ref(),
         services.main_execve_wrapper_exe.as_ref(),
         per_turn_config,
