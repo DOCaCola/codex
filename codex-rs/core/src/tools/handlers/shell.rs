@@ -116,6 +116,8 @@ impl ShellHandler {
 }
 
 impl ShellCommandHandler {
+    const WINDOWS_INLINE_WRITE_GUARD_LEN: usize = 4096;
+
     fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
         match self.backend {
             ShellCommandBackend::Classic => ShellRuntimeBackend::ShellCommandClassic,
@@ -138,6 +140,29 @@ impl ShellCommandHandler {
 
     fn base_command(shell: &Shell, command: &str, use_login_shell: bool) -> Vec<String> {
         shell.derive_exec_args(command, use_login_shell)
+    }
+
+    fn command_looks_like_large_inline_file_write(command: &str) -> bool {
+        command.len() >= Self::WINDOWS_INLINE_WRITE_GUARD_LEN
+            && (command.contains("<<") || command.contains("cat >") || command.contains("cat >>"))
+    }
+
+    fn validate_command_supported(shell: &Shell, command: &str) -> Result<(), FunctionCallError> {
+        let is_windows_bash_family = cfg!(windows)
+            && matches!(
+                shell.shell_type,
+                crate::shell::ShellType::Bash
+                    | crate::shell::ShellType::Zsh
+                    | crate::shell::ShellType::Sh
+            );
+
+        if is_windows_bash_family && Self::command_looks_like_large_inline_file_write(command) {
+            return Err(FunctionCallError::RespondToModel(
+                "large inline file writes through `shell_command` are unreliable on Windows bash. Use `apply_patch` for source files, or `exec_command` + `write_stdin` to stream file contents instead of a giant heredoc.".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 
     fn shell_from_requested_path(shell: &str) -> Shell {
@@ -174,6 +199,7 @@ impl ShellCommandHandler {
         allow_login_shell: bool,
     ) -> Result<ExecParams, FunctionCallError> {
         let shell = session.user_shell();
+        Self::validate_command_supported(shell.as_ref(), &params.command)?;
         let use_login_shell = Self::resolve_use_login_shell(params.login, allow_login_shell)?;
         let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
 

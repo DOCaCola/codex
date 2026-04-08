@@ -8,6 +8,7 @@ use pretty_assertions::assert_eq;
 
 use crate::codex::make_session_and_context;
 use crate::exec_env::create_env;
+use crate::function_tool::FunctionCallError;
 use crate::is_safe_command::is_known_safe_command;
 use crate::powershell::try_find_powershell_executable_blocking;
 use crate::powershell::try_find_pwsh_executable_blocking;
@@ -200,6 +201,93 @@ fn shell_command_handler_rejects_login_when_disallowed() {
         err.to_string()
             .contains("login shell is disabled by config"),
         "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn shell_command_handler_rejects_large_windows_bash_heredoc_writes() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let (session, turn_context) = make_session_and_context().await;
+    session.set_user_shell(Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from(r"C:\msys64\usr\bin\bash.exe"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    });
+
+    let params = ShellCommandToolCallParams {
+        command: format!(
+            "cat > 'Source/Network/LobbyTransport.cpp' <<'EOF'\n{}\nEOF",
+            "x".repeat(5000)
+        ),
+        shell: None,
+        workdir: None,
+        login: None,
+        timeout_ms: None,
+        sandbox_permissions: None,
+        additional_permissions: None,
+        prefix_rule: None,
+        justification: None,
+    };
+
+    let err = ShellCommandHandler::to_exec_params(
+        &params,
+        &session,
+        &turn_context,
+        session.conversation_id,
+        /*allow_login_shell*/ true,
+    )
+    .expect_err("large inline writes should be rejected on Windows bash");
+
+    let FunctionCallError::RespondToModel(message) = err else {
+        panic!("expected model-facing error");
+    };
+    assert!(message.contains("large inline file writes through `shell_command` are unreliable"));
+    assert!(message.contains("apply_patch"));
+    assert!(message.contains("exec_command` + `write_stdin"));
+}
+
+#[tokio::test]
+async fn shell_command_handler_allows_small_windows_bash_heredoc_writes() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let (session, turn_context) = make_session_and_context().await;
+    session.set_user_shell(Shell {
+        shell_type: ShellType::Bash,
+        shell_path: PathBuf::from(r"C:\msys64\usr\bin\bash.exe"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    });
+
+    let params = ShellCommandToolCallParams {
+        command: "cat > 'hello.txt' <<'EOF'\nhello\nEOF".to_string(),
+        shell: None,
+        workdir: None,
+        login: None,
+        timeout_ms: None,
+        sandbox_permissions: None,
+        additional_permissions: None,
+        prefix_rule: None,
+        justification: None,
+    };
+
+    let exec_params = ShellCommandHandler::to_exec_params(
+        &params,
+        &session,
+        &turn_context,
+        session.conversation_id,
+        /*allow_login_shell*/ true,
+    )
+    .expect("small inline writes should still be allowed");
+
+    assert_eq!(
+        exec_params.command,
+        session
+            .user_shell()
+            .derive_exec_args(&params.command, /*use_login_shell*/ true)
     );
 }
 
