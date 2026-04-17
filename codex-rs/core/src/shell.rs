@@ -326,24 +326,22 @@ pub fn default_user_shell() -> Shell {
 }
 
 fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
+    let user_default_shell = user_shell_path
+        .as_ref()
+        .and_then(|shell| detect_shell_type(shell).and_then(|shell_type| get_shell(shell_type, Some(shell))));
+
     if cfg!(windows) {
         get_shell(ShellType::PowerShell, /*path*/ None).unwrap_or(ultimate_fallback_shell())
+    } else if cfg!(target_os = "macos") {
+        user_default_shell
+            .or_else(|| get_shell(ShellType::Zsh, /*path*/ None))
+            .or_else(|| get_shell(ShellType::Bash, /*path*/ None))
+            .unwrap_or(ultimate_fallback_shell())
     } else {
-        let user_default_shell = user_shell_path
-            .and_then(|shell| detect_shell_type(&shell))
-            .and_then(|shell_type| get_shell(shell_type, /*path*/ None));
-
-        let shell_with_fallback = if cfg!(target_os = "macos") {
-            user_default_shell
-                .or_else(|| get_shell(ShellType::Zsh, /*path*/ None))
-                .or_else(|| get_shell(ShellType::Bash, /*path*/ None))
-        } else {
-            user_default_shell
-                .or_else(|| get_shell(ShellType::Bash, /*path*/ None))
-                .or_else(|| get_shell(ShellType::Zsh, /*path*/ None))
-        };
-
-        shell_with_fallback.unwrap_or(ultimate_fallback_shell())
+        user_default_shell
+            .or_else(|| get_shell(ShellType::Bash, /*path*/ None))
+            .or_else(|| get_shell(ShellType::Zsh, /*path*/ None))
+            .unwrap_or(ultimate_fallback_shell())
     }
 }
 
@@ -416,6 +414,5 @@ mod detect_shell_type_tests {
 }
 
 #[cfg(test)]
-#[cfg(unix)]
 #[path = "shell_tests.rs"]
 mod tests;

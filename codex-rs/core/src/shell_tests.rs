@@ -28,7 +28,7 @@ fn detects_bash() {
     let shell_path = bash_shell.shell_path;
 
     assert!(
-        shell_path.file_name().and_then(|name| name.to_str()) == Some("bash"),
+        shell_path.file_stem().and_then(|name| name.to_str()) == Some("bash"),
         "shell path: {shell_path:?}",
     );
 }
@@ -38,7 +38,7 @@ fn detects_sh() {
     let sh_shell = get_shell(ShellType::Sh, /*path*/ None).unwrap();
     let shell_path = sh_shell.shell_path;
     assert!(
-        shell_path.file_name().and_then(|name| name.to_str()) == Some("sh"),
+        shell_path.file_stem().and_then(|name| name.to_str()) == Some("sh"),
         "shell path: {shell_path:?}",
     );
 }
@@ -177,6 +177,27 @@ async fn detects_powershell_as_default() {
     let shell_path = powershell_shell.shell_path;
 
     assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
+}
+
+#[test]
+fn explicit_bash_user_shell_path_resolves_to_bash_shell() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let bash_path = std::env::var_os("SHELL")
+        .map(PathBuf::from)
+        .filter(|path| detect_shell_type(path) == Some(ShellType::Bash))
+        .filter(|path| std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()))
+        .or_else(|| which::which("bash.exe").ok());
+
+    let Some(bash_path) = bash_path else {
+        return;
+    };
+
+    let shell = default_user_shell_from_path(Some(bash_path.clone()));
+    assert_eq!(shell.shell_type, ShellType::Bash);
+    assert_eq!(shell.shell_path, bash_path);
 }
 
 #[test]
