@@ -83,6 +83,15 @@ bazel-remote-test:
 build-for-release:
     bazel build //codex-rs/cli:release_binaries --config=remote
 
+# Build the CLI binary outside the repo tree and copy only output/codex.exe.
+[no-cd]
+sync-output-exe *args:
+    {{ justfile_directory() }}/scripts/sync-output-exe.sh "$@"
+
+[no-cd]
+clean-output-build-cache:
+    {{ justfile_directory() }}/scripts/clean-output-build-cache.sh
+
 # Run the MCP server
 mcp-server-run *args:
     cargo run -p codex-mcp-server -- "$@"
