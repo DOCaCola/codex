@@ -338,6 +338,7 @@ fn shell_command_tool_matches_expected_spec() {
 
     let description = if cfg!(windows) {
         r#"Runs a command in the user's default shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 Use syntax appropriate for the active shell, which is typically PowerShell or Bash.
 
 Examples of valid command strings:
@@ -356,6 +357,7 @@ Examples of valid command strings:
             + &windows_shell_safety_description()
     } else {
         r#"Runs a shell command and returns its output.
+- Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 - Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary."#
             .to_string()
     };
@@ -365,6 +367,13 @@ Examples of valid command strings:
             "command".to_string(),
             JsonSchema::string(Some(
                 "The shell script to execute in the user's default shell".to_string(),
+            )),
+        ),
+        (
+            "shell".to_string(),
+            JsonSchema::string(Some(
+                "Optional shell name or executable path. If set, switch the active session shell before running this command; the change persists for later shell_command calls in this session."
+                    .to_string(),
             )),
         ),
         (
@@ -425,6 +434,7 @@ fn shell_command_tool_uses_bash_specific_windows_description_when_requested() {
 
     let description =
         r#"Runs a command in the user's default shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 Use bash-style syntax for this session.
 
 Examples of valid command strings:

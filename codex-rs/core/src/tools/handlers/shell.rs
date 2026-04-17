@@ -12,8 +12,9 @@ use crate::exec_env::create_env;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::function_tool::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
-use crate::shell::get_shell_by_model_provided_path;
 use crate::shell::Shell;
+use crate::shell::get_shell;
+use crate::shell_detect::detect_shell_type;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolOutput;
@@ -164,19 +165,44 @@ impl ShellCommandHandler {
         Ok(())
     }
 
-    fn shell_from_requested_path(shell: &str) -> Shell {
-        let mut parsed_shell = get_shell_by_model_provided_path(&PathBuf::from(shell));
+    fn shell_from_requested_path(shell: &str) -> Result<Shell, FunctionCallError> {
+        let requested_path = PathBuf::from(shell);
+        let Some(shell_type) = detect_shell_type(&requested_path) else {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "unsupported shell `{shell}`; expected a shell name or executable path for bash, sh, zsh, powershell, or cmd"
+            )));
+        };
+
+        let Some(mut parsed_shell) = get_shell(shell_type, Some(&requested_path)) else {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "requested shell `{shell}` is recognized but not available on this machine"
+            )));
+        };
+
         parsed_shell.shell_snapshot = crate::shell::empty_shell_snapshot_receiver();
-        parsed_shell
+        Ok(parsed_shell)
+    }
+
+    fn effective_shell(
+        params: &ShellCommandToolCallParams,
+        session: &crate::codex::Session,
+    ) -> Result<Shell, FunctionCallError> {
+        if let Some(requested_shell) = params.shell.as_deref() {
+            Self::shell_from_requested_path(requested_shell)
+        } else {
+            Ok(session.user_shell().as_ref().clone())
+        }
     }
 
     fn maybe_update_session_shell(
         params: &ShellCommandToolCallParams,
         session: &crate::codex::Session,
-    ) {
-        if let Some(requested_shell) = params.shell.as_deref() {
-            session.set_user_shell(Self::shell_from_requested_path(requested_shell));
+    ) -> Result<(), FunctionCallError> {
+        if params.shell.is_some() {
+            session.set_user_shell(Self::effective_shell(params, session)?);
         }
+
+        Ok(())
     }
 
     fn to_exec_params(
@@ -186,10 +212,10 @@ impl ShellCommandHandler {
         thread_id: ThreadId,
         allow_login_shell: bool,
     ) -> Result<ExecParams, FunctionCallError> {
-        let shell = session.user_shell();
-        Self::validate_command_supported(shell.as_ref(), &params.command)?;
+        let shell = Self::effective_shell(params, session)?;
+        Self::validate_command_supported(&shell, &params.command)?;
         let use_login_shell = Self::resolve_use_login_shell(params.login, allow_login_shell)?;
-        let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
+        let command = Self::base_command(&shell, &params.command, use_login_shell);
 
         Ok(ExecParams {
             command,
@@ -345,8 +371,11 @@ impl ToolHandler for ShellCommandHandler {
                     Ok(use_login_shell) => use_login_shell,
                     Err(_) => return true,
                 };
-                let shell = invocation.session.user_shell();
-                let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
+                let shell = match Self::effective_shell(&params, invocation.session.as_ref()) {
+                    Ok(shell) => shell,
+                    Err(_) => return true,
+                };
+                let command = Self::base_command(&shell, &params.command, use_login_shell);
                 !is_known_safe_command(&command)
             })
             .unwrap_or(true)
@@ -390,7 +419,7 @@ impl ToolHandler for ShellCommandHandler {
 
         let cwd = resolve_workdir_base_path(&arguments, &turn.cwd)?;
         let params: ShellCommandToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
-        Self::maybe_update_session_shell(&params, session.as_ref());
+        Self::maybe_update_session_shell(&params, session.as_ref())?;
         let workdir = turn.resolve_path(params.workdir.clone());
         maybe_emit_implicit_skill_invocation(
             session.as_ref(),

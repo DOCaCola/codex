@@ -7,7 +7,6 @@ use std::sync::atomic::AtomicU64;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
-use arc_swap::ArcSwap;
 use crate::agent::AgentControl;
 use crate::agent::AgentStatus;
 use crate::agent::Mailbox;
@@ -48,6 +47,7 @@ use crate::stream_events_utils::record_completed_response_item;
 use crate::turn_metadata::TurnMetadataState;
 use crate::unavailable_tool::collect_unavailable_called_tools;
 use crate::util::error_or_panic;
+use arc_swap::ArcSwap;
 use async_channel::Receiver;
 use async_channel::Sender;
 use chrono::Local;
@@ -451,6 +451,7 @@ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
+
 impl Codex {
     /// Spawn a new [`Codex`] and initialize the session.
     pub(crate) async fn spawn(args: CodexSpawnArgs) -> CodexResult<CodexSpawnOk> {

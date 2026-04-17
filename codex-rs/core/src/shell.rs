@@ -326,9 +326,9 @@ pub fn default_user_shell() -> Shell {
 }
 
 fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
-    let user_default_shell = user_shell_path
-        .as_ref()
-        .and_then(|shell| detect_shell_type(shell).and_then(|shell_type| get_shell(shell_type, Some(shell))));
+    let user_default_shell = user_shell_path.as_ref().and_then(|shell| {
+        detect_shell_type(shell).and_then(|shell_type| get_shell(shell_type, Some(shell)))
+    });
 
     if cfg!(windows) {
         get_shell(ShellType::PowerShell, /*path*/ None).unwrap_or(ultimate_fallback_shell())

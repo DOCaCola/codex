@@ -206,6 +206,13 @@ pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
             )),
         ),
         (
+            "shell".to_string(),
+            JsonSchema::string(Some(
+                "Optional shell name or executable path. If set, switch the active session shell before running this command; the change persists for later shell_command calls in this session."
+                    .to_string(),
+            )),
+        ),
+        (
             "workdir".to_string(),
             JsonSchema::string(Some(
                 "The working directory to execute the command in".to_string(),
@@ -235,6 +242,7 @@ pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
         let description = match options.active_shell_name {
             Some("bash") | Some("sh") | Some("zsh") => {
                 r#"Runs a command in the user's default shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 Use bash-style syntax for this session.
 
 Examples of valid command strings:
@@ -247,6 +255,7 @@ Examples of valid command strings:
             }
             Some("powershell") | Some("cmd") => {
                 r#"Runs a command in the user's default shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 Use PowerShell-style syntax for this session.
 
 Examples of valid command strings:
@@ -259,6 +268,7 @@ Examples of valid command strings:
             }
             _ => {
                 r#"Runs a command in the user's default shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 Use syntax appropriate for the active shell, which is typically PowerShell or Bash.
 
 Examples of valid command strings:
@@ -281,6 +291,7 @@ Examples of valid command strings:
         )
     } else {
         r#"Runs a shell command and returns its output.
+- Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
 - Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary."#
             .to_string()
     };

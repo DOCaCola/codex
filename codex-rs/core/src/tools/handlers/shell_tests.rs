@@ -246,7 +246,8 @@ async fn shell_command_handler_rejects_large_windows_bash_heredoc_writes() {
         "unexpected error kind: {err:?}"
     );
     assert!(
-        err.to_string().contains("large inline file writes through `shell_command`"),
+        err.to_string()
+            .contains("large inline file writes through `shell_command`"),
         "unexpected error: {err}"
     );
 }
@@ -277,13 +278,95 @@ async fn shell_command_handler_switches_global_shell_when_requested() {
         ..params
     };
 
-    ShellCommandHandler::maybe_update_session_shell(&params, &session);
+    ShellCommandHandler::maybe_update_session_shell(&params, &session)
+        .expect("valid shell override should be applied");
 
     let updated_shell = session.user_shell();
     assert_eq!(updated_shell.shell_type, ShellType::Bash);
     assert_eq!(updated_shell.shell_path, shell_path);
 
     let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[tokio::test]
+async fn shell_command_handler_is_mutating_uses_requested_shell_for_first_call() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let Some(powershell_path) =
+        try_find_powershell_executable_blocking().or_else(try_find_pwsh_executable_blocking)
+    else {
+        return;
+    };
+
+    let (session, turn) = make_session_and_context().await;
+    session.set_user_shell(Shell {
+        shell_type: ShellType::PowerShell,
+        shell_path: powershell_path.to_path_buf(),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
+    });
+
+    let temp_dir = std::env::temp_dir().join(format!(
+        "codex-shell-is-mutating-test-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+    let shell_path = temp_dir.join("bash.exe");
+    std::fs::write(&shell_path, "echo").expect("create temporary bash file");
+
+    let payload = ToolPayload::Function {
+        arguments: json!({
+            "command": "ls -la",
+            "shell": shell_path.to_string_lossy(),
+        })
+        .to_string(),
+    };
+    let handler = ShellCommandHandler {
+        backend: super::ShellCommandBackend::Classic,
+    };
+
+    let is_mutating = handler
+        .is_mutating(&ToolInvocation {
+            session: session.into(),
+            turn: turn.into(),
+            tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
+            call_id: "call-43".to_string(),
+            tool_name: codex_tools::ToolName::plain("shell_command"),
+            payload,
+        })
+        .await;
+
+    assert!(
+        !is_mutating,
+        "requested bash shell should classify `ls -la` as safe on the first switching call"
+    );
+
+    let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[tokio::test]
+async fn shell_command_handler_rejects_unknown_requested_shell() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let params = ShellCommandToolCallParams {
+        command: "echo hello".to_string(),
+        shell: Some("fish".to_string()),
+        workdir: None,
+        login: None,
+        timeout_ms: None,
+        sandbox_permissions: None,
+        additional_permissions: None,
+        prefix_rule: None,
+        justification: None,
+    };
+
+    let err = ShellCommandHandler::maybe_update_session_shell(&params, &session)
+        .expect_err("unknown shell override should be rejected");
+
+    assert!(
+        err.to_string().contains("unsupported shell"),
+        "unexpected error: {err}"
+    );
 }
 
 #[tokio::test]
