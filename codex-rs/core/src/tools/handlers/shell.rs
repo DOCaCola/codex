@@ -282,7 +282,7 @@ impl ToolHandler for ShellHandler {
                 let exec_params =
                     Self::to_exec_params(&params, turn.as_ref(), session.conversation_id);
                 Self::run_exec_like(RunExecLikeArgs {
-                    tool_name: tool_name.clone(),
+                    tool_name: tool_name.display(),
                     exec_params,
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
@@ -299,7 +299,7 @@ impl ToolHandler for ShellHandler {
                 let exec_params =
                     Self::to_exec_params(&params, turn.as_ref(), session.conversation_id);
                 Self::run_exec_like(RunExecLikeArgs {
-                    tool_name: tool_name.clone(),
+                    tool_name: tool_name.display(),
                     exec_params,
                     additional_permissions: None,
                     prefix_rule: None,
@@ -313,7 +313,8 @@ impl ToolHandler for ShellHandler {
                 .await
             }
             _ => Err(FunctionCallError::RespondToModel(format!(
-                "unsupported payload for shell handler: {tool_name}"
+                "unsupported payload for shell handler: {}",
+                tool_name.display()
             ))),
         }
     }
@@ -382,7 +383,8 @@ impl ToolHandler for ShellCommandHandler {
 
         let ToolPayload::Function { arguments } = payload else {
             return Err(FunctionCallError::RespondToModel(format!(
-                "unsupported payload for shell_command handler: {tool_name}"
+                "unsupported payload for shell_command handler: {}",
+                tool_name.display()
             )));
         };
 
@@ -406,7 +408,7 @@ impl ToolHandler for ShellCommandHandler {
             turn.tools_config.allow_login_shell,
         )?;
         ShellHandler::run_exec_like(RunExecLikeArgs {
-            tool_name,
+            tool_name: tool_name.display(),
             exec_params,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
@@ -511,7 +513,6 @@ impl ShellHandler {
             &exec_params.command,
             &exec_params.cwd,
             fs.as_ref(),
-            exec_params.expiration.timeout_ms(),
             session.clone(),
             turn.clone(),
             Some(&tracker),
@@ -526,7 +527,7 @@ impl ShellHandler {
         let source = ExecCommandSource::Agent;
         let emitter = ToolEmitter::shell(
             exec_params.command.clone(),
-            exec_params.cwd.to_path_buf(),
+            exec_params.cwd.clone(),
             source,
             freeform,
         );
