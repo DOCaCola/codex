@@ -176,6 +176,9 @@ impl EnvironmentContext {
 
         let shell_name = self.shell.name();
         lines.push(format!("  <shell>{shell_name}</shell>"));
+        lines.push(
+            "  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>".to_string(),
+        );
         if let Some(current_date) = self.current_date {
             lines.push(format!("  <current_date>{current_date}</current_date>"));
         }

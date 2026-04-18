@@ -28,6 +28,7 @@ fn serialize_workspace_write_environment_context() {
         r#"<environment_context>
   <cwd>{cwd}</cwd>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#,
@@ -56,6 +57,7 @@ fn serialize_environment_context_with_network() {
         r#"<environment_context>
   <cwd>{}</cwd>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
   <network enabled="true">
@@ -83,6 +85,7 @@ fn serialize_read_only_environment_context() {
 
     let expected = r#"<environment_context>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -103,6 +106,7 @@ fn serialize_external_sandbox_environment_context() {
 
     let expected = r#"<environment_context>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -123,6 +127,7 @@ fn serialize_external_sandbox_with_restricted_network_environment_context() {
 
     let expected = r#"<environment_context>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -143,6 +148,7 @@ fn serialize_full_access_environment_context() {
 
     let expected = r#"<environment_context>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -260,6 +266,7 @@ fn serialize_environment_context_with_subagents() {
         r#"<environment_context>
   <cwd>{}</cwd>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
   <subagents>

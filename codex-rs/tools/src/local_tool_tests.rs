@@ -337,8 +337,9 @@ fn shell_command_tool_matches_expected_spec() {
     });
 
     let description = if cfg!(windows) {
-        r#"Runs a command in the user's default shell (Windows) and returns its output.
-Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
+        r#"Runs a command in the user's current shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell before running this command; the change persists for later `shell_command` calls in the current session.
+Do not assume the current shell is fixed for the whole conversation; switch it explicitly when needed.
 Use syntax appropriate for the active shell, which is typically PowerShell or Bash.
 
 Examples of valid command strings:
@@ -418,7 +419,7 @@ Examples of valid command strings:
 }
 
 #[test]
-fn shell_command_tool_uses_bash_specific_windows_description_when_requested() {
+fn shell_command_tool_remains_switchable_when_bash_is_active() {
     if !cfg!(windows) {
         return;
     }
@@ -433,17 +434,23 @@ fn shell_command_tool_uses_bash_specific_windows_description_when_requested() {
     };
 
     let description =
-        r#"Runs a command in the user's default shell (Windows) and returns its output.
-Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
-Use bash-style syntax for this session.
+        r#"Runs a command in the user's current shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell before running this command; the change persists for later `shell_command` calls in the current session.
+Do not assume the current shell is fixed for the whole conversation; switch it explicitly when needed.
+Use syntax appropriate for the active shell, which is typically PowerShell or Bash.
 
 Examples of valid command strings:
 
-- ls -a (show hidden): "ls -a"
-- recursive find by name: "find . -name '*.py'"
-- recursive grep: "rg -n 'TODO' ."
-- ps aux | grep python: "ps aux | grep python"
-- setting an env var: "export FOO=bar; echo $FOO""#
+- PowerShell ls -a (show hidden): "Get-ChildItem -Force"
+- Bash ls -a (show hidden): "ls -a"
+- PowerShell recursive find by name: "Get-ChildItem -Recurse -Filter *.py"
+- Bash recursive find by name: "find . -name '*.py'"
+- PowerShell recursive grep: "Get-ChildItem -Path C:\\myrepo -Recurse | Select-String -Pattern 'TODO' -CaseSensitive"
+- Bash recursive grep: "rg -n 'TODO' ."
+- PowerShell ps aux | grep python: "Get-Process | Where-Object {{ $_.ProcessName -like '*python*' }}"
+- Bash ps aux | grep python: "ps aux | grep python"
+- PowerShell setting an env var: "$env:FOO='bar'; echo $env:FOO"
+- Bash setting an env var: "export FOO=bar; echo $FOO""#
             .to_string()
             + &windows_shell_safety_description();
 

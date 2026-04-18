@@ -238,37 +238,11 @@ pub fn create_shell_command_tool(options: CommandToolOptions) -> ToolSpec {
         options.exec_permission_approvals_enabled,
     ));
 
+    let _ = options.active_shell_name;
     let description = if cfg!(windows) {
-        let description = match options.active_shell_name {
-            Some("bash") | Some("sh") | Some("zsh") => {
-                r#"Runs a command in the user's default shell (Windows) and returns its output.
-Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
-Use bash-style syntax for this session.
-
-Examples of valid command strings:
-
-- ls -a (show hidden): "ls -a"
-- recursive find by name: "find . -name '*.py'"
-- recursive grep: "rg -n 'TODO' ."
-- ps aux | grep python: "ps aux | grep python"
-- setting an env var: "export FOO=bar; echo $FOO""#
-            }
-            Some("powershell") | Some("cmd") => {
-                r#"Runs a command in the user's default shell (Windows) and returns its output.
-Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
-Use PowerShell-style syntax for this session.
-
-Examples of valid command strings:
-
-- ls -a (show hidden): "Get-ChildItem -Force"
-- recursive find by name: "Get-ChildItem -Recurse -Filter *.py"
-- recursive grep: "Get-ChildItem -Path C:\\myrepo -Recurse | Select-String -Pattern 'TODO' -CaseSensitive"
-- ps aux | grep python: "Get-Process | Where-Object {{ $_.ProcessName -like '*python*' }}"
-- setting an env var: "$env:FOO='bar'; echo $env:FOO""#
-            }
-            _ => {
-                r#"Runs a command in the user's default shell (Windows) and returns its output.
-Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
+        let description = r#"Runs a command in the user's current shell (Windows) and returns its output.
+Set `shell` to a shell name or executable path to switch the active session shell before running this command; the change persists for later `shell_command` calls in the current session.
+Do not assume the current shell is fixed for the whole conversation; switch it explicitly when needed.
 Use syntax appropriate for the active shell, which is typically PowerShell or Bash.
 
 Examples of valid command strings:
@@ -282,9 +256,7 @@ Examples of valid command strings:
 - PowerShell ps aux | grep python: "Get-Process | Where-Object {{ $_.ProcessName -like '*python*' }}"
 - Bash ps aux | grep python: "ps aux | grep python"
 - PowerShell setting an env var: "$env:FOO='bar'; echo $env:FOO"
-- Bash setting an env var: "export FOO=bar; echo $FOO""#
-            }
-        };
+- Bash setting an env var: "export FOO=bar; echo $FOO""#;
         format!(
             "{description}\n\n{}",
             windows_destructive_filesystem_guidance()
