@@ -3312,7 +3312,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let effective_skill_roots = plugin_outcome.effective_skill_roots();
     let skills_input =
         crate::skills_load_input_from_config(&per_turn_config, effective_skill_roots);
-    let user_shell = services.user_shell.load_full();
     let skill_fs = environment.get_filesystem();
     let skills_outcome = Arc::new(
         services
@@ -4626,7 +4625,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let effective_skill_roots = plugin_outcome.effective_skill_roots();
     let skills_input =
         crate::skills_load_input_from_config(&per_turn_config, effective_skill_roots);
-    let user_shell = services.user_shell.load_full();
     let skill_fs = environment.get_filesystem();
     let skills_outcome = Arc::new(
         services

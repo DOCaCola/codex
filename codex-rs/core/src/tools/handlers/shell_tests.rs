@@ -331,6 +331,7 @@ async fn shell_command_handler_is_mutating_uses_requested_shell_for_first_call()
         .is_mutating(&ToolInvocation {
             session: session.into(),
             turn: turn.into(),
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
             call_id: "call-43".to_string(),
             tool_name: codex_tools::ToolName::plain("shell_command"),
