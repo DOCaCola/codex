@@ -303,6 +303,47 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
     assert_eq!(models_mock.requests().len(), 1);
 }
 
+#[tokio::test]
+async fn new_uses_active_model_provider_for_model_refresh() {
+    let server = MockServer::start().await;
+    let models_mock = mount_models_once(&server, ModelsResponse { models: vec![] }).await;
+
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config().await;
+    config.codex_home = temp_dir.path().join("codex-home").abs();
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+    config.model_catalog = None;
+
+    let custom_provider = ModelProviderInfo {
+        base_url: Some(server.uri()),
+        ..config
+            .model_providers
+            .get("openai")
+            .expect("openai provider should exist")
+            .clone()
+    };
+    config.model_provider_id = "custom-models".to_string();
+    config.model_provider = custom_provider.clone();
+    config
+        .model_providers
+        .insert(config.model_provider_id.clone(), custom_provider);
+
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        auth_manager,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+        /*analytics_events_client*/ None,
+    );
+
+    let _ = manager.list_models(RefreshStrategy::Online).await;
+    assert_eq!(models_mock.requests().len(), 1);
+}
+
 #[test]
 fn interrupted_fork_snapshot_appends_interrupt_boundary() {
     let committed_history =

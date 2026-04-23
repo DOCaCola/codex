@@ -411,7 +411,9 @@ impl ModelsManager {
             .provider
             .auth_manager()
             .and_then(|auth_manager| auth_manager.auth_mode());
-        if auth_mode != Some(AuthMode::Chatgpt) && !self.provider.info().has_command_auth() {
+        if !matches!(auth_mode, Some(AuthMode::ApiKey | AuthMode::Chatgpt))
+            && !self.provider.info().has_command_auth()
+        {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached

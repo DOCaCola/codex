@@ -406,6 +406,44 @@ async fn refresh_available_models_sorts_by_priority() {
 }
 
 #[tokio::test]
+async fn refresh_available_models_fetches_and_caches_with_api_key_auth() {
+    let server = MockServer::start().await;
+    let remote_models = vec![remote_model(
+        "api-key-model",
+        "API Key",
+        /*priority*/ 0,
+    )];
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: remote_models.clone(),
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test-api-key"));
+    let provider = provider_for(server.uri());
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("refresh succeeds");
+
+    assert_models_contain(&manager.get_remote_models().await, &remote_models);
+    assert_eq!(models_mock.requests().len(), 1);
+    let cache = std::fs::read_to_string(codex_home.path().join("models_cache.json"))
+        .expect("models cache should be written");
+    assert!(cache.contains("api-key-model"));
+    assert!(cache.contains(&crate::client_version_to_whole()));
+}
+
+#[tokio::test]
 async fn refresh_available_models_uses_provider_auth_token() {
     let server = MockServer::start().await;
     let auth_script = ProviderAuthScript::new(&["provider-token"]).unwrap();
