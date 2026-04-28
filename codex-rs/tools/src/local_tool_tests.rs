@@ -2,8 +2,8 @@ use super::*;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
-fn windows_shell_safety_description() -> String {
-    format!("\n\n{}", windows_destructive_filesystem_guidance())
+fn windows_shell_guidance_description() -> String {
+    format!("\n\n{}", windows_shell_guidance())
 }
 
 #[test]
@@ -24,7 +24,7 @@ Examples of valid command strings:
 - setting an env var: ["powershell.exe", "-Command", "$env:FOO='bar'; echo $env:FOO"]
 - running an inline Python script: ["powershell.exe", "-Command", "@'\\nprint('Hello, world!')\\n'@ | python -"]"#
             .to_string()
-            + &windows_shell_safety_description()
+            + &windows_shell_guidance_description()
     } else {
         r#"Runs a shell command and returns its output.
 - The arguments to `shell` will be passed to execvp(). Most terminal commands should be prefixed with ["bash", "-lc"].
@@ -102,7 +102,7 @@ fn exec_command_tool_matches_expected_spec() {
     let description = if cfg!(windows) {
         format!(
             "Runs a command in a PTY, returning output or a session ID for ongoing interaction.{}",
-            windows_shell_safety_description()
+            windows_shell_guidance_description()
         )
     } else {
         "Runs a command in a PTY, returning output or a session ID for ongoing interaction."
@@ -270,7 +270,7 @@ Examples of valid command strings:
 - running an inline Python script: ["powershell.exe", "-Command", "@'\\nprint('Hello, world!')\\n'@ | python -"]
 
 {}"#,
-            windows_destructive_filesystem_guidance()
+            windows_shell_guidance()
         )
     } else {
         r#"Runs a shell command and returns its output.
@@ -355,7 +355,7 @@ Examples of valid command strings:
 - PowerShell setting an env var: "$env:FOO='bar'; echo $env:FOO"
 - Bash setting an env var: "export FOO=bar; echo $FOO""#
             .to_string()
-            + &windows_shell_safety_description()
+            + &windows_shell_guidance_description()
     } else {
         r#"Runs a shell command and returns its output.
 - Set `shell` to a shell name or executable path to switch the active session shell for this and later `shell_command` calls in the current session.
