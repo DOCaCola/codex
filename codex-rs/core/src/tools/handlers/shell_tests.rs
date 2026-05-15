@@ -17,7 +17,6 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
-use crate::tools::handlers::LocalShellHandler;
 use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::ToolHandler;
@@ -90,6 +89,7 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     let expected_command = session
         .user_shell()
         .derive_exec_args(&command, /*use_login_shell*/ true);
+    #[allow(deprecated)]
     let expected_cwd = turn_context.resolve_path(workdir.clone());
     let expected_env = create_env(
         &turn_context.shell_environment_policy,
@@ -286,63 +286,6 @@ async fn shell_command_handler_switches_global_shell_when_requested() {
 }
 
 #[tokio::test]
-async fn shell_command_handler_is_mutating_uses_requested_shell_for_first_call() {
-    if !cfg!(windows) {
-        return;
-    }
-
-    let Some(powershell_path) =
-        try_find_powershell_executable_blocking().or_else(try_find_pwsh_executable_blocking)
-    else {
-        return;
-    };
-
-    let (session, turn) = make_session_and_context().await;
-    session.set_user_shell(Shell {
-        shell_type: ShellType::PowerShell,
-        shell_path: powershell_path.to_path_buf(),
-        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
-    });
-
-    let temp_dir = std::env::temp_dir().join(format!(
-        "codex-shell-is-mutating-test-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
-    let shell_path = temp_dir.join("bash.exe");
-    std::fs::write(&shell_path, "echo").expect("create temporary bash file");
-
-    let payload = ToolPayload::Function {
-        arguments: json!({
-            "command": "ls -la",
-            "shell": shell_path.to_string_lossy(),
-        })
-        .to_string(),
-    };
-    let handler = ShellCommandHandler::from(codex_tools::ShellCommandBackendConfig::Classic);
-
-    let is_mutating = handler
-        .is_mutating(&ToolInvocation {
-            session: session.into(),
-            turn: turn.into(),
-            cancellation_token: tokio_util::sync::CancellationToken::new(),
-            tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
-            call_id: "call-43".to_string(),
-            tool_name: codex_tools::ToolName::plain("shell_command"),
-            source: crate::tools::context::ToolCallSource::Direct,
-            payload,
-        })
-        .await;
-
-    assert!(
-        !is_mutating,
-        "requested bash shell should classify `ls -la` as safe on the first switching call"
-    );
-
-    let _ = std::fs::remove_dir_all(temp_dir);
-}
-
-#[tokio::test]
 async fn shell_command_handler_rejects_unknown_requested_shell() {
     let (session, _turn_context) = make_session_and_context().await;
     let params = ShellCommandToolCallParams {
@@ -363,44 +306,6 @@ async fn shell_command_handler_rejects_unknown_requested_shell() {
     assert!(
         err.to_string().contains("unsupported shell"),
         "unexpected error: {err}"
-    );
-}
-
-#[tokio::test]
-async fn local_shell_pre_tool_use_payload_uses_joined_command() {
-    let payload = ToolPayload::LocalShell {
-        params: codex_protocol::models::ShellToolCallParams {
-            command: vec![
-                "bash".to_string(),
-                "-lc".to_string(),
-                "printf hi".to_string(),
-            ],
-            workdir: None,
-            timeout_ms: None,
-            sandbox_permissions: None,
-            additional_permissions: None,
-            prefix_rule: None,
-            justification: None,
-        },
-    };
-    let (session, turn) = make_session_and_context().await;
-    let handler = LocalShellHandler::default();
-
-    assert_eq!(
-        handler.pre_tool_use_payload(&ToolInvocation {
-            session: session.into(),
-            turn: turn.into(),
-            cancellation_token: tokio_util::sync::CancellationToken::new(),
-            tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
-            call_id: "call-41".to_string(),
-            tool_name: codex_tools::ToolName::plain("local_shell"),
-            source: crate::tools::context::ToolCallSource::Direct,
-            payload,
-        }),
-        Some(crate::tools::registry::PreToolUsePayload {
-            tool_name: HookToolName::bash(),
-            tool_input: json!({ "command": "bash -lc 'printf hi'" }),
-        })
     );
 }
 

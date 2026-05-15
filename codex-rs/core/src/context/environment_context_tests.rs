@@ -73,11 +73,7 @@ fn serialize_environment_context_with_network() {
   <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
-  <network enabled="true">
-    <allowed>api.example.com</allowed>
-    <allowed>*.openai.com</allowed>
-    <denied>blocked.example.com</denied>
-  </network>
+  <network enabled="true"><allowed>api.example.com,*.openai.com</allowed><denied>blocked.example.com</denied></network>
 </environment_context>"#,
         test_path_buf("/repo").display()
     );
