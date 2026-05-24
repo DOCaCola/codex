@@ -10,7 +10,7 @@
 # archive as a GitHub Release asset, then manually dispatch
 # `release_mode=promote_signed` with `unsigned_run_id` and `signed_macos_asset`.
 # The signed handoff archive should contain target or artifact directories such
-# as `aarch64-apple-darwin/` with signed binaries and signed DMGs.
+# as `aarch64-apple-darwin/` with signed binaries.
 
 name: rust-release
 on:
@@ -180,25 +180,25 @@ jobs:
             binaries: "codex-app-server"
             build_dmg: "false"
           # Release artifacts intentionally ship MUSL-linked Linux binaries.
-          - runner: ubuntu-24.04
+          - runner: codex-linux-x64-xl
             target: x86_64-unknown-linux-musl
             bundle: primary
             artifact_name: x86_64-unknown-linux-musl
             binaries: "codex codex-responses-api-proxy bwrap"
             build_dmg: "false"
-          - runner: ubuntu-24.04
+          - runner: codex-linux-x64-xl
             target: x86_64-unknown-linux-musl
             bundle: app-server
             artifact_name: x86_64-unknown-linux-musl-app-server
             binaries: "codex-app-server"
             build_dmg: "false"
-          - runner: ubuntu-24.04-arm
+          - runner: codex-linux-arm64
             target: aarch64-unknown-linux-musl
             bundle: primary
             artifact_name: aarch64-unknown-linux-musl
             binaries: "codex codex-responses-api-proxy bwrap"
             build_dmg: "false"
-          - runner: ubuntu-24.04-arm
+          - runner: codex-linux-arm64
             target: aarch64-unknown-linux-musl
             bundle: app-server
             artifact_name: aarch64-unknown-linux-musl-app-server
@@ -346,7 +346,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
 
-      - if: ${{ contains(matrix.target, 'linux') && matrix.bundle == 'primary' }}
+      - if: ${{ contains(matrix.target, 'linux') }}
         name: Build bwrap and export digest
         shell: bash
         run: |
@@ -519,6 +519,20 @@ jobs:
             cp target/${{ matrix.target }}/release/codex-${{ matrix.target }}.dmg "$dest/codex-${{ matrix.target }}.dmg"
           fi
 
+      - name: Build Codex package archive
+        if: ${{ runner.os != 'macOS' || env.SIGN_MACOS == 'true' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLE: ${{ matrix.bundle }}
+        run: |
+          set -euo pipefail
+          bash "${GITHUB_WORKSPACE}/.github/scripts/build-codex-package-archive.sh" \
+            --target "$TARGET" \
+            --bundle "$BUNDLE" \
+            --entrypoint-dir "target/${TARGET}/release" \
+            --archive-dir "dist/${TARGET}"
+
       - name: Build Python runtime wheel
         if: ${{ matrix.bundle == 'primary' && (runner.os != 'macOS' || env.SIGN_MACOS == 'true') }}
         shell: bash
@@ -533,10 +547,10 @@ jobs:
               platform_tag="macosx_10_9_x86_64"
               ;;
             aarch64-unknown-linux-musl)
-              platform_tag="musllinux_1_1_aarch64"
+              platform_tag="manylinux_2_17_aarch64"
               ;;
             x86_64-unknown-linux-musl)
-              platform_tag="musllinux_1_1_x86_64"
+              platform_tag="manylinux_2_17_x86_64"
               ;;
             *)
               echo "No Python runtime wheel platform tag for ${{ matrix.target }}"
@@ -555,18 +569,10 @@ jobs:
             "${GITHUB_WORKSPACE}/sdk/python/scripts/update_sdk_artifacts.py"
             stage-runtime
             "$stage_dir"
-            "${GITHUB_WORKSPACE}/codex-rs/target/${{ matrix.target }}/release/codex"
+            "dist/${{ matrix.target }}/codex-package-${{ matrix.target }}.tar.gz"
             --codex-version "${GITHUB_REF_NAME}"
             --platform-tag "$platform_tag"
           )
-          if [[ "${{ matrix.target }}" == *linux* ]]; then
-            # Keep bwrap in the runtime wheel so Linux sandbox fallback behavior
-            # matches the standalone release bundle on hosts without system bwrap.
-            stage_runtime_args+=(
-              --resource-binary
-              "${GITHUB_WORKSPACE}/codex-rs/target/${{ matrix.target }}/release/bwrap"
-            )
-          fi
           python3 "${stage_runtime_args[@]}"
           "${RUNNER_TEMP}/python-runtime-build-venv/bin/python" -m build --wheel --outdir "$wheel_dir" "$stage_dir"
 
@@ -644,7 +650,7 @@ jobs:
             bundle: primary
             artifact_name: aarch64-apple-darwin
             binaries: "codex codex-responses-api-proxy"
-            build_dmg: "true"
+            build_dmg: "false"
           - target: aarch64-apple-darwin
             bundle: app-server
             artifact_name: aarch64-apple-darwin-app-server
@@ -654,7 +660,7 @@ jobs:
             bundle: primary
             artifact_name: x86_64-apple-darwin
             binaries: "codex codex-responses-api-proxy"
-            build_dmg: "true"
+            build_dmg: "false"
           - target: x86_64-apple-darwin
             bundle: app-server
             artifact_name: x86_64-apple-darwin-app-server
@@ -770,6 +776,9 @@ jobs:
             codesign --verify --strict --verbose=2 "$release_path"
           done
 
+          # DMG staging is disabled for signed promotion because we no longer
+          # distribute DMGs from this release path. Keep the branch here so the
+          # handoff can opt back in by flipping matrix.build_dmg if needed.
           if [[ "${{ matrix.build_dmg }}" == "true" ]]; then
             dmg_name="codex-${target}.dmg"
             dmg_source="${source_dir}/${dmg_name}"
@@ -782,6 +791,20 @@ jobs:
             xcrun stapler validate "$dmg_source"
             cp "$dmg_source" "$dest/$dmg_name"
           fi
+
+      - name: Build Codex package archive
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLE: ${{ matrix.bundle }}
+        run: |
+          set -euo pipefail
+          bash "${GITHUB_WORKSPACE}/.github/scripts/build-codex-package-archive.sh" \
+            --target "$TARGET" \
+            --bundle "$BUNDLE" \
+            --entrypoint-dir "dist/${TARGET}" \
+            --archive-dir "dist/${TARGET}" \
+            --target-suffixed-entrypoint
 
       - name: Build Python runtime wheel
         if: ${{ matrix.bundle == 'primary' }}
@@ -811,7 +834,7 @@ jobs:
             "${GITHUB_WORKSPACE}/sdk/python/scripts/update_sdk_artifacts.py" \
             stage-runtime \
             "$stage_dir" \
-            "${GITHUB_WORKSPACE}/codex-rs/dist/${{ matrix.target }}/codex-${{ matrix.target }}" \
+            "dist/${{ matrix.target }}/codex-package-${{ matrix.target }}.tar.gz" \
             --codex-version "${GITHUB_REF_NAME}" \
             --platform-tag "$platform_tag"
           "${RUNNER_TEMP}/python-runtime-build-venv/bin/python" -m build --wheel --outdir "$wheel_dir" "$stage_dir"
@@ -1080,6 +1103,29 @@ jobs:
 
           ls -R dist/
 
+      - name: Add Codex package checksum manifest
+        run: |
+          set -euo pipefail
+
+          manifest="dist/codex-package_SHA256SUMS"
+          tmp_manifest="$(mktemp)"
+          find dist -type f \
+            \( -name 'codex-package-*.tar.gz' -o -name 'codex-app-server-package-*.tar.gz' \) \
+            -print |
+            sort |
+            while IFS= read -r archive; do
+              sha256sum "$archive" |
+                awk -v name="$(basename "$archive")" '{ print $1 "  " name }'
+            done > "$tmp_manifest"
+
+          if [[ ! -s "$tmp_manifest" ]]; then
+            echo "No Codex package archives found for checksum manifest"
+            exit 1
+          fi
+
+          mv "$tmp_manifest" "$manifest"
+          cat "$manifest"
+
       - name: Add config schema release asset
         run: |
           cp codex-rs/core/config.schema.json dist/config-schema.json
@@ -1154,8 +1200,6 @@ jobs:
         if: ${{ env.SIGN_MACOS == 'true' }}
         run: pnpm install --frozen-lockfile
 
-      # stage_npm_packages.py requires DotSlash when staging releases.
-      - uses: facebook/install-dotslash@1e4e7b3e07eaca387acb98f1d4720e0bee8dbb6a # v2
       - name: Stage npm packages
         if: ${{ env.SIGN_MACOS == 'true' }}
         env:
@@ -1223,14 +1267,6 @@ jobs:
           tag: ${{ github.ref_name }}
           config: .github/dotslash-config.json
 
-      - if: ${{ env.SIGN_MACOS == 'false' }}
-        uses: facebook/dotslash-publish-release@9c9ec027515c34db9282a09a25a9cab5880b2c52 # v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref_name }}
-          config: .github/dotslash-unsigned-config.json
-
       - if: ${{ env.SIGN_MACOS == 'true' }}
         uses: facebook/dotslash-publish-release@9c9ec027515c34db9282a09a25a9cab5880b2c52 # v2
         env:
@@ -1265,7 +1301,15 @@ jobs:
   # npm docs: https://docs.npmjs.com/trusted-publishers
   publish-npm:
     # Publish to npm for stable releases and alpha pre-releases with numeric suffixes.
-    if: ${{ needs.release.outputs.should_publish_npm == 'true' }}
+    # promote_signed intentionally skips build jobs that are ancestors of release;
+    # include the !cancelled() status function so Actions does not apply its implicit
+    # success() check to the whole dependency chain before evaluating release outputs.
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.release.result == 'success' &&
+        needs.release.outputs.should_publish_npm == 'true'
+      }}
     name: publish-npm
     needs: release
     runs-on: ubuntu-latest
@@ -1423,7 +1467,12 @@ jobs:
   # need release follow-up, but should not invalidate the Rust release itself.
   publish-python-runtime:
     # Publish to PyPI for stable releases and alpha pre-releases with numeric suffixes.
-    if: ${{ needs.release.outputs.should_publish_python_runtime == 'true' }}
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.release.result == 'success' &&
+        needs.release.outputs.should_publish_python_runtime == 'true'
+      }}
     name: publish-python-runtime
     needs: release
     runs-on: ubuntu-latest
@@ -1464,7 +1513,13 @@ jobs:
     needs: release
     # Only publish stable/mainline releases to WinGet; pre-releases include a
     # '-' in the semver string (e.g., 1.2.3-alpha.1).
-    if: ${{ needs.release.outputs.sign_macos == 'true' && !contains(needs.release.outputs.version, '-') }}
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.release.result == 'success' &&
+        needs.release.outputs.sign_macos == 'true' &&
+        !contains(needs.release.outputs.version, '-')
+      }}
     # This job only invokes a GitHub Action to open/update the winget-pkgs PR;
     # it does not execute Windows-only tooling, so Linux is sufficient.
     runs-on: ubuntu-latest
@@ -1484,7 +1539,12 @@ jobs:
 
   update-branch:
     name: Update latest-alpha-cli branch
-    if: ${{ needs.release.outputs.sign_macos == 'true' }}
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.release.result == 'success' &&
+        needs.release.outputs.sign_macos == 'true'
+      }}
     permissions:
       contents: write
     needs: release
