@@ -47,6 +47,7 @@ pub enum TurnItem {
     Reasoning(ReasoningItem),
     WebSearch(WebSearchItem),
     ImageView(ImageViewItem),
+    Sleep(SleepItem),
     ImageGeneration(ImageGenerationItem),
     FileChange(FileChangeItem),
     McpToolCall(McpToolCallItem),
@@ -56,6 +57,9 @@ pub enum TurnItem {
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct UserMessageItem {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub client_id: Option<String>,
     pub content: Vec<UserInput>,
 }
 
@@ -135,6 +139,12 @@ pub struct WebSearchItem {
 pub struct ImageViewItem {
     pub id: String,
     pub path: AbsolutePathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq, Eq)]
+pub struct SleepItem {
+    pub id: String,
+    pub duration_ms: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema, PartialEq)]
@@ -237,6 +247,7 @@ impl UserMessageItem {
     pub fn new(content: &[UserInput]) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
+            client_id: None,
             content: content.to_vec(),
         }
     }
@@ -245,6 +256,7 @@ impl UserMessageItem {
         // Legacy user-message events flatten only text inputs into `message` and
         // rebase text element ranges onto that concatenated text.
         EventMsg::UserMessage(UserMessageEvent {
+            client_id: self.client_id.clone(),
             message: self.message(),
             images: Some(self.image_urls()),
             image_details: self.image_details(),
@@ -272,6 +284,7 @@ impl UserMessageItem {
             if let UserInput::Text {
                 text,
                 text_elements,
+                ..
             } = input
             {
                 // Text element ranges are relative to each text chunk; offset them so they align
@@ -385,6 +398,7 @@ pub fn build_hook_prompt_message(fragments: &[HookPromptFragment]) -> Option<Res
         role: "user".to_string(),
         content,
         phase: None,
+        metadata: None,
     })
 }
 
@@ -569,6 +583,7 @@ impl TurnItem {
             TurnItem::Reasoning(item) => item.id.clone(),
             TurnItem::WebSearch(item) => item.id.clone(),
             TurnItem::ImageView(item) => item.id.clone(),
+            TurnItem::Sleep(item) => item.id.clone(),
             TurnItem::ImageGeneration(item) => item.id.clone(),
             TurnItem::FileChange(item) => item.id.clone(),
             TurnItem::McpToolCall(item) => item.id.clone(),
@@ -589,6 +604,7 @@ impl TurnItem {
                     path: item.path.clone(),
                 })]
             }
+            TurnItem::Sleep(_) => Vec::new(),
             TurnItem::ImageGeneration(item) => vec![item.as_legacy_event()],
             TurnItem::FileChange(item) => item
                 .as_legacy_end_event(String::new())

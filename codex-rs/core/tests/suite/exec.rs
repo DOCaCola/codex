@@ -24,7 +24,6 @@ fn skip_test() -> bool {
     false
 }
 
-#[expect(clippy::expect_used)]
 async fn run_test_cmd<I, S>(tmp: TempDir, command: I) -> Result<ExecToolCallOutput>
 where
     I: IntoIterator<Item = S>,
@@ -53,6 +52,7 @@ where
         params,
         &PermissionProfile::read_only(),
         &cwd,
+        std::slice::from_ref(&cwd),
         &None,
         /*use_legacy_landlock*/ false,
         /*stdout_stream*/ None,
