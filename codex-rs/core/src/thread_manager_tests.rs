@@ -42,7 +42,7 @@ fn user_msg(text: &str) -> ResponseItem {
             text: text.to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 fn assistant_msg(text: &str) -> ResponseItem {
@@ -53,7 +53,7 @@ fn assistant_msg(text: &str) -> ResponseItem {
             text: text.to_string(),
         }],
         phase: None,
-        metadata: None,
+        internal_chat_message_metadata_passthrough: None,
     }
 }
 
@@ -76,13 +76,13 @@ fn truncates_before_requested_user_message() {
         user_msg("u2"),
         assistant_msg("a3"),
         ResponseItem::Reasoning {
-            id: "r1".to_string(),
+            id: Some("r1".to_string()),
             summary: vec![ReasoningItemReasoningSummary::SummaryText {
                 text: "s".to_string(),
             }],
             content: None,
             encrypted_content: None,
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::FunctionCall {
             id: None,
@@ -90,7 +90,7 @@ fn truncates_before_requested_user_message() {
             name: "tool".to_string(),
             namespace: None,
             arguments: "{}".to_string(),
-            metadata: None,
+            internal_chat_message_metadata_passthrough: None,
         },
         assistant_msg("a4"),
     ];
@@ -325,6 +325,7 @@ async fn start_thread_keeps_internal_threads_hidden_from_normal_lookups() {
             parent_trace: None,
             environments: Vec::new(),
             thread_extension_init: Default::default(),
+            supports_openai_form_elicitation: false,
         })
         .await
         .expect("internal thread should start");
@@ -439,6 +440,7 @@ async fn start_thread_seeds_extension_data_for_mcp_and_lifecycle_contributors() 
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
     let selected_root_init = |id: &str, environment_id: &str| {
         let mut init = codex_extension_api::ExtensionDataInit::new();
@@ -463,6 +465,7 @@ async fn start_thread_seeds_extension_data_for_mcp_and_lifecycle_contributors() 
             parent_trace: None,
             environments: Vec::new(),
             thread_extension_init: selected_root_init("selected-a", "env-a"),
+            supports_openai_form_elicitation: false,
         })
         .await
         .expect("start first thread");
@@ -477,6 +480,7 @@ async fn start_thread_seeds_extension_data_for_mcp_and_lifecycle_contributors() 
             parent_trace: None,
             environments: Vec::new(),
             thread_extension_init: selected_root_init("selected-b", "env-b"),
+            supports_openai_form_elicitation: false,
         })
         .await
         .expect("start second thread");
@@ -545,6 +549,7 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
     let selected_cwd =
         AbsolutePathBuf::try_from(config.cwd.as_path().join("selected")).expect("absolute path");
@@ -567,6 +572,7 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
             parent_trace: None,
             environments: environments.clone(),
             thread_extension_init: Default::default(),
+            supports_openai_form_elicitation: false,
         })
         .await
         .expect("start source thread");
@@ -593,6 +599,7 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
             rollout_path.clone(),
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("resume source thread");
@@ -606,11 +613,11 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
     assert_eq!(resumed_turn.environments.turn_environments.len(), 1);
     assert_eq!(
         resumed_turn.environments.turn_environments[0].cwd(),
-        &default_cwd
+        &PathUri::from_abs_path(&default_cwd)
     );
     assert_ne!(
         resumed_turn.environments.turn_environments[0].cwd(),
-        &selected_cwd
+        &PathUri::from_abs_path(&selected_cwd)
     );
 
     let forked = manager
@@ -633,11 +640,11 @@ async fn resume_and_fork_do_not_restore_thread_environments_from_rollout() {
     assert_eq!(forked_turn.environments.turn_environments.len(), 1);
     assert_eq!(
         forked_turn.environments.turn_environments[0].cwd(),
-        &default_cwd
+        &PathUri::from_abs_path(&default_cwd)
     );
     assert_ne!(
         forked_turn.environments.turn_environments[0].cwd(),
-        &selected_cwd
+        &PathUri::from_abs_path(&selected_cwd)
     );
 }
 
@@ -666,6 +673,7 @@ async fn explicit_installation_id_skips_codex_home_file() {
         state_db.clone(),
         installation_id.clone(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let thread = manager
@@ -706,6 +714,7 @@ async fn resume_active_thread_from_rollout_returns_running_thread() {
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -729,6 +738,7 @@ async fn resume_active_thread_from_rollout_returns_running_thread() {
             rollout_path,
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("resume active source thread");
@@ -764,6 +774,7 @@ async fn resume_stopped_thread_from_rollout_spawns_new_thread() {
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -792,6 +803,7 @@ async fn resume_stopped_thread_from_rollout_spawns_new_thread() {
             rollout_path,
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("resume stopped source thread");
@@ -829,6 +841,7 @@ async fn resume_stopped_thread_from_rollout_preserves_thread_source() {
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -842,6 +855,7 @@ async fn resume_stopped_thread_from_rollout_preserves_thread_source() {
             parent_trace: None,
             environments: Vec::new(),
             thread_extension_init: Default::default(),
+            supports_openai_form_elicitation: false,
         })
         .await
         .expect("start source thread");
@@ -868,6 +882,7 @@ async fn resume_stopped_thread_from_rollout_preserves_thread_source() {
             rollout_path,
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("resume source thread");
@@ -920,6 +935,7 @@ async fn rollout_path_resume_and_fork_read_history_through_thread_store() {
         state_db,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -947,6 +963,7 @@ async fn rollout_path_resume_and_fork_read_history_through_thread_store() {
             }),
             auth_manager.clone(),
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("seed rollout path in store");
@@ -963,6 +980,7 @@ async fn rollout_path_resume_and_fork_read_history_through_thread_store() {
             rollout_path.clone(),
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("resume from rollout path");
@@ -1022,6 +1040,7 @@ async fn new_uses_active_provider_for_model_refresh() {
         /*state_db*/ None,
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let _ = manager.list_models(RefreshStrategy::Online).await;
@@ -1284,6 +1303,7 @@ async fn interrupted_fork_snapshot_does_not_synthesize_turn_id_for_legacy_histor
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -1295,6 +1315,7 @@ async fn interrupted_fork_snapshot_does_not_synthesize_turn_id_for_legacy_histor
             ]),
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("create source thread from completed history");
@@ -1391,6 +1412,7 @@ async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -1409,6 +1431,7 @@ async fn interrupted_fork_snapshot_preserves_explicit_turn_id() {
             ]),
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("create source thread from explicit partial history");
@@ -1488,6 +1511,7 @@ async fn interrupted_fork_snapshot_uses_persisted_mid_turn_history_without_live_
         state_db.clone(),
         TEST_INSTALLATION_ID.to_string(),
         /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let source = manager
@@ -1499,6 +1523,7 @@ async fn interrupted_fork_snapshot_uses_persisted_mid_turn_history_without_live_
             ]),
             auth_manager,
             /*parent_trace*/ None,
+            /*supports_openai_form_elicitation*/ false,
         )
         .await
         .expect("create source thread from partial history");
