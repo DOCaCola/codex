@@ -102,6 +102,7 @@ fn exec_command_tool_can_hide_shell_parameter() {
         CommandToolOptions {
             allow_login_shell: true,
             exec_permission_approvals_enabled: false,
+            active_shell_name: None,
         },
         /*include_environment_id*/ false,
         /*include_shell_parameter*/ false,
@@ -324,7 +325,7 @@ Examples of valid command strings:
 - PowerShell setting an env var: "$env:FOO='bar'; echo $env:FOO"
 - Bash setting an env var: "export FOO=bar; echo $FOO""#
             .to_string()
-            + &windows_shell_safety_description();
+            + &windows_shell_guidance_description();
 
     assert_eq!(tool.description, description);
 }

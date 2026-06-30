@@ -1079,9 +1079,15 @@ async fn new_uses_active_model_provider_for_model_refresh() {
         &config,
         auth_manager,
         SessionSource::Exec,
-        CollaborationModesConfig::default(),
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+        empty_extension_registry(),
+        Arc::new(crate::test_support::EmptyUserInstructionsProvider),
         /*analytics_events_client*/ None,
+        thread_store_from_config(&config, /*state_db*/ None),
+        /*state_db*/ None,
+        TEST_INSTALLATION_ID.to_string(),
+        /*attestation_provider*/ None,
+        /*external_time_provider*/ None,
     );
 
     let _ = manager.list_models(RefreshStrategy::Online).await;

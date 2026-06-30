@@ -135,8 +135,14 @@ pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
     originator_value == "codex_atlas" || originator_value == "codex_chatgpt_desktop"
 }
 
+fn user_agent_build_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+        .split_once('-')
+        .map_or(env!("CARGO_PKG_VERSION"), |(version, _suffix)| version)
+}
+
 pub fn get_codex_user_agent() -> String {
-    let build_version = env!("CARGO_PKG_VERSION");
+    let build_version = user_agent_build_version();
     let os_info = os_info::get();
     let originator = originator();
     let prefix = format!(

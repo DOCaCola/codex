@@ -32,12 +32,14 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
     let bash_shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
     assert_safe(&bash_shell, "ls -la");
 
     let zsh_shell = Shell {
         shell_type: ShellType::Zsh,
         shell_path: PathBuf::from("/bin/zsh"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
     assert_safe(&zsh_shell, "ls -la");
 
@@ -45,6 +47,7 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
         let powershell = Shell {
             shell_type: ShellType::PowerShell,
             shell_path: path.to_path_buf(),
+            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
         };
         assert_safe(&powershell, "ls -Name");
     }
@@ -53,6 +56,7 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
         let pwsh = Shell {
             shell_type: ShellType::PowerShell,
             shell_path: path.to_path_buf(),
+            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
         };
         assert_safe(&pwsh, "ls -Name");
     }
@@ -125,6 +129,7 @@ fn shell_command_handler_respects_explicit_login_flag() {
     let shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
 
     let login_command = ShellCommandHandler::base_command(
@@ -225,7 +230,7 @@ async fn shell_command_handler_rejects_large_windows_bash_heredoc_writes() {
         &params,
         &session,
         &turn_context,
-        session.conversation_id,
+        session.thread_id,
         /*allow_login_shell*/ true,
     )
     .expect_err("large inline bash writes should be rejected on Windows");
@@ -268,6 +273,57 @@ async fn shell_command_handler_switches_global_shell_when_requested() {
     let updated_shell = session.user_shell();
     assert_eq!(updated_shell.shell_type, ShellType::Bash);
     assert_eq!(updated_shell.shell_path, shell_path);
+
+    let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[tokio::test]
+async fn shell_command_handler_switching_shell_preserves_inherited_env() {
+    let (session, turn_context) = make_session_and_context().await;
+    let temp_dir =
+        std::env::temp_dir().join(format!("codex-shell-env-test-{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+    let shell_path = temp_dir.join(if cfg!(windows) { "bash.exe" } else { "bash" });
+    std::fs::write(&shell_path, "echo").expect("create temporary bash file");
+
+    let base_params = ShellCommandToolCallParams {
+        command: "echo hello".to_string(),
+        shell: None,
+        workdir: None,
+        login: None,
+        timeout_ms: None,
+        sandbox_permissions: None,
+        additional_permissions: None,
+        prefix_rule: None,
+        justification: None,
+    };
+    let original = ShellCommandHandler::to_exec_params(
+        &base_params,
+        &session,
+        &turn_context,
+        session.thread_id,
+        /*allow_login_shell*/ true,
+    )
+    .expect("baseline shell command should produce exec params");
+
+    let switch_params = ShellCommandToolCallParams {
+        shell: Some(shell_path.to_string_lossy().to_string()),
+        ..base_params.clone()
+    };
+    ShellCommandHandler::maybe_update_session_shell(&switch_params, &session)
+        .expect("valid shell override should be applied");
+
+    let switched = ShellCommandHandler::to_exec_params(
+        &base_params,
+        &session,
+        &turn_context,
+        session.thread_id,
+        /*allow_login_shell*/ true,
+    )
+    .expect("switched shell command should produce exec params");
+
+    assert_eq!(original.env, switched.env);
+    assert_eq!(original.env.get("PATH"), switched.env.get("PATH"));
 
     let _ = std::fs::remove_dir_all(temp_dir);
 }

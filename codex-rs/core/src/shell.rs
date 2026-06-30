@@ -30,6 +30,14 @@ impl std::fmt::Debug for Shell {
     }
 }
 
+impl PartialEq for Shell {
+    fn eq(&self, other: &Self) -> bool {
+        self.shell_type == other.shell_type && self.shell_path == other.shell_path
+    }
+}
+
+impl Eq for Shell {}
+
 impl Shell {
     pub fn name(&self) -> &'static str {
         self.shell_type.name()
@@ -101,7 +109,7 @@ impl Shell {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 fn ultimate_fallback_shell() -> Shell {
     codex_shell_command::shell_detect::ultimate_fallback_shell().into()
 }
@@ -118,7 +126,7 @@ pub fn default_user_shell() -> Shell {
     codex_shell_command::shell_detect::default_user_shell().into()
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 fn default_user_shell_from_path(user_shell_path: Option<PathBuf>) -> Shell {
     codex_shell_command::shell_detect::default_user_shell_from_path(user_shell_path).into()
 }

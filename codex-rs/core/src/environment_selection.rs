@@ -450,6 +450,7 @@ url = "ws://127.0.0.1:8765"
         let local_shell = Shell {
             shell_type: crate::shell::ShellType::Zsh,
             shell_path: std::path::PathBuf::from("/configured/zsh"),
+            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
         };
         let turn_environments = ThreadEnvironments::new(
             Arc::new(EnvironmentManager::default_for_tests()),
