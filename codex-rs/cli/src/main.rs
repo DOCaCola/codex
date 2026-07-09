@@ -2006,6 +2006,14 @@ async fn run_debug_models_command(
     cmd: DebugModelsCommand,
     root_config_overrides: CliConfigOverrides,
 ) -> anyhow::Result<()> {
+    let cli_overrides = root_config_overrides
+        .parse_overrides()
+        .map_err(anyhow::Error::msg)?;
+    let config = ConfigBuilder::default()
+        .cli_overrides(cli_overrides)
+        .build()
+        .await?;
+
     if cmd.bundled {
         let catalog = bundled_models_response()?;
         return write_debug_models_output(
@@ -2014,11 +2022,6 @@ async fn run_debug_models_command(
             cmd.json,
         );
     }
-
-    let cli_overrides = root_config_overrides
-        .parse_overrides()
-        .map_err(anyhow::Error::msg)?;
-    let config = Config::load_with_cli_overrides(cli_overrides).await?;
 
     if cmd.remote_json {
         let catalog = fetch_remote_models_catalog(&config).await?;
@@ -2031,7 +2034,10 @@ async fn run_debug_models_command(
         AuthManager::shared_from_config(&config, /*enable_codex_api_key_env*/ true).await;
     let models_manager = build_models_manager(&config, auth_manager);
     let catalog = models_manager
-        .raw_model_catalog(RefreshStrategy::OnlineIfUncached)
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            config.http_client_factory(),
+        )
         .await;
     let source = format!(
         "active (bundled + cache/remote: {})",
@@ -2049,7 +2055,7 @@ async fn fetch_remote_models_catalog(config: &Config) -> anyhow::Result<ModelsRe
         api_auth,
     );
     let (models, _) = client
-        .list_models(&client_version_to_whole(), Default::default())
+        .list_models(client_version_to_whole(), Default::default())
         .await?;
 
     Ok(ModelsResponse { models })
