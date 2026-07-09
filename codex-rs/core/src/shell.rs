@@ -1,6 +1,6 @@
+use crate::shell_snapshot::ShellSnapshot;
 use codex_exec_server::ShellInfo;
 use codex_shell_command::shell_detect::DetectedShell;
-use crate::shell_snapshot::ShellSnapshot;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::PathBuf;
