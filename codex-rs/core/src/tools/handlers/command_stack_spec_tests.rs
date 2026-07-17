@@ -10,9 +10,19 @@ fn command_stack_tool_describes_batching_and_dependency_rules() {
         Some(vec!["cmd".to_string()]),
         Some(false.into()),
     );
-    let ToolSpec::Function(tool) =
-        create_command_stack_tool(exec_arguments, /*include_environment_id*/ false)
-    else {
+    let write_stdin_arguments = JsonSchema::object(
+        BTreeMap::from([(
+            "session_id".to_string(),
+            JsonSchema::number(Some("Session identifier.".to_string())),
+        )]),
+        Some(vec!["session_id".to_string()]),
+        Some(false.into()),
+    );
+    let ToolSpec::Function(tool) = create_command_stack_tool(
+        exec_arguments,
+        write_stdin_arguments,
+        /*include_environment_id*/ false,
+    ) else {
         panic!("expected function tool");
     };
 
@@ -22,10 +32,9 @@ fn command_stack_tool_describes_batching_and_dependency_rules() {
             .contains("complete arguments are already known")
     );
     assert!(tool.description.contains("output you have not seen"));
-    assert!(
-        tool.description
-            .contains("A failed apply_patch stops all later steps")
-    );
+    assert!(tool.description.contains("write_stdin"));
+    assert!(tool.description.contains("continue_on_failure"));
+    assert!(tool.description.contains("failed apply_patch always stops"));
 
     let commands = tool
         .parameters
@@ -56,5 +65,17 @@ fn command_stack_tool_describes_batching_and_dependency_rules() {
             .get("arguments")
             .and_then(|schema| schema.description.as_deref())
             .is_some_and(|description| description.contains("Complete arguments"))
+    );
+    assert!(
+        command_properties
+            .get("arguments")
+            .and_then(|schema| schema.any_of.as_ref())
+            .is_some_and(|variants| variants.len() == 3)
+    );
+    assert!(
+        command_properties
+            .get("continue_on_failure")
+            .and_then(|schema| schema.description.as_deref())
+            .is_some_and(|description| description.contains("Defaults to false"))
     );
 }

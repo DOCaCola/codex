@@ -649,6 +649,11 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut Planne
                 context.step_context,
             ),
         }));
+        planned_tools.add_command_stack_child(WriteStdinHandler);
+
+        // Keep the legacy shell tool registered for replay and dispatch
+        // compatibility while command_stack owns the model-visible surface.
+        planned_tools.add_dispatch_only(ShellCommandHandler::new(shell_command_options));
         return;
     }
 
@@ -801,11 +806,20 @@ fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, planned_tools: &mut
     }
 
     let exec_name = ToolName::plain("exec_command");
+    let write_stdin_name = ToolName::plain("write_stdin");
     let patch_name = ToolName::plain("apply_patch");
     let Some(exec_runtime) = planned_tools
         .command_stack_children
         .iter()
         .find(|runtime| runtime.tool_name() == exec_name)
+        .cloned()
+    else {
+        return;
+    };
+    let Some(write_stdin_runtime) = planned_tools
+        .command_stack_children
+        .iter()
+        .find(|runtime| runtime.tool_name() == write_stdin_name)
         .cloned()
     else {
         return;
@@ -821,15 +835,26 @@ fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, planned_tools: &mut
     let ToolSpec::Function(exec_spec) = exec_runtime.spec() else {
         return;
     };
+    let ToolSpec::Function(write_stdin_spec) = write_stdin_runtime.spec() else {
+        return;
+    };
     let include_environment_id = matches!(
         tool_environment_mode(context.step_context),
         ToolEnvironmentMode::Multiple
     );
-    let child_registry =
-        ToolRegistry::from_tools([Arc::clone(&exec_runtime), Arc::clone(&patch_runtime)]);
+    let child_registry = ToolRegistry::from_tools([
+        Arc::clone(&exec_runtime),
+        Arc::clone(&write_stdin_runtime),
+        Arc::clone(&patch_runtime),
+    ]);
     let child_router = Arc::new(ToolRouter::from_parts(child_registry, Vec::new()));
     planned_tools.add_with_exposure(
-        CommandStackHandler::new(child_router, exec_spec.parameters, include_environment_id),
+        CommandStackHandler::new(
+            child_router,
+            exec_spec.parameters,
+            write_stdin_spec.parameters,
+            include_environment_id,
+        ),
         ToolExposure::DirectModelOnly,
     );
 }

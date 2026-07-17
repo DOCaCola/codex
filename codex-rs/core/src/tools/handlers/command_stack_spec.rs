@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 pub(crate) fn create_command_stack_tool(
     exec_arguments: JsonSchema,
+    write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
 ) -> ToolSpec {
     let mut patch_properties = BTreeMap::from([(
@@ -25,7 +26,11 @@ pub(crate) fn create_command_stack_tool(
         (
             "command_type".to_string(),
             JsonSchema::string_enum(
-                vec![json!("exec_command"), json!("apply_patch")],
+                vec![
+                    json!("exec_command"),
+                    json!("write_stdin"),
+                    json!("apply_patch"),
+                ],
                 Some("Child tool to invoke.".to_string()),
             ),
         ),
@@ -41,6 +46,7 @@ pub(crate) fn create_command_stack_tool(
             JsonSchema::any_of(
                 vec![
                     exec_arguments,
+                    write_stdin_arguments,
                     JsonSchema::object(
                         patch_properties,
                         Some(vec!["patch".to_string()]),
@@ -48,18 +54,25 @@ pub(crate) fn create_command_stack_tool(
                     ),
                 ],
                 Some(
-                    "Complete arguments for the selected child tool. exec_command arguments must match its displayed schema; apply_patch arguments contain the complete patch."
+                    "Complete arguments for the selected child tool. exec_command and write_stdin arguments must match their displayed schemas; apply_patch arguments contain the complete patch."
                         .to_string(),
                 ),
             ),
+        ),
+        (
+            "continue_on_failure".to_string(),
+            JsonSchema::boolean(Some(
+                "For exec_command and write_stdin only, continue to later steps if this command fails. Defaults to false. apply_patch failures always stop execution."
+                    .to_string(),
+            )),
         ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "command_stack".to_string(),
-        description: r#"Runs between 1 and 8 exec_command and apply_patch operations across at most 4 ordered steps.
+        description: r#"Runs between 1 and 8 exec_command, write_stdin, and apply_patch operations across at most 4 ordered steps.
 Include only operations whose complete arguments are already known. Put independent reads, searches, and other exec_command calls in the same step. Use a later step for known work that requires completed edits. If a command or patch must be chosen from output you have not seen, inspect that output first and make another command_stack call.
-Independent exec_command calls in the same step may run concurrently. A step containing apply_patch runs serially. A failed apply_patch stops all later steps.
+Use write_stdin in a later command_stack call after exec_command returns a session id. Independent exec_command and write_stdin calls in the same step may run concurrently. A step containing apply_patch runs serially. A failed command stops later steps by default; continue_on_failure may override this for exec_command and write_stdin. A failed apply_patch always stops execution.
 "#
         .to_string(),
         strict: false,

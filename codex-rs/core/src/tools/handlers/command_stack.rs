@@ -31,6 +31,7 @@ const MAX_STEP: u8 = 4;
 pub(crate) struct CommandStackHandler {
     child_router: Arc<ToolRouter>,
     exec_arguments: JsonSchema,
+    write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
 }
 
@@ -38,11 +39,13 @@ impl CommandStackHandler {
     pub(crate) fn new(
         child_router: Arc<ToolRouter>,
         exec_arguments: JsonSchema,
+        write_stdin_arguments: JsonSchema,
         include_environment_id: bool,
     ) -> Self {
         Self {
             child_router,
             exec_arguments,
+            write_stdin_arguments,
             include_environment_id,
         }
     }
@@ -54,7 +57,11 @@ impl ToolExecutor<ToolInvocation> for CommandStackHandler {
     }
 
     fn spec(&self) -> ToolSpec {
-        create_command_stack_tool(self.exec_arguments.clone(), self.include_environment_id)
+        create_command_stack_tool(
+            self.exec_arguments.clone(),
+            self.write_stdin_arguments.clone(),
+            self.include_environment_id,
+        )
     }
 
     fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
@@ -116,28 +123,34 @@ impl CommandStackHandler {
             let contains_patch = commands
                 .iter()
                 .any(|(_, command)| command.command_type == CommandType::ApplyPatch);
-            let step_results = if contains_patch {
-                let mut step_results = Vec::with_capacity(commands.len());
+            let step_executions = if contains_patch {
+                let mut step_executions = Vec::with_capacity(commands.len());
                 for (index, command) in commands {
-                    let result = self
+                    let execution = self
                         .execute_command(&invocation, tool_runtime.clone(), index, command)
                         .await;
-                    let patch_failed =
-                        result.command_type == CommandType::ApplyPatch && !result.success;
-                    step_results.push(result);
-                    if patch_failed {
-                        stopped = true;
+                    let stop_current_step = execution.stop_current_step;
+                    step_executions.push(execution);
+                    if stop_current_step {
                         break;
                     }
                 }
-                step_results
+                step_executions
             } else {
                 join_all(commands.into_iter().map(|(index, command)| {
                     self.execute_command(&invocation, tool_runtime.clone(), index, command)
                 }))
                 .await
             };
-            results.extend(step_results);
+            let step_blocks_later = step_executions
+                .iter()
+                .any(|execution| execution.blocks_later_steps);
+            results.extend(
+                step_executions
+                    .into_iter()
+                    .map(|execution| execution.result),
+            );
+            stopped = step_blocks_later;
             if stopped {
                 break;
             }
@@ -161,33 +174,40 @@ impl CommandStackHandler {
         tool_runtime: ToolCallRuntime,
         index: usize,
         command: CommandItem,
-    ) -> CommandResult {
+    ) -> CommandExecution {
         let command_type = command.command_type;
         let step = command.step;
+        let continue_on_failure = command.continue_on_failure;
         let child = match build_child_call(&parent.call_id, index, command) {
             Ok(child) => child,
             Err(error) => {
-                return CommandResult {
-                    index,
-                    step,
-                    command_type,
-                    success: false,
-                    output: error.to_string(),
-                };
+                return CommandExecution::from_result(
+                    CommandResult {
+                        index,
+                        step,
+                        command_type,
+                        success: false,
+                        output: error.to_string(),
+                    },
+                    continue_on_failure,
+                );
             }
         };
 
-        normalize_child_result(
-            index,
-            step,
-            command_type,
-            tool_runtime
-                .handle_tool_call_with_source(
-                    child,
-                    parent.source.clone(),
-                    parent.cancellation_token.clone(),
-                )
-                .await,
+        CommandExecution::from_result(
+            normalize_child_result(
+                index,
+                step,
+                command_type,
+                tool_runtime
+                    .handle_tool_call_with_source(
+                        child,
+                        parent.source.clone(),
+                        parent.cancellation_token.clone(),
+                    )
+                    .await,
+            ),
+            continue_on_failure,
         )
     }
 }
@@ -202,12 +222,15 @@ struct CommandItem {
     command_type: CommandType,
     step: u8,
     arguments: Value,
+    #[serde(default)]
+    continue_on_failure: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum CommandType {
     ExecCommand,
+    WriteStdin,
     ApplyPatch,
 }
 
@@ -226,6 +249,24 @@ struct CommandResult {
     output: String,
 }
 
+struct CommandExecution {
+    result: CommandResult,
+    blocks_later_steps: bool,
+    stop_current_step: bool,
+}
+
+impl CommandExecution {
+    fn from_result(result: CommandResult, continue_on_failure: bool) -> Self {
+        let failed = !result.success;
+        let patch_failed = failed && result.command_type == CommandType::ApplyPatch;
+        Self {
+            blocks_later_steps: failed && (patch_failed || !continue_on_failure),
+            stop_current_step: patch_failed,
+            result,
+        }
+    }
+}
+
 fn validate_commands(commands: &[CommandItem]) -> Result<(), FunctionCallError> {
     if commands.is_empty() || commands.len() > MAX_COMMANDS {
         return Err(FunctionCallError::RespondToModel(format!(
@@ -240,6 +281,13 @@ fn validate_commands(commands: &[CommandItem]) -> Result<(), FunctionCallError> 
             "command_stack step {} is outside the supported range 1..={MAX_STEP}",
             command.step
         )));
+    }
+    if commands.iter().any(|command| {
+        command.command_type == CommandType::ApplyPatch && command.continue_on_failure
+    }) {
+        return Err(FunctionCallError::RespondToModel(
+            "apply_patch does not support continue_on_failure".to_string(),
+        ));
     }
     Ok(())
 }
@@ -263,6 +311,22 @@ fn build_child_call(
             })?;
             (
                 ToolName::plain("exec_command"),
+                ToolPayload::Function { arguments },
+            )
+        }
+        CommandType::WriteStdin => {
+            if !command.arguments.is_object() {
+                return Err(FunctionCallError::RespondToModel(
+                    "write_stdin arguments must be an object".to_string(),
+                ));
+            }
+            let arguments = serde_json::to_string(&command.arguments).map_err(|err| {
+                FunctionCallError::RespondToModel(format!(
+                    "failed to serialize write_stdin arguments: {err}"
+                ))
+            })?;
+            (
+                ToolName::plain("write_stdin"),
                 ToolPayload::Function { arguments },
             )
         }
@@ -386,6 +450,18 @@ mod tests {
                 command_type: CommandType::ExecCommand,
                 step: 5,
                 arguments: serde_json::json!({"cmd": "echo ok"}),
+                continue_on_failure: false,
+            }])
+            .is_err()
+        );
+        assert!(
+            validate_commands(&[CommandItem {
+                command_type: CommandType::ApplyPatch,
+                step: 1,
+                arguments: serde_json::json!({
+                    "patch": "*** Begin Patch\n*** End Patch\n"
+                }),
+                continue_on_failure: true,
             }])
             .is_err()
         );
@@ -409,6 +485,7 @@ mod tests {
                 command_type: CommandType::ExecCommand,
                 step: 3,
                 arguments: serde_json::json!({"cmd": "echo ok"}),
+                continue_on_failure: false,
             },
         )
         .unwrap();
@@ -417,27 +494,29 @@ mod tests {
         assert_eq!(child.tool_name, ToolName::plain("exec_command"));
     }
 
+    #[test]
+    fn write_stdin_routes_to_the_continuation_child() {
+        let child = build_child_call(
+            "call-command-stack",
+            0,
+            CommandItem {
+                command_type: CommandType::WriteStdin,
+                step: 1,
+                arguments: serde_json::json!({"session_id": 42, "chars": "q"}),
+                continue_on_failure: false,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(child.call_id, "call-command-stack:1:0");
+        assert_eq!(child.tool_name, ToolName::plain("write_stdin"));
+        assert!(matches!(child.payload, ToolPayload::Function { .. }));
+    }
+
     #[tokio::test]
     async fn failed_patch_stops_later_steps() {
         let calls = Arc::new(Mutex::new(Vec::new()));
-        let child_registry = ToolRegistry::from_tools([
-            Arc::new(RecordingHandler::new(
-                "exec_command",
-                Arc::clone(&calls),
-                false,
-            )) as Arc<dyn CoreToolRuntime>,
-            Arc::new(RecordingHandler::new(
-                "apply_patch",
-                Arc::clone(&calls),
-                true,
-            )) as Arc<dyn CoreToolRuntime>,
-        ]);
-        let child_router = Arc::new(ToolRouter::from_parts(child_registry, Vec::new()));
-        let handler = CommandStackHandler::new(
-            child_router,
-            JsonSchema::object(Default::default(), None, Some(true.into())),
-            false,
-        );
+        let handler = recording_stack_handler(Arc::clone(&calls), false, false, true);
         let invocation = invocation_for_commands(serde_json::json!({
             "commands": [
                 {
@@ -462,6 +541,110 @@ mod tests {
 
         assert!(!output.success_for_logging());
         assert_eq!(calls.lock().await.as_slice(), ["apply_patch"]);
+    }
+
+    #[tokio::test]
+    async fn failed_exec_stops_later_steps_by_default() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let handler = recording_stack_handler(Arc::clone(&calls), true, false, false);
+        let invocation = invocation_for_commands(serde_json::json!({
+            "commands": [
+                {
+                    "command_type": "exec_command",
+                    "step": 1,
+                    "arguments": {"cmd": "false"}
+                },
+                {
+                    "command_type": "apply_patch",
+                    "step": 2,
+                    "arguments": {
+                        "patch": "*** Begin Patch\n*** End Patch\n"
+                    }
+                }
+            ]
+        }))
+        .await;
+
+        let output = handler.handle_call(invocation).await.unwrap();
+
+        assert!(!output.success_for_logging());
+        assert_eq!(calls.lock().await.as_slice(), ["exec_command"]);
+    }
+
+    #[tokio::test]
+    async fn continue_on_failure_allows_later_steps_for_exec() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let handler = recording_stack_handler(Arc::clone(&calls), true, false, false);
+        let invocation = invocation_for_commands(serde_json::json!({
+            "commands": [
+                {
+                    "command_type": "exec_command",
+                    "step": 1,
+                    "arguments": {"cmd": "false"},
+                    "continue_on_failure": true
+                },
+                {
+                    "command_type": "apply_patch",
+                    "step": 2,
+                    "arguments": {
+                        "patch": "*** Begin Patch\n*** End Patch\n"
+                    }
+                }
+            ]
+        }))
+        .await;
+
+        let output = handler.handle_call(invocation).await.unwrap();
+
+        assert!(!output.success_for_logging());
+        assert_eq!(
+            calls.lock().await.as_slice(),
+            ["exec_command", "apply_patch"]
+        );
+    }
+
+    #[tokio::test]
+    async fn write_stdin_executes_through_the_child_router() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let handler = recording_stack_handler(Arc::clone(&calls), false, false, false);
+        let invocation = invocation_for_commands(serde_json::json!({
+            "commands": [{
+                "command_type": "write_stdin",
+                "step": 1,
+                "arguments": {"session_id": 42, "chars": "q"}
+            }]
+        }))
+        .await;
+
+        let output = handler.handle_call(invocation).await.unwrap();
+
+        assert!(output.success_for_logging());
+        assert_eq!(calls.lock().await.as_slice(), ["write_stdin"]);
+    }
+
+    fn recording_stack_handler(
+        calls: Arc<Mutex<Vec<String>>>,
+        exec_fails: bool,
+        write_stdin_fails: bool,
+        patch_fails: bool,
+    ) -> CommandStackHandler {
+        let child_registry = ToolRegistry::from_tools([
+            Arc::new(RecordingHandler::new(
+                "exec_command",
+                Arc::clone(&calls),
+                exec_fails,
+            )) as Arc<dyn CoreToolRuntime>,
+            Arc::new(RecordingHandler::new(
+                "write_stdin",
+                Arc::clone(&calls),
+                write_stdin_fails,
+            )) as Arc<dyn CoreToolRuntime>,
+            Arc::new(RecordingHandler::new("apply_patch", calls, patch_fails))
+                as Arc<dyn CoreToolRuntime>,
+        ]);
+        let child_router = Arc::new(ToolRouter::from_parts(child_registry, Vec::new()));
+        let arguments = JsonSchema::object(Default::default(), None, Some(true.into()));
+        CommandStackHandler::new(child_router, arguments.clone(), arguments, false)
     }
 
     struct RecordingHandler {
@@ -495,12 +678,13 @@ mod tests {
         fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
             let calls = Arc::clone(&self.calls);
             let fail = self.fail;
+            let name = self.name;
             Box::pin(async move {
                 calls.lock().await.push(invocation.tool_name.to_string());
                 if fail {
-                    return Err(FunctionCallError::RespondToModel(
-                        "synthetic patch failure".to_string(),
-                    ));
+                    return Err(FunctionCallError::RespondToModel(format!(
+                        "synthetic {name} failure"
+                    )));
                 }
                 Ok(boxed_tool_output(FunctionToolOutput::from_text(
                     "ok".to_string(),

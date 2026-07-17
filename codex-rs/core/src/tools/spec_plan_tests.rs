@@ -513,13 +513,21 @@ async fn command_stack_hides_child_tools_and_stays_visible_in_code_mode_only() {
         codex_code_mode::WAIT_TOOL_NAME,
     ]);
     plan.assert_visible_lacks(&["exec_command", "apply_patch", "write_stdin"]);
-    plan.assert_registered_contains(&["command_stack", "exec_command", "apply_patch"]);
+    plan.assert_registered_contains(&[
+        "command_stack",
+        "exec_command",
+        "write_stdin",
+        "apply_patch",
+        "shell_command",
+    ]);
     assert_eq!(
         plan.exposure("command_stack"),
         ToolExposure::DirectModelOnly
     );
     assert_eq!(plan.exposure("exec_command"), ToolExposure::Hidden);
+    assert_eq!(plan.exposure("write_stdin"), ToolExposure::Hidden);
     assert_eq!(plan.exposure("apply_patch"), ToolExposure::Hidden);
+    assert_eq!(plan.exposure("shell_command"), ToolExposure::Hidden);
 }
 
 #[tokio::test]
