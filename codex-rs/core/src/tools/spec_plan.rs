@@ -8,6 +8,7 @@ use crate::tools::effective_tool_mode;
 use crate::tools::handlers::ApplyPatchHandler;
 use crate::tools::handlers::CodeModeExecuteHandler;
 use crate::tools::handlers::CodeModeWaitHandler;
+use crate::tools::handlers::CommandStackHandler;
 use crate::tools::handlers::CurrentTimeHandler;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
@@ -104,6 +105,7 @@ type PlannedRuntime = Arc<dyn CoreToolRuntime>;
 struct PlannedTools {
     runtimes: Vec<PlannedRuntime>,
     hosted_specs: Vec<ToolSpec>,
+    command_stack_children: Vec<PlannedRuntime>,
 }
 
 impl PlannedTools {
@@ -131,6 +133,16 @@ impl PlannedTools {
         T: CoreToolRuntime + 'static,
     {
         self.add_with_exposure(handler, ToolExposure::Hidden);
+    }
+
+    fn add_command_stack_child<T>(&mut self, handler: T)
+    where
+        T: CoreToolRuntime + 'static,
+    {
+        let runtime: PlannedRuntime = Arc::new(handler);
+        self.command_stack_children.push(Arc::clone(&runtime));
+        self.runtimes
+            .push(override_tool_exposure(runtime, ToolExposure::Hidden));
     }
 
     fn add_hosted_spec(&mut self, spec: ToolSpec) {
@@ -238,6 +250,7 @@ fn build_model_visible_specs_and_registry(
     let PlannedTools {
         runtimes,
         hosted_specs,
+        command_stack_children: _,
     } = planned_tools;
     let mut specs = Vec::new();
     let mut seen_tool_names = HashSet::new();
@@ -584,6 +597,7 @@ fn add_tool_sources(context: &CoreToolPlanContext<'_>, planned_tools: &mut Plann
     add_shell_tools(context, planned_tools);
     add_mcp_resource_tools(context, planned_tools);
     add_core_utility_tools(context, planned_tools);
+    add_command_stack_tool(context, planned_tools);
     add_collaboration_tools(context, planned_tools);
     add_mcp_runtime_tools(context, planned_tools);
     add_extension_tools(context, planned_tools);
@@ -624,6 +638,19 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut Planne
         allow_login_shell,
         exec_permission_approvals_enabled,
     };
+
+    if features.enabled(Feature::CommandStack) {
+        planned_tools.add_command_stack_child(ExecCommandHandler::new(ExecCommandHandlerOptions {
+            allow_login_shell,
+            exec_permission_approvals_enabled,
+            include_environment_id,
+            include_shell_parameter: unified_exec_should_include_shell_parameter(
+                turn_context,
+                context.step_context,
+            ),
+        }));
+        return;
+    }
 
     match shell_type_for_model_and_features(&turn_context.model_info, features) {
         ConfigShellToolType::UnifiedExec => {
@@ -732,7 +759,11 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
         ));
     }
 
-    if environment_mode.has_environment() && turn_context.model_info.apply_patch_tool_type.is_some()
+    if environment_mode.has_environment() && features.enabled(Feature::CommandStack) {
+        let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
+        planned_tools.add_command_stack_child(ApplyPatchHandler::new(include_environment_id));
+    } else if environment_mode.has_environment()
+        && turn_context.model_info.apply_patch_tool_type.is_some()
     {
         let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
         planned_tools.add(ApplyPatchHandler::new(include_environment_id));
@@ -756,6 +787,51 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
             include_environment_id,
         }));
     }
+}
+
+fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, planned_tools: &mut PlannedTools) {
+    let turn_context = context.step_context.turn.as_ref();
+    if !turn_context
+        .config
+        .features
+        .get()
+        .enabled(Feature::CommandStack)
+    {
+        return;
+    }
+
+    let exec_name = ToolName::plain("exec_command");
+    let patch_name = ToolName::plain("apply_patch");
+    let Some(exec_runtime) = planned_tools
+        .command_stack_children
+        .iter()
+        .find(|runtime| runtime.tool_name() == exec_name)
+        .cloned()
+    else {
+        return;
+    };
+    let Some(patch_runtime) = planned_tools
+        .command_stack_children
+        .iter()
+        .find(|runtime| runtime.tool_name() == patch_name)
+        .cloned()
+    else {
+        return;
+    };
+    let ToolSpec::Function(exec_spec) = exec_runtime.spec() else {
+        return;
+    };
+    let include_environment_id = matches!(
+        tool_environment_mode(context.step_context),
+        ToolEnvironmentMode::Multiple
+    );
+    let child_registry =
+        ToolRegistry::from_tools([Arc::clone(&exec_runtime), Arc::clone(&patch_runtime)]);
+    let child_router = Arc::new(ToolRouter::from_parts(child_registry, Vec::new()));
+    planned_tools.add_with_exposure(
+        CommandStackHandler::new(child_router, exec_spec.parameters, include_environment_id),
+        ToolExposure::DirectModelOnly,
+    );
 }
 
 #[instrument(level = "trace", skip_all)]

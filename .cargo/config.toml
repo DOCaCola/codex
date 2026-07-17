@@ -1,0 +1,4 @@
+[build]
+# Keep Cargo build artifacts on C: even when commands are launched from the
+# repository root with `--manifest-path codex-rs/Cargo.toml`.
+target-dir = "C:\\temp\\codex-target-0.117"

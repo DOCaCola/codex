@@ -493,6 +493,36 @@ async fn shell_family_registers_visible_unified_exec_and_hidden_legacy_shell() {
 }
 
 #[tokio::test]
+async fn command_stack_hides_child_tools_and_stays_visible_in_code_mode_only() {
+    let plan = probe(|turn| {
+        set_features(
+            turn,
+            &[
+                Feature::CommandStack,
+                Feature::CodeMode,
+                Feature::CodeModeOnly,
+            ],
+        );
+        turn.model_info.apply_patch_tool_type = None;
+    })
+    .await;
+
+    plan.assert_visible_contains(&[
+        "command_stack",
+        codex_code_mode::PUBLIC_TOOL_NAME,
+        codex_code_mode::WAIT_TOOL_NAME,
+    ]);
+    plan.assert_visible_lacks(&["exec_command", "apply_patch", "write_stdin"]);
+    plan.assert_registered_contains(&["command_stack", "exec_command", "apply_patch"]);
+    assert_eq!(
+        plan.exposure("command_stack"),
+        ToolExposure::DirectModelOnly
+    );
+    assert_eq!(plan.exposure("exec_command"), ToolExposure::Hidden);
+    assert_eq!(plan.exposure("apply_patch"), ToolExposure::Hidden);
+}
+
+#[tokio::test]
 async fn shell_zsh_fork_stays_standalone_until_unified_exec_composition_is_enabled() {
     let standalone = probe(|turn| {
         set_features(turn, &[Feature::ShellTool, Feature::UnifiedExec]);

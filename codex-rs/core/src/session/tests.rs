@@ -8471,6 +8471,50 @@ async fn build_initial_context_omits_prompt_fragments_without_extension_state() 
 }
 
 #[tokio::test]
+async fn build_initial_context_adds_command_stack_instructions_when_feature_enabled() {
+    let (session, turn_context, _rx_event) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            let _ = config.features.enable(Feature::CommandStack);
+        },
+    )
+    .await;
+
+    let initial_context = build_initial_context(&session, &turn_context).await;
+    let developer_texts = developer_input_texts(&initial_context);
+
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<command_stack_instructions>")),
+        "expected command stack developer instructions, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn build_initial_context_omits_command_stack_instructions_when_feature_disabled() {
+    let (session, turn_context, _rx_event) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            let _ = config.features.disable(Feature::CommandStack);
+        },
+    )
+    .await;
+
+    let initial_context = build_initial_context(&session, &turn_context).await;
+    let developer_texts = developer_input_texts(&initial_context);
+
+    assert!(
+        !developer_texts
+            .iter()
+            .any(|text| text.contains("<command_stack_instructions>")),
+        "did not expect command stack developer instructions, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
 async fn build_initial_context_adds_multi_agent_v2_root_usage_hint_as_developer_message() {
     let (session, turn_context) =
         make_multi_agent_v2_usage_hint_test_session(/*enable_multi_agent_v2*/ true).await;

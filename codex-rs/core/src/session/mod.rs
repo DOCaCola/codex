@@ -25,6 +25,7 @@ use crate::context::ApprovalPromptContext;
 use crate::context::ApprovedCommandPrefixSaved;
 use crate::context::AvailableSkillsInstructions;
 use crate::context::CollaborationModeInstructions;
+use crate::context::CommandStackInstructions;
 use crate::context::ContextualUserFragment;
 use crate::context::MultiAgentModeInstructions;
 use crate::context::NetworkRuleSaved;
@@ -3273,6 +3274,9 @@ impl Session {
                 CollaborationModeInstructions::from_collaboration_mode(&collaboration_mode)
         {
             developer_sections.push(collab_instructions.render());
+        }
+        if turn_context.config.features.enabled(Feature::CommandStack) {
+            developer_sections.push(CommandStackInstructions.render());
         }
         if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
             reference_context_item.as_ref(),

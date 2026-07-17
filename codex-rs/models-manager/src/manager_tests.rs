@@ -12,6 +12,7 @@ use codex_login::ExternalAuthRefreshContext;
 use codex_login::TokenData;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_protocol::openai_models::ToolMode;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::VecDeque;
@@ -400,6 +401,22 @@ async fn get_model_info_uses_custom_catalog() {
     assert!(model_info.supports_image_detail_original);
     assert!(!model_info.supports_parallel_tool_calls);
     assert!(!model_info.used_fallback_model_metadata);
+}
+
+#[tokio::test]
+async fn get_model_info_normalizes_gpt_56_tool_metadata() {
+    let config = ModelsManagerConfig::default();
+    let mut remote = remote_model("gpt-5.6-sol", "GPT 5.6 Sol", /*priority*/ 0);
+    remote.tool_mode = Some(ToolMode::CodeModeOnly);
+    remote.use_responses_lite = true;
+    let manager = static_manager_for_tests(ModelsResponse {
+        models: vec![remote],
+    });
+
+    let model_info = manager.get_model_info("gpt-5.6-sol", &config).await;
+
+    assert_eq!(model_info.tool_mode, None);
+    assert!(!model_info.use_responses_lite);
 }
 
 #[tokio::test]

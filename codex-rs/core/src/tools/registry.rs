@@ -165,6 +165,10 @@ pub(crate) struct AnyToolResult {
 }
 
 impl AnyToolResult {
+    pub(crate) fn success_for_logging(&self) -> bool {
+        self.result.success_for_logging()
+    }
+
     pub(crate) fn into_response(self) -> ResponseInputItem {
         let Self {
             call_id,
