@@ -1494,6 +1494,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
                 enabled: true,
                 required: false,
                 supports_parallel_tool_calls: false,
+                surface_notifications: false,
                 disabled_reason: None,
                 startup_timeout_sec: None,
                 tool_timeout_sec: None,
@@ -1520,6 +1521,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
                 enabled: true,
                 required: false,
                 supports_parallel_tool_calls: false,
+                surface_notifications: false,
                 disabled_reason: None,
                 startup_timeout_sec: None,
                 tool_timeout_sec: None,
@@ -1565,6 +1567,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
         /*elicitation_reviewer*/ None,
         /*elicitation_lifecycle*/ None,
         ElicitationRequestRouter::default(),
+        crate::ignore_mcp_server_notifications(),
     )
     .await;
 
@@ -1632,6 +1635,7 @@ fn mcp_init_error_display_prompts_for_github_pat() {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
@@ -1730,6 +1734,7 @@ fn mcp_init_error_display_reports_generic_errors() {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

@@ -132,6 +132,7 @@ mod tests {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

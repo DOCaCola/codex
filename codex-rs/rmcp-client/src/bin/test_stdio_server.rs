@@ -19,6 +19,8 @@ use rmcp::model::JsonObject;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::ListToolsResult;
+use rmcp::model::LoggingLevel;
+use rmcp::model::LoggingMessageNotificationParam;
 use rmcp::model::Meta;
 use rmcp::model::PaginatedRequestParams;
 use rmcp::model::RawResource;
@@ -841,6 +843,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // bubble up the error so the process exits.
     let service = TestToolServer::new();
     let running = service.serve(stdio()).await?;
+
+    if let Ok(notification_data) = std::env::var("MCP_TEST_LOGGING_NOTIFICATION") {
+        #[allow(deprecated)]
+        running
+            .peer()
+            .notify_logging_message(
+                LoggingMessageNotificationParam::new(
+                    LoggingLevel::Info,
+                    serde_json::from_str(&notification_data)?,
+                )
+                .with_logger("codex.test"),
+            )
+            .await?;
+    }
 
     // Wait for the client to finish interacting with the server.
     running.waiting().await?;

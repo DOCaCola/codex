@@ -25,6 +25,7 @@ fn deserialize_stdio_command_server_config() {
     );
     assert!(cfg.enabled);
     assert!(!cfg.required);
+    assert!(!cfg.surface_notifications);
     assert!(cfg.enabled_tools.is_none());
     assert!(cfg.disabled_tools.is_none());
 }
@@ -363,6 +364,22 @@ fn deserialize_server_config_with_parallel_tool_calls() {
 }
 
 #[test]
+fn deserialize_server_config_with_surface_notifications() {
+    let cfg: McpServerConfig = toml::from_str(
+        r#"
+            command = "echo"
+            surface_notifications = true
+        "#,
+    )
+    .expect("should deserialize surface_notifications");
+
+    assert!(cfg.surface_notifications);
+
+    let serialized = toml::to_string(&cfg).expect("should serialize MCP config");
+    assert!(serialized.contains("surface_notifications = true"));
+}
+
+#[test]
 fn deserialize_server_config_with_default_tool_approval_mode() {
     let cfg: McpServerConfig = toml::from_str(
         r#"
@@ -438,6 +455,7 @@ fn deserialize_ignores_unknown_server_fields() {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

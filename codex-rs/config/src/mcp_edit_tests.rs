@@ -28,6 +28,7 @@ async fn replace_mcp_servers_serializes_per_tool_approval_overrides() -> anyhow:
             enabled: true,
             required: false,
             supports_parallel_tool_calls: true,
+            surface_notifications: true,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
@@ -66,6 +67,7 @@ async fn replace_mcp_servers_serializes_per_tool_approval_overrides() -> anyhow:
         r#"[mcp_servers.docs]
 command = "docs-server"
 supports_parallel_tool_calls = true
+surface_notifications = true
 default_tools_approval_mode = "auto"
 
 [mcp_servers.docs.tools]
@@ -107,6 +109,7 @@ async fn replace_mcp_servers_serializes_oauth_client_id() -> anyhow::Result<()> 
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

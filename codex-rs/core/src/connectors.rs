@@ -276,6 +276,7 @@ pub async fn list_accessible_connectors_from_mcp_tools_with_mcp_manager(
         /*elicitation_reviewer*/ None,
         /*elicitation_lifecycle*/ None,
         codex_mcp::ElicitationRequestRouter::default(),
+        codex_mcp::ignore_mcp_server_notifications(),
     )
     .await;
 

@@ -177,6 +177,11 @@ pub struct McpServerConfig {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supports_parallel_tool_calls: bool,
 
+    /// When `true`, selected standard inbound notifications from this server may be surfaced to
+    /// the active Codex session as externally attributed model-visible context.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub surface_notifications: bool,
+
     /// Reason this server was disabled after applying requirements.
     #[serde(skip)]
     pub disabled_reason: Option<McpServerDisabledReason>,
@@ -285,6 +290,8 @@ pub struct RawMcpServerConfig {
     #[serde(default)]
     pub supports_parallel_tool_calls: Option<bool>,
     #[serde(default)]
+    pub surface_notifications: Option<bool>,
+    #[serde(default)]
     pub default_tools_approval_mode: Option<AppToolApproval>,
     #[serde(default)]
     pub enabled_tools: Option<Vec<String>>,
@@ -326,6 +333,7 @@ impl TryFrom<RawMcpServerConfig> for McpServerConfig {
             enabled,
             required,
             supports_parallel_tool_calls,
+            surface_notifications,
             default_tools_approval_mode,
             enabled_tools,
             disabled_tools,
@@ -403,6 +411,7 @@ impl TryFrom<RawMcpServerConfig> for McpServerConfig {
             enabled: enabled.unwrap_or_else(default_enabled),
             required: required.unwrap_or_default(),
             supports_parallel_tool_calls: supports_parallel_tool_calls.unwrap_or_default(),
+            surface_notifications: surface_notifications.unwrap_or_default(),
             disabled_reason: None,
             default_tools_approval_mode,
             enabled_tools,

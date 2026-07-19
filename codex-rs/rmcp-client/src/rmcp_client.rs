@@ -304,6 +304,20 @@ pub type SendElicitation = Box<
     dyn Fn(RequestId, Elicitation) -> BoxFuture<'static, Result<ElicitationResponse>> + Send + Sync,
 >;
 
+/// Standard inbound MCP notification selected for delivery to a Codex session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceNotification {
+    pub method: String,
+    pub source: Option<String>,
+    pub message_id: Option<String>,
+    pub payload: serde_json::Value,
+}
+
+/// Interface for forwarding selected MCP notifications to the owning session.
+pub type SendNotification =
+    Box<dyn Fn(SurfaceNotification) -> BoxFuture<'static, Result<()>> + Send + Sync>;
+
 pub struct ToolWithConnectorId {
     pub tool: Tool,
     pub connector_id: Option<String>,
@@ -426,10 +440,12 @@ impl RmcpClient {
         params: InitializeRequestParams,
         timeout: Option<Duration>,
         send_elicitation: SendElicitation,
+        send_notification: Option<SendNotification>,
     ) -> Result<InitializeResult> {
         let client_service = ElicitationClientService::new(
             params.clone(),
             send_elicitation,
+            send_notification,
             self.elicitation_pause_state.clone(),
         );
         let pending_transport = {

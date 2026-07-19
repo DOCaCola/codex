@@ -33,6 +33,7 @@ In the codex-rs folder where the rust code lives:
 - Prefer private modules and explicitly exported public crate API.
 - If you change `ConfigToml` or nested config types, run `just write-config-schema` to update `codex-rs/core/config.schema.json`.
 - When working with MCP tool calls, prefer using `codex-rs/codex-mcp/src/mcp_connection_manager.rs` to handle mutation of tools and tool calls. Aim to minimize the footprint of changes and leverage existing abstractions rather than plumbing code through multiple levels of function calls.
+- This fork carries a local opt-in path that surfaces standard inbound MCP notifications to Codex sessions. When merging or rebasing from upstream, check whether upstream provides an official MCP notification/session-ingress surface. If it does, remove this local patch and use the upstream implementation instead of maintaining parallel or fallback notification systems.
 - Do not call `reset_client_session` unnecessarily; let the incremental check logic decide whether to reuse the previous request.
 - If you change Rust dependencies (`Cargo.toml` or `Cargo.lock`), run `just bazel-lock-update` from the
   repo root to refresh `MODULE.bazel.lock`, and include that lockfile update in the same change. CI

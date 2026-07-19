@@ -5589,6 +5589,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         features: config.features.clone(),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
+        mcp_notification_state: Mutex::new(Default::default()),
+        mcp_notification_sender: OnceLock::new(),
         conversation: Arc::new(RealtimeConversationManager::new()),
         active_turn: Mutex::new(None),
         input_queue: super::input_queue::InputQueue::new(),
@@ -7720,6 +7722,8 @@ where
         features: config.features.clone(),
         multi_agent_version: OnceLock::from(config.multi_agent_version_from_features()),
         pending_mcp_server_refresh_config: Mutex::new(None),
+        mcp_notification_state: Mutex::new(Default::default()),
+        mcp_notification_sender: OnceLock::new(),
         conversation: Arc::new(RealtimeConversationManager::new()),
         active_turn: Mutex::new(None),
         input_queue: super::input_queue::InputQueue::new(),
@@ -7727,6 +7731,13 @@ where
         services,
         next_internal_sub_id: AtomicU64::new(0),
     });
+    assert!(
+        session
+            .mcp_notification_sender
+            .set(session.new_mcp_server_notification_sender())
+            .is_ok(),
+        "MCP notification sender should be initialized once"
+    );
 
     (session, turn_context, rx_event)
 }
@@ -7931,6 +7942,7 @@ async fn built_tools_uses_the_step_mcp_runtime() -> anyhow::Result<()> {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

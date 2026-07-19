@@ -342,6 +342,7 @@ pub async fn read_mcp_resource(
         /*elicitation_reviewer*/ None,
         /*elicitation_lifecycle*/ None,
         crate::elicitation::ElicitationRequestRouter::default(),
+        crate::ignore_mcp_server_notifications(),
     )
     .await;
 
@@ -421,6 +422,7 @@ pub async fn collect_mcp_server_status_snapshot_with_detail(
         /*elicitation_reviewer*/ None,
         /*elicitation_lifecycle*/ None,
         crate::elicitation::ElicitationRequestRouter::default(),
+        crate::ignore_mcp_server_notifications(),
     )
     .await;
 
@@ -539,6 +541,7 @@ fn mcp_server_config_for_url(
         enabled: true,
         required: false,
         supports_parallel_tool_calls: false,
+        surface_notifications: false,
         disabled_reason: None,
         startup_timeout_sec: Some(Duration::from_secs(30)),
         tool_timeout_sec: None,

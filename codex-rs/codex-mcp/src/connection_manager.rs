@@ -27,6 +27,7 @@ use crate::rmcp_client::CODEX_APPS_REFRESH_DURATION_METRIC;
 use crate::rmcp_client::DEFAULT_STARTUP_TIMEOUT;
 use crate::rmcp_client::MCP_TOOLS_LIST_DURATION_METRIC;
 use crate::rmcp_client::ManagedClient;
+use crate::rmcp_client::SendMcpServerNotification;
 use crate::rmcp_client::StartupOutcomeError;
 use crate::rmcp_client::list_tools_for_client_uncached;
 use crate::runtime::McpRuntimeContext;
@@ -146,6 +147,7 @@ impl McpConnectionManager {
         elicitation_reviewer: Option<ElicitationReviewerHandle>,
         elicitation_lifecycle: Option<crate::ElicitationLifecycle>,
         elicitation_router: ElicitationRequestRouter,
+        mcp_server_notification_sender: SendMcpServerNotification,
     ) -> Self {
         let mut required_servers = mcp_servers
             .iter()
@@ -241,6 +243,7 @@ impl McpConnectionManager {
                 runtime_auth_provider,
                 client_elicitation_capability.clone(),
                 supports_openai_form_elicitation,
+                Arc::clone(&mcp_server_notification_sender),
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();

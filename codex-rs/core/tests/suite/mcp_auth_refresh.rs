@@ -110,6 +110,7 @@ async fn hosted_plugin_runtime_ps_mcp_tool_calls_use_current_auth_manager_token(
         /*elicitation_reviewer*/ None,
         /*elicitation_lifecycle*/ None,
         ElicitationRequestRouter::default(),
+        codex_mcp::ignore_mcp_server_notifications(),
     )
     .await;
     // The model-provider test covers AuthManager reload behavior. Keep this

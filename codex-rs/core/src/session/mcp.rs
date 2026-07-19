@@ -389,6 +389,7 @@ impl Session {
             elicitation_reviewer,
             Some(self.mcp_elicitation_lifecycle()),
             current_runtime.manager().elicitation_router(),
+            self.mcp_server_notification_sender(),
         )
         .await;
         refreshed_manager

@@ -56,6 +56,7 @@ use codex_rmcp_client::ExecutorStdioServerLauncher;
 use codex_rmcp_client::LocalStdioServerLauncher;
 use codex_rmcp_client::RmcpClient;
 use codex_rmcp_client::StdioServerLauncher;
+use codex_rmcp_client::SurfaceNotification;
 use codex_rmcp_client::ToolWithConnectorId;
 use codex_rmcp_client::is_authentication_required_error;
 use futures::future::BoxFuture;
@@ -96,6 +97,19 @@ const UNTRUSTED_CONNECTOR_META_KEYS: &[&str] = &[
     "connector_description",
     "connectorDescription",
 ];
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpServerNotification {
+    pub server_name: String,
+    pub notification: SurfaceNotification,
+}
+
+pub type SendMcpServerNotification =
+    Arc<dyn Fn(McpServerNotification) -> BoxFuture<'static, Result<()>> + Send + Sync>;
+
+pub fn ignore_mcp_server_notifications() -> SendMcpServerNotification {
+    Arc::new(|_| async { Ok(()) }.boxed())
+}
 
 #[derive(Clone)]
 pub(crate) struct ManagedClient {
@@ -277,6 +291,7 @@ struct ManagedClientStartup {
     runtime_auth_provider: Option<SharedAuthProvider>,
     client_elicitation_capability: ElicitationCapability,
     supports_openai_form_elicitation: bool,
+    mcp_server_notification_sender: SendMcpServerNotification,
     cancel_token: CancellationToken,
     startup_complete: Arc<AtomicBool>,
 }
@@ -295,6 +310,7 @@ impl ManagedClientStartup {
             runtime_auth_provider,
             client_elicitation_capability,
             supports_openai_form_elicitation,
+            mcp_server_notification_sender,
             cancel_token,
             startup_complete,
         } = self.clone();
@@ -341,6 +357,10 @@ impl ManagedClientStartup {
                         codex_apps_tools_cache_context,
                         client_elicitation_capability,
                         supports_openai_form_elicitation,
+                        surface_notifications: server
+                            .configured_config()
+                            .is_some_and(|config| config.surface_notifications),
+                        mcp_server_notification_sender,
                     },
                 )
                 .await
@@ -403,6 +423,7 @@ impl AsyncManagedClient {
         runtime_auth_provider: Option<SharedAuthProvider>,
         client_elicitation_capability: ElicitationCapability,
         supports_openai_form_elicitation: bool,
+        mcp_server_notification_sender: SendMcpServerNotification,
     ) -> Self {
         let is_codex_apps_mcp_server = server_name == CODEX_APPS_MCP_SERVER_NAME;
         let reconnect_server_name = server_name.clone();
@@ -431,6 +452,7 @@ impl AsyncManagedClient {
             runtime_auth_provider,
             client_elicitation_capability,
             supports_openai_form_elicitation,
+            mcp_server_notification_sender,
             cancel_token: cancel_token.clone(),
             startup_complete: Arc::clone(&startup_complete),
         });
@@ -826,6 +848,8 @@ async fn start_server_task(
         codex_apps_tools_cache_context,
         client_elicitation_capability,
         supports_openai_form_elicitation,
+        surface_notifications,
+        mcp_server_notification_sender,
     } = params;
     let params = mcp_initialize_request_params(
         client_elicitation_capability,
@@ -833,9 +857,25 @@ async fn start_server_task(
     );
 
     let send_elicitation = elicitation_requests.make_sender(server_name.clone(), tx_event);
+    let send_notification = surface_notifications.then(|| {
+        let sender = Arc::clone(&mcp_server_notification_sender);
+        let server_name = server_name.clone();
+        Box::new(move |notification| {
+            let sender = Arc::clone(&sender);
+            let server_name = server_name.clone();
+            async move {
+                sender(McpServerNotification {
+                    server_name,
+                    notification,
+                })
+                .await
+            }
+            .boxed()
+        }) as codex_rmcp_client::SendNotification
+    });
 
     let initialize_result = client
-        .initialize(params, startup_timeout, send_elicitation)
+        .initialize(params, startup_timeout, send_elicitation, send_notification)
         .await
         .map_err(StartupOutcomeError::from)?;
 
@@ -935,6 +975,8 @@ struct StartServerTaskParams {
     codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
     client_elicitation_capability: ElicitationCapability,
     supports_openai_form_elicitation: bool,
+    surface_notifications: bool,
+    mcp_server_notification_sender: SendMcpServerNotification,
 }
 
 #[instrument(level = "trace", skip_all, fields(server_name = %server_name))]

@@ -40,6 +40,8 @@ pub(crate) struct Session {
     pub(super) features: ManagedFeatures,
     pub(super) multi_agent_version: OnceLock<MultiAgentVersion>,
     pub(super) pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
+    pub(super) mcp_notification_state: Mutex<super::mcp_notifications::McpNotificationState>,
+    pub(super) mcp_notification_sender: OnceLock<codex_mcp::SendMcpServerNotification>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     pub(crate) input_queue: InputQueue,
@@ -1149,6 +1151,8 @@ impl Session {
                 features: config.features.clone(),
                 multi_agent_version,
                 pending_mcp_server_refresh_config: Mutex::new(None),
+                mcp_notification_state: Mutex::new(Default::default()),
+                mcp_notification_sender: OnceLock::new(),
                 conversation: Arc::new(RealtimeConversationManager::new()),
                 active_turn: Mutex::new(None),
                 input_queue: InputQueue::new(),
@@ -1156,6 +1160,12 @@ impl Session {
                 services,
                 next_internal_sub_id: AtomicU64::new(0),
             });
+            assert!(
+                sess.mcp_notification_sender
+                    .set(sess.new_mcp_server_notification_sender())
+                    .is_ok(),
+                "MCP notification sender should be initialized once"
+            );
             if let Some(network_policy_decider_session) = network_policy_decider_session {
                 let mut guard = network_policy_decider_session.write().await;
                 *guard = Arc::downgrade(&sess);
@@ -1235,6 +1245,7 @@ impl Session {
                 Some(sess.mcp_elicitation_reviewer()),
                 Some(sess.mcp_elicitation_lifecycle()),
                 codex_mcp::ElicitationRequestRouter::default(),
+                sess.mcp_server_notification_sender(),
             )
             .instrument(info_span!(
                 "session_init.mcp_manager_init",
@@ -1266,6 +1277,7 @@ impl Session {
                 let mut state = sess.state.lock().await;
                 state.queue_pending_session_start_source(session_start_source);
             }
+            sess.enable_mcp_server_notification_delivery().await;
             Ok(sess)
         }
         .await;

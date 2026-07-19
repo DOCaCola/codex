@@ -206,6 +206,7 @@ mod handlers;
 mod inject;
 mod input_queue;
 mod mcp;
+mod mcp_notifications;
 mod mcp_runtime;
 pub(crate) mod multi_agents;
 mod review;
