@@ -179,6 +179,86 @@ impl ShellCommandHandler {
             &turn_context.config.permissions.shell_environment_policy,
             Some(session.thread_id),
         );
+
+        #[cfg(windows)]
+        if matches!(
+            shell.shell_type,
+            crate::shell::ShellType::Bash
+                | crate::shell::ShellType::Zsh
+                | crate::shell::ShellType::Sh
+        ) {
+            let shell_dir = shell.shell_path.parent();
+            let shell_dir_name = shell_dir
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            let shell_parent_name = shell_dir
+                .and_then(|path| path.parent())
+                .and_then(|path| path.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or_default();
+            let candidates = if shell_dir_name.eq_ignore_ascii_case("bin")
+                && shell_parent_name.eq_ignore_ascii_case("usr")
+            {
+                shell_dir
+                    .and_then(|path| path.parent())
+                    .and_then(|path| path.parent())
+                    .map(|root| {
+                        vec![
+                            root.join("ucrt64").join("bin"),
+                            root.join("usr").join("local").join("bin"),
+                            root.join("usr").join("bin"),
+                            root.join("bin"),
+                        ]
+                    })
+                    .unwrap_or_default()
+            } else if shell_dir_name.eq_ignore_ascii_case("bin") {
+                shell_dir
+                    .and_then(|path| path.parent())
+                    .map(|root| vec![root.join("usr").join("bin"), root.join("bin")])
+                    .unwrap_or_default()
+            } else {
+                shell_dir.into_iter().map(PathBuf::from).collect()
+            };
+
+            let path_keys = env
+                .keys()
+                .filter(|key| key.eq_ignore_ascii_case("PATH"))
+                .cloned()
+                .collect::<Vec<_>>();
+            let path_key = path_keys
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "PATH".to_string());
+            let inherited_path = path_keys
+                .iter()
+                .find_map(|key| env.get(key))
+                .cloned()
+                .unwrap_or_default();
+            for key in path_keys {
+                env.remove(&key);
+            }
+
+            let mut seen = std::collections::HashSet::new();
+            let path_entries = candidates
+                .into_iter()
+                .filter(|path| path.is_dir())
+                .map(|path| path.to_string_lossy().into_owned())
+                .chain(inherited_path.split(';').map(str::to_string))
+                .filter(|entry| !entry.is_empty())
+                .filter(|entry| {
+                    seen.insert(
+                        entry
+                            .replace('/', "\\")
+                            .trim_end_matches('\\')
+                            .to_ascii_lowercase(),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(";");
+            env.insert(path_key, path_entries);
+        }
+
         let active_permission_profile = turn_context.config.permissions.active_permission_profile();
         inject_permission_profile_env(&mut env, active_permission_profile.as_ref());
 

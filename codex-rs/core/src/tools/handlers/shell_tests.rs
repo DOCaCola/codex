@@ -308,6 +308,88 @@ async fn shell_command_handler_rejects_large_windows_bash_heredoc_writes() {
 }
 
 #[tokio::test]
+async fn shell_command_handler_gives_windows_bash_its_own_path_order() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let (session, mut turn_context) = make_session_and_context().await;
+    let turn_environment = turn_context
+        .environments
+        .primary()
+        .expect("primary environment");
+    let cwd = turn_environment
+        .cwd()
+        .to_abs_path()
+        .expect("native environment cwd");
+    let temp_dir = cwd.as_path().join(format!(
+        "codex-windows-bash-path-test-{}",
+        std::process::id()
+    ));
+    let msys_root = temp_dir.join("msys64");
+    let shell_path = msys_root.join("usr").join("bin").join("bash.exe");
+    for path in [
+        msys_root.join("ucrt64").join("bin"),
+        msys_root.join("usr").join("local").join("bin"),
+        msys_root.join("usr").join("bin"),
+        msys_root.join("bin"),
+    ] {
+        std::fs::create_dir_all(path).expect("create MSYS2 path entry");
+    }
+    std::fs::write(&shell_path, "echo").expect("create temporary bash file");
+
+    Arc::make_mut(&mut turn_context.config)
+        .permissions
+        .shell_environment_policy
+        .r#set
+        .insert(
+            "PATH".to_string(),
+            r"C:\Windows\System32;C:\Program Files\nodejs".to_string(),
+        );
+    let params = ShellCommandToolCallParams {
+        command: "command -v find".to_string(),
+        shell: Some(shell_path.to_string_lossy().into_owned()),
+        workdir: None,
+        login: None,
+        timeout_ms: None,
+        sandbox_permissions: None,
+        additional_permissions: None,
+        prefix_rule: None,
+        justification: None,
+    };
+    let exec_params = ShellCommandHandler::to_exec_params(
+        &params,
+        &session,
+        &turn_context,
+        turn_environment,
+        cwd,
+        /*allow_login_shell*/ false,
+    )
+    .expect("Windows Bash should produce exec params");
+
+    let path_entries = exec_params
+        .env
+        .get("PATH")
+        .expect("PATH should be present")
+        .split(';')
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        path_entries,
+        vec![
+            msys_root.join("ucrt64").join("bin"),
+            msys_root.join("usr").join("local").join("bin"),
+            msys_root.join("usr").join("bin"),
+            msys_root.join("bin"),
+            PathBuf::from(r"C:\Windows\System32"),
+            PathBuf::from(r"C:\Program Files\nodejs"),
+        ]
+    );
+
+    let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[tokio::test]
 async fn shell_command_handler_switches_global_shell_when_requested() {
     let (session, _turn_context) = make_session_and_context().await;
     let temp_dir =
