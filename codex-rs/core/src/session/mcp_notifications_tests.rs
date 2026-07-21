@@ -4,6 +4,10 @@ use serde_json::json;
 
 use super::*;
 
+fn turn_state() -> Arc<tokio::sync::Mutex<TurnState>> {
+    Arc::new(tokio::sync::Mutex::new(TurnState::default()))
+}
+
 fn notification(
     method: &str,
     source: Option<&str>,
@@ -24,13 +28,17 @@ fn notification(
 #[test]
 fn buffers_notifications_until_delivery_is_enabled() {
     let mut state = McpNotificationState::default();
+    let turn_state = turn_state();
     assert_eq!(
-        state.enqueue(notification(
-            "notifications/message",
-            None,
-            Some("event-1"),
-            json!({ "value": 1 }),
-        )),
+        state.enqueue(
+            notification(
+                "notifications/message",
+                None,
+                Some("event-1"),
+                json!({ "value": 1 }),
+            ),
+            Arc::clone(&turn_state)
+        ),
         McpNotificationEnqueueOutcome::Queued {
             schedule_worker: false,
             dropped_oldest: false,
@@ -38,12 +46,13 @@ fn buffers_notifications_until_delivery_is_enabled() {
     );
 
     assert!(state.enable_delivery());
-    assert_eq!(state.drain_pending().len(), 1);
+    assert_eq!(state.drain_pending_for_turn(&turn_state).len(), 1);
 }
 
 #[test]
 fn dedupe_identity_is_scoped_by_method_and_source() {
     let mut state = McpNotificationState::default();
+    let turn_state = turn_state();
     let first = notification(
         "notifications/message",
         Some("source-a"),
@@ -51,29 +60,35 @@ fn dedupe_identity_is_scoped_by_method_and_source() {
         json!({ "value": 1 }),
     );
     assert!(matches!(
-        state.enqueue(first.clone()),
+        state.enqueue(first.clone(), Arc::clone(&turn_state)),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
     assert_eq!(
-        state.enqueue(first),
+        state.enqueue(first, Arc::clone(&turn_state)),
         McpNotificationEnqueueOutcome::Duplicate
     );
     assert!(matches!(
-        state.enqueue(notification(
-            "notifications/custom",
-            Some("source-a"),
-            Some("event-1"),
-            json!({ "value": 2 }),
-        )),
+        state.enqueue(
+            notification(
+                "notifications/custom",
+                Some("source-a"),
+                Some("event-1"),
+                json!({ "value": 2 }),
+            ),
+            Arc::clone(&turn_state)
+        ),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
     assert!(matches!(
-        state.enqueue(notification(
-            "notifications/message",
-            Some("source-b"),
-            Some("event-1"),
-            json!({ "value": 3 }),
-        )),
+        state.enqueue(
+            notification(
+                "notifications/message",
+                Some("source-b"),
+                Some("event-1"),
+                json!({ "value": 3 }),
+            ),
+            Arc::clone(&turn_state)
+        ),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
 }
@@ -81,6 +96,7 @@ fn dedupe_identity_is_scoped_by_method_and_source() {
 #[test]
 fn coalesces_identical_idless_notifications_but_keeps_changed_payloads() {
     let mut state = McpNotificationState::default();
+    let turn_state = turn_state();
     let first = notification(
         "notifications/resources/list_changed",
         None,
@@ -88,20 +104,23 @@ fn coalesces_identical_idless_notifications_but_keeps_changed_payloads() {
         json!({}),
     );
     assert!(matches!(
-        state.enqueue(first.clone()),
+        state.enqueue(first.clone(), Arc::clone(&turn_state)),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
     assert_eq!(
-        state.enqueue(first),
+        state.enqueue(first, Arc::clone(&turn_state)),
         McpNotificationEnqueueOutcome::Duplicate
     );
     assert!(matches!(
-        state.enqueue(notification(
-            "notifications/resources/list_changed",
-            None,
-            None,
-            json!({ "revision": 2 }),
-        )),
+        state.enqueue(
+            notification(
+                "notifications/resources/list_changed",
+                None,
+                None,
+                json!({ "revision": 2 }),
+            ),
+            Arc::clone(&turn_state)
+        ),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
 }
@@ -109,14 +128,18 @@ fn coalesces_identical_idless_notifications_but_keeps_changed_payloads() {
 #[test]
 fn pending_queue_is_bounded_and_keeps_the_newest_notifications() {
     let mut state = McpNotificationState::default();
+    let turn_state = turn_state();
     for index in 0..MCP_NOTIFICATION_QUEUE_CAPACITY {
         assert!(matches!(
-            state.enqueue(notification(
-                "notifications/message",
-                None,
-                None,
-                json!({ "index": index }),
-            )),
+            state.enqueue(
+                notification(
+                    "notifications/message",
+                    None,
+                    None,
+                    json!({ "index": index }),
+                ),
+                Arc::clone(&turn_state)
+            ),
             McpNotificationEnqueueOutcome::Queued {
                 dropped_oldest: false,
                 ..
@@ -124,19 +147,22 @@ fn pending_queue_is_bounded_and_keeps_the_newest_notifications() {
         ));
     }
     assert!(matches!(
-        state.enqueue(notification(
-            "notifications/message",
-            None,
-            None,
-            json!({ "index": MCP_NOTIFICATION_QUEUE_CAPACITY }),
-        )),
+        state.enqueue(
+            notification(
+                "notifications/message",
+                None,
+                None,
+                json!({ "index": MCP_NOTIFICATION_QUEUE_CAPACITY }),
+            ),
+            Arc::clone(&turn_state)
+        ),
         McpNotificationEnqueueOutcome::Queued {
             dropped_oldest: true,
             ..
         }
     ));
 
-    let pending = state.drain_pending();
+    let pending = state.drain_pending_for_turn(&turn_state);
     assert_eq!(pending.len(), MCP_NOTIFICATION_QUEUE_CAPACITY);
     assert_eq!(pending[0].notification.payload, json!({ "index": 1 }));
 }
@@ -144,6 +170,7 @@ fn pending_queue_is_bounded_and_keeps_the_newest_notifications() {
 #[test]
 fn evicted_identified_notification_can_be_retried() {
     let mut state = McpNotificationState::default();
+    let turn_state = turn_state();
     let first = notification(
         "notifications/message",
         None,
@@ -151,25 +178,51 @@ fn evicted_identified_notification_can_be_retried() {
         json!({ "index": 0 }),
     );
     assert!(matches!(
-        state.enqueue(first.clone()),
+        state.enqueue(first.clone(), Arc::clone(&turn_state)),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
     for index in 1..=MCP_NOTIFICATION_QUEUE_CAPACITY {
         assert!(matches!(
-            state.enqueue(notification(
-                "notifications/message",
-                None,
-                Some(&format!("event-{index}")),
-                json!({ "index": index }),
-            )),
+            state.enqueue(
+                notification(
+                    "notifications/message",
+                    None,
+                    Some(&format!("event-{index}")),
+                    json!({ "index": index }),
+                ),
+                Arc::clone(&turn_state)
+            ),
             McpNotificationEnqueueOutcome::Queued { .. }
         ));
     }
 
     assert!(matches!(
-        state.enqueue(first),
+        state.enqueue(first, Arc::clone(&turn_state)),
         McpNotificationEnqueueOutcome::Queued { .. }
     ));
+}
+
+#[test]
+fn notification_discarded_with_a_stopped_turn_can_be_retried() {
+    let mut state = McpNotificationState::default();
+    let stopped_turn = turn_state();
+    let later_turn = turn_state();
+    let notification = notification(
+        "notifications/message",
+        None,
+        Some("retry-event"),
+        json!({ "value": 1 }),
+    );
+
+    assert!(matches!(
+        state.enqueue(notification.clone(), stopped_turn),
+        McpNotificationEnqueueOutcome::Queued { .. }
+    ));
+    assert!(matches!(
+        state.enqueue(notification, Arc::clone(&later_turn)),
+        McpNotificationEnqueueOutcome::Queued { .. }
+    ));
+    assert_eq!(state.drain_pending_for_turn(&later_turn).len(), 1);
 }
 
 #[test]

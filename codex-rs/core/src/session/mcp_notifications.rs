@@ -11,8 +11,10 @@ use futures::FutureExt;
 use tracing::warn;
 
 use super::Session;
+use super::input_queue::TurnInput;
 use crate::context::ContextualUserFragment;
 use crate::context::McpNotification;
+use crate::state::TurnState;
 
 const MCP_NOTIFICATION_DEDUPE_CAPACITY: usize = 4_096;
 const MCP_NOTIFICATION_QUEUE_CAPACITY: usize = 16;
@@ -22,10 +24,24 @@ const MCP_NOTIFICATION_BATCH_DELAY: Duration = Duration::from_millis(250);
 pub(super) struct McpNotificationState {
     delivery_enabled: bool,
     worker_scheduled: bool,
-    pending: VecDeque<McpServerNotification>,
+    pending: VecDeque<PendingMcpNotification>,
     pending_keys: HashSet<String>,
     dedupe_order: VecDeque<String>,
     dedupe_seen: HashSet<String>,
+}
+
+struct PendingMcpNotification {
+    notification: McpServerNotification,
+    turn_state: Arc<tokio::sync::Mutex<TurnState>>,
+}
+
+impl std::fmt::Debug for PendingMcpNotification {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingMcpNotification")
+            .field("notification", &self.notification)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -38,7 +54,12 @@ enum McpNotificationEnqueueOutcome {
 }
 
 impl McpNotificationState {
-    fn enqueue(&mut self, notification: McpServerNotification) -> McpNotificationEnqueueOutcome {
+    fn enqueue(
+        &mut self,
+        notification: McpServerNotification,
+        turn_state: Arc<tokio::sync::Mutex<TurnState>>,
+    ) -> McpNotificationEnqueueOutcome {
+        self.discard_pending_for_other_turns(&turn_state);
         if let Some(dedupe_key) = notification_dedupe_key(&notification)
             && !self.mark_seen(dedupe_key)
         {
@@ -55,10 +76,10 @@ impl McpNotificationState {
 
         let dropped_oldest = if self.pending.len() >= MCP_NOTIFICATION_QUEUE_CAPACITY {
             if let Some(dropped) = self.pending.pop_front() {
-                if let Some(key) = notification_pending_key(&dropped) {
+                if let Some(key) = notification_pending_key(&dropped.notification) {
                     self.pending_keys.remove(&key);
                 }
-                if let Some(key) = notification_dedupe_key(&dropped) {
+                if let Some(key) = notification_dedupe_key(&dropped.notification) {
                     self.unmark_seen(&key);
                 }
             }
@@ -69,7 +90,10 @@ impl McpNotificationState {
         if let Some(key) = pending_key {
             self.pending_keys.insert(key);
         }
-        self.pending.push_back(notification);
+        self.pending.push_back(PendingMcpNotification {
+            notification,
+            turn_state,
+        });
 
         let schedule_worker = self.delivery_enabled && !self.worker_scheduled;
         if schedule_worker {
@@ -90,10 +114,48 @@ impl McpNotificationState {
         true
     }
 
-    fn drain_pending(&mut self) -> Vec<McpServerNotification> {
+    fn drain_pending_for_turn(
+        &mut self,
+        turn_state: &Arc<tokio::sync::Mutex<TurnState>>,
+    ) -> Vec<McpServerNotification> {
         self.worker_scheduled = false;
         self.pending_keys.clear();
-        self.pending.drain(..).collect()
+        let pending = self.pending.drain(..).collect::<Vec<_>>();
+        let mut matching = Vec::new();
+        for pending in pending {
+            if Arc::ptr_eq(&pending.turn_state, turn_state) {
+                matching.push(pending.notification);
+            } else if let Some(key) = notification_dedupe_key(&pending.notification) {
+                self.unmark_seen(&key);
+            }
+        }
+        matching
+    }
+
+    fn discard_pending_for_other_turns(&mut self, turn_state: &Arc<tokio::sync::Mutex<TurnState>>) {
+        let pending = self.pending.drain(..).collect::<Vec<_>>();
+        self.pending_keys.clear();
+        for pending in pending {
+            if Arc::ptr_eq(&pending.turn_state, turn_state) {
+                if let Some(key) = notification_pending_key(&pending.notification) {
+                    self.pending_keys.insert(key);
+                }
+                self.pending.push_back(pending);
+            } else if let Some(key) = notification_dedupe_key(&pending.notification) {
+                self.unmark_seen(&key);
+            }
+        }
+    }
+
+    fn discard_pending(&mut self) {
+        self.worker_scheduled = false;
+        self.pending_keys.clear();
+        let pending = self.pending.drain(..).collect::<Vec<_>>();
+        for pending in pending {
+            if let Some(key) = notification_dedupe_key(&pending.notification) {
+                self.unmark_seen(&key);
+            }
+        }
     }
 
     fn mark_seen(&mut self, key: String) -> bool {
@@ -151,13 +213,23 @@ impl Session {
         self: &Arc<Self>,
         notification: McpServerNotification,
     ) -> Result<()> {
+        let turn_state = {
+            let active_turn = self.active_turn.lock().await;
+            let Some(active_turn) = active_turn
+                .as_ref()
+                .filter(|active_turn| active_turn.task.is_some())
+            else {
+                return Ok(());
+            };
+            Arc::clone(&active_turn.turn_state)
+        };
         let server_name = notification.server_name.clone();
         let method = notification.notification.method.clone();
         let outcome = self
             .mcp_notification_state
             .lock()
             .await
-            .enqueue(notification);
+            .enqueue(notification, turn_state);
         let McpNotificationEnqueueOutcome::Queued {
             schedule_worker,
             dropped_oldest,
@@ -189,7 +261,19 @@ impl Session {
     }
 
     async fn flush_mcp_server_notifications(self: &Arc<Self>) {
-        let notifications = self.mcp_notification_state.lock().await.drain_pending();
+        let active_turn = self.active_turn.lock().await;
+        let Some(active_turn) = active_turn
+            .as_ref()
+            .filter(|active_turn| active_turn.task.is_some())
+        else {
+            self.mcp_notification_state.lock().await.discard_pending();
+            return;
+        };
+        let notifications = self
+            .mcp_notification_state
+            .lock()
+            .await
+            .drain_pending_for_turn(&active_turn.turn_state);
         if notifications.is_empty() {
             return;
         }
@@ -209,27 +293,12 @@ impl Session {
                 ))
             })
             .collect::<Vec<ResponseItem>>();
-        self.deliver_mcp_notification_items(items).await;
-    }
-
-    async fn deliver_mcp_notification_items(self: &Arc<Self>, items: Vec<ResponseItem>) {
-        let Err(items) = self.inject_if_running(items).await else {
-            return;
-        };
-        match self.try_start_turn_if_idle(items).await {
-            Ok(()) => {}
-            Err(rejection) => {
-                let reason = rejection.reason();
-                let items = rejection.into_input();
-                let Err(items) = self.inject_if_running(items).await else {
-                    return;
-                };
-                warn!(
-                    "recording MCP notifications without starting a turn because idle delivery was rejected: {reason:?}"
-                );
-                self.inject_no_new_turn(items, None).await;
-            }
-        }
+        self.input_queue
+            .extend_pending_input_and_accept_mailbox_delivery_for_turn_state(
+                active_turn.turn_state.as_ref(),
+                items.into_iter().map(TurnInput::ResponseItem).collect(),
+            )
+            .await;
     }
 }
 
