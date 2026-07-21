@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::function_tool::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
+use crate::shell::resolve_requested_shell;
 use crate::tools::context::ExecCommandToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -52,6 +53,7 @@ pub(crate) struct ExecCommandHandlerOptions {
     pub(crate) exec_permission_approvals_enabled: bool,
     pub(crate) include_environment_id: bool,
     pub(crate) include_shell_parameter: bool,
+    pub(crate) persist_shell_selection: bool,
 }
 
 pub struct ExecCommandHandler {
@@ -66,6 +68,7 @@ impl Default for ExecCommandHandler {
                 exec_permission_approvals_enabled: false,
                 include_environment_id: false,
                 include_shell_parameter: true,
+                persist_shell_selection: false,
             },
         }
     }
@@ -74,6 +77,50 @@ impl Default for ExecCommandHandler {
 impl ExecCommandHandler {
     pub(crate) fn new(options: ExecCommandHandlerOptions) -> Self {
         Self { options }
+    }
+
+    pub(super) fn maybe_persist_local_shell(
+        &self,
+        args: &mut ExecCommandArgs,
+        session: &crate::session::session::Session,
+        environment: &codex_exec_server::Environment,
+        shell_mode: &codex_tools::UnifiedExecShellMode,
+    ) -> Result<Option<Arc<crate::shell::Shell>>, FunctionCallError> {
+        if !self.options.persist_shell_selection
+            || environment.is_remote()
+            || !matches!(shell_mode, codex_tools::UnifiedExecShellMode::Direct)
+        {
+            return Ok(None);
+        }
+
+        let Some(requested_shell) = args.shell.as_deref() else {
+            return Ok(None);
+        };
+        let shell =
+            resolve_requested_shell(requested_shell).map_err(FunctionCallError::RespondToModel)?;
+        session.set_user_shell(shell.clone());
+        session
+            .services
+            .turn_environments
+            .update_local_shell(shell.clone());
+        args.shell = None;
+        Ok(Some(Arc::new(shell)))
+    }
+
+    pub(super) fn shell_for_environment(
+        &self,
+        session: &crate::session::session::Session,
+        turn_environment: &crate::session::turn_context::TurnEnvironment,
+    ) -> Arc<crate::shell::Shell> {
+        if self.options.persist_shell_selection && !turn_environment.environment.is_remote() {
+            session.user_shell()
+        } else {
+            turn_environment
+                .shell
+                .clone()
+                .map(Arc::new)
+                .unwrap_or_else(|| session.user_shell())
+        }
     }
 }
 
@@ -91,6 +138,7 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
             },
             self.options.include_environment_id,
             self.options.include_shell_parameter,
+            self.options.persist_shell_selection,
         )
     }
 
@@ -203,13 +251,16 @@ impl ExecCommandHandler {
         }
         let shell_mode =
             shell_mode_for_environment(&turn.unified_exec_shell_mode, environment.as_ref());
+        let persistent_shell = self.maybe_persist_local_shell(
+            &mut args,
+            session.as_ref(),
+            environment.as_ref(),
+            &shell_mode,
+        )?;
         // Remote environments may use a different OS and must build commands with their native
         // shell; fall back to the session shell when the environment did not report one.
-        let shell = turn_environment
-            .shell
-            .clone()
-            .map(Arc::new)
-            .unwrap_or_else(|| session.user_shell());
+        let shell = persistent_shell
+            .unwrap_or_else(|| self.shell_for_environment(session.as_ref(), turn_environment));
         // TODO(anp): Resolve requested shells in remote environments instead of restricting
         // commands to the reported default shell.
         if environment.is_remote()

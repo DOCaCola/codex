@@ -648,6 +648,7 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut Planne
                 turn_context,
                 context.step_context,
             ),
+            persist_shell_selection: true,
         }));
         planned_tools.add_command_stack_child(WriteStdinHandler);
 
@@ -667,6 +668,7 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut Planne
                     turn_context,
                     context.step_context,
                 ),
+                persist_shell_selection: false,
             }));
             planned_tools.add(WriteStdinHandler);
 

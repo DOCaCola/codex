@@ -16,6 +16,7 @@ pub struct CommandToolOptions {
 pub fn create_exec_command_tool(options: CommandToolOptions) -> ToolSpec {
     create_exec_command_tool_with_environment_id(
         options, /*include_environment_id*/ false, /*include_shell_parameter*/ true,
+        /*persist_shell_selection*/ false,
     )
 }
 
@@ -23,6 +24,7 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
     options: CommandToolOptions,
     include_environment_id: bool,
     include_shell_parameter: bool,
+    persist_shell_selection: bool,
 ) -> ToolSpec {
     let mut properties = BTreeMap::from([
         (
@@ -59,9 +61,12 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
     if include_shell_parameter {
         properties.insert(
             "shell".to_string(),
-            JsonSchema::string(Some(
-                "Shell binary to launch. Defaults to the user's default shell.".to_string(),
-            )),
+            JsonSchema::string(Some(if persist_shell_selection {
+                "Shell binary to launch. For local commands, selecting a shell also makes it active for later commands in this session; put this command alone in its step. Defaults to the active session shell."
+                    .to_string()
+            } else {
+                "Shell binary to launch. Defaults to the user's default shell.".to_string()
+            })),
         );
     }
     if options.allow_login_shell {

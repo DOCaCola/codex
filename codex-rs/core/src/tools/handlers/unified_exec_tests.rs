@@ -91,6 +91,86 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<()> {
+    let Some(bash) = crate::shell::get_shell(ShellType::Bash, /*path*/ None) else {
+        return Ok(());
+    };
+    let (session, turn) = make_session_and_context().await;
+    let turn_environment = turn
+        .environments
+        .primary()
+        .expect("primary local environment");
+    let handler = ExecCommandHandler::new(ExecCommandHandlerOptions {
+        allow_login_shell: false,
+        exec_permission_approvals_enabled: false,
+        include_environment_id: false,
+        include_shell_parameter: true,
+        persist_shell_selection: true,
+    });
+    let mut args: ExecCommandArgs = parse_arguments(
+        &serde_json::json!({
+            "cmd": "echo persistent shell",
+            "shell": bash.shell_path,
+        })
+        .to_string(),
+    )?;
+
+    let selected = handler
+        .maybe_persist_local_shell(
+            &mut args,
+            &session,
+            turn_environment.environment.as_ref(),
+            &UnifiedExecShellMode::Direct,
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?
+        .expect("command-stack exec should persist a requested local shell");
+
+    assert!(args.shell.is_none());
+    assert_eq!(selected.shell_type, ShellType::Bash);
+    assert_eq!(session.user_shell().shell_type, ShellType::Bash);
+    assert_eq!(session.user_shell().shell_path, selected.shell_path);
+    assert_eq!(
+        handler
+            .shell_for_environment(&session, turn_environment)
+            .shell_type,
+        ShellType::Bash,
+        "later commands in the same stack must not reuse the stale turn shell"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn regular_exec_keeps_explicit_shell_one_shot() -> anyhow::Result<()> {
+    let Some(bash) = crate::shell::get_shell(ShellType::Bash, /*path*/ None) else {
+        return Ok(());
+    };
+    let (session, _turn) = make_session_and_context().await;
+    let original_shell = session.user_shell();
+    let handler = ExecCommandHandler::default();
+    let mut args: ExecCommandArgs = parse_arguments(
+        &serde_json::json!({
+            "cmd": "echo one shot",
+            "shell": bash.shell_path,
+        })
+        .to_string(),
+    )?;
+
+    let selected = handler
+        .maybe_persist_local_shell(
+            &mut args,
+            &session,
+            &Environment::default_for_tests(),
+            &UnifiedExecShellMode::Direct,
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    assert!(selected.is_none());
+    assert!(args.shell.is_some());
+    assert_eq!(session.user_shell().as_ref(), original_shell.as_ref());
+    Ok(())
+}
+
 #[test]
 fn test_get_command_respects_explicit_powershell_shell() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;

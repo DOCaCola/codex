@@ -289,6 +289,26 @@ fn validate_commands(commands: &[CommandItem]) -> Result<(), FunctionCallError> 
             "apply_patch does not support continue_on_failure".to_string(),
         ));
     }
+    for command in commands.iter().filter(|command| {
+        command.command_type == CommandType::ExecCommand
+            && command
+                .arguments
+                .get("shell")
+                .and_then(Value::as_str)
+                .is_some_and(|shell| !shell.is_empty())
+    }) {
+        if commands
+            .iter()
+            .filter(|other| other.step == command.step)
+            .count()
+            > 1
+        {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "exec_command with `shell` must be the only command in step {}; later steps inherit the selected local shell",
+                command.step
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -464,6 +484,30 @@ mod tests {
                 continue_on_failure: true,
             }])
             .is_err()
+        );
+    }
+
+    #[test]
+    fn validation_isolates_persistent_shell_switches() {
+        let commands = [
+            CommandItem {
+                command_type: CommandType::ExecCommand,
+                step: 1,
+                arguments: serde_json::json!({"cmd": "echo switch", "shell": "bash"}),
+                continue_on_failure: false,
+            },
+            CommandItem {
+                command_type: CommandType::ExecCommand,
+                step: 1,
+                arguments: serde_json::json!({"cmd": "echo races"}),
+                continue_on_failure: false,
+            },
+        ];
+
+        let err = validate_commands(&commands).expect_err("shell switch must be isolated");
+        assert!(
+            err.to_string()
+                .contains("must be the only command in step 1")
         );
     }
 

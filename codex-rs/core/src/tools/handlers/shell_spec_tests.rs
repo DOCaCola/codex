@@ -106,10 +106,32 @@ fn exec_command_tool_can_hide_shell_parameter() {
         },
         /*include_environment_id*/ false,
         /*include_shell_parameter*/ false,
+        /*persist_shell_selection*/ false,
     );
 
     assert!(!has_parameter(&tool, "shell"));
     assert!(has_parameter(&tool, "cmd"));
+}
+
+#[test]
+fn exec_command_tool_can_describe_persistent_shell_selection() {
+    let tool = create_exec_command_tool_with_environment_id(
+        CommandToolOptions {
+            allow_login_shell: true,
+            exec_permission_approvals_enabled: false,
+            active_shell_name: None,
+        },
+        /*include_environment_id*/ false,
+        /*include_shell_parameter*/ true,
+        /*persist_shell_selection*/ true,
+    );
+
+    let tool_json = serde_json::to_value(tool).expect("tool spec should serialize");
+    let shell_description = tool_json
+        .pointer("/parameters/properties/shell/description")
+        .and_then(serde_json::Value::as_str)
+        .expect("shell description");
+    assert!(shell_description.contains("active for later commands"));
 }
 
 #[test]

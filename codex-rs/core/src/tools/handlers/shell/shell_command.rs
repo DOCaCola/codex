@@ -13,7 +13,7 @@ use crate::maybe_emit_implicit_skill_invocation;
 use crate::session::turn_context::TurnContext;
 use crate::session::turn_context::TurnEnvironment;
 use crate::shell::Shell;
-use crate::shell::get_shell;
+use crate::shell::resolve_requested_shell;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
@@ -27,7 +27,6 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
-use codex_shell_command::shell_detect::detect_shell_type;
 use codex_tools::ToolSpec;
 
 use super::super::shell_spec::CommandToolOptions;
@@ -113,21 +112,7 @@ impl ShellCommandHandler {
     }
 
     fn shell_from_requested_path(shell: &str) -> Result<Shell, FunctionCallError> {
-        let requested_path = PathBuf::from(shell);
-        let Some(shell_type) = detect_shell_type(&requested_path) else {
-            return Err(FunctionCallError::RespondToModel(format!(
-                "unsupported shell `{shell}`; expected a shell name or executable path for bash, sh, zsh, powershell, or cmd"
-            )));
-        };
-
-        let Some(mut parsed_shell) = get_shell(shell_type, Some(&requested_path)) else {
-            return Err(FunctionCallError::RespondToModel(format!(
-                "requested shell `{shell}` is recognized but not available on this machine"
-            )));
-        };
-
-        parsed_shell.shell_snapshot = crate::shell::empty_shell_snapshot_receiver();
-        Ok(parsed_shell)
+        resolve_requested_shell(shell).map_err(FunctionCallError::RespondToModel)
     }
 
     pub(super) fn effective_shell(

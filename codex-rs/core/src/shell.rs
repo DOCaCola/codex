@@ -122,6 +122,24 @@ pub fn get_shell(shell_type: ShellType, path: Option<&PathBuf>) -> Option<Shell>
     codex_shell_command::shell_detect::get_shell(shell_type, path).map(Into::into)
 }
 
+pub(crate) fn resolve_requested_shell(shell: &str) -> Result<Shell, String> {
+    let requested_path = PathBuf::from(shell);
+    let Some(shell_type) = codex_shell_command::shell_detect::detect_shell_type(&requested_path)
+    else {
+        return Err(format!(
+            "unsupported shell `{shell}`; expected a shell name or executable path for bash, sh, zsh, powershell, or cmd"
+        ));
+    };
+
+    let Some(mut resolved_shell) = get_shell(shell_type, Some(&requested_path)) else {
+        return Err(format!(
+            "requested shell `{shell}` is recognized but not available on this machine"
+        ));
+    };
+    resolved_shell.shell_snapshot = empty_shell_snapshot_receiver();
+    Ok(resolved_shell)
+}
+
 pub fn default_user_shell() -> Shell {
     codex_shell_command::shell_detect::default_user_shell().into()
 }

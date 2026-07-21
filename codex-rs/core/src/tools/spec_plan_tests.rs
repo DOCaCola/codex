@@ -528,6 +528,11 @@ async fn command_stack_hides_child_tools_and_stays_visible_in_code_mode_only() {
     assert_eq!(plan.exposure("write_stdin"), ToolExposure::Hidden);
     assert_eq!(plan.exposure("apply_patch"), ToolExposure::Hidden);
     assert_eq!(plan.exposure("shell_command"), ToolExposure::Hidden);
+    assert!(
+        serde_json::to_string(plan.visible_spec("command_stack"))
+            .expect("command_stack spec should serialize")
+            .contains("active for later commands")
+    );
 }
 
 #[tokio::test]
