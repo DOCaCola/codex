@@ -26,6 +26,8 @@ fn command_stack_uses_one_freeform_block_surface_with_apply_patch() {
     };
 
     assert!(tool.description.contains("Every operation is a block"));
+    assert!(tool.description.contains("Prefer one call"));
+    assert!(tool.description.contains("batch independent operations"));
     assert!(tool.description.contains("Step defaults to 1"));
     assert!(
         tool.description
@@ -41,6 +43,10 @@ fn command_stack_uses_one_freeform_block_surface_with_apply_patch() {
             .contains("`write_stdin` requires `session_id`")
     );
     assert!(tool.description.contains("terminate it with `end`"));
+    assert!(
+        tool.description
+            .contains("default for exec operations; apply_patch paths remain session-relative")
+    );
     assert!(tool.description.contains("Patch operations run serially"));
     assert!(tool.format.definition.contains("exec_command_operation"));
     assert!(tool.format.definition.contains("write_stdin_operation"));
@@ -49,6 +55,8 @@ fn command_stack_uses_one_freeform_block_surface_with_apply_patch() {
             .definition
             .contains("patch_operation: \"apply_patch\"")
     );
+    assert!(tool.format.definition.contains("stack_workdir"));
+    assert!(tool.format.definition.contains("STACK_PATH"));
     assert!(tool.format.definition.contains("stack_step"));
     assert!(tool.format.definition.contains("JSON_STRING"));
     assert!(tool.format.definition.contains("*** Begin Patch"));
@@ -75,6 +83,8 @@ fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
     };
 
     assert!(tool.description.contains("Every operation is a block"));
+    assert!(tool.description.contains("Prefer one call"));
+    assert!(tool.description.contains("batch independent operations"));
     assert!(
         tool.description
             .contains("Exec and stdin bodies are JSON argument objects")
@@ -84,6 +94,10 @@ fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
             .contains("optional keys: `environment_id`, `tty`")
     );
     assert!(tool.description.contains("An hpatch body"));
+    assert!(
+        tool.description
+            .contains("default for exec and hpatch operations")
+    );
     assert!(tool.format.definition.contains("exec_command_operation"));
     assert!(tool.format.definition.contains("write_stdin_operation"));
     assert!(
@@ -91,6 +105,7 @@ fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
             .definition
             .contains("patch_operation: \"hpatch\"")
     );
+    assert!(tool.format.definition.contains("stack_workdir"));
     assert!(tool.format.definition.contains("working_directory"));
     assert!(tool.format.definition.contains("tsel_command"));
     assert!(tool.format.definition.contains("environment_id:"));

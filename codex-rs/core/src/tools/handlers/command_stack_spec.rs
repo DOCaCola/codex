@@ -55,6 +55,15 @@ pub(crate) fn create_command_stack_tool(
     };
     let definition = format!("{COMMAND_STACK_LARK_GRAMMAR}\n{patch_rule}\n\n{patch_rules}");
     let exec_arguments = argument_summary("exec_command", &exec_arguments);
+    let workdir_body = match patch_tool {
+        CommandStackPatchTool::ApplyPatch => {
+            "Optional leading `workdir PATH` supplies the default for exec operations; apply_patch paths remain session-relative."
+        }
+        CommandStackPatchTool::Hpatch => {
+            "Optional leading `workdir PATH` supplies the default for exec and hpatch operations; explicit operation workdirs override it."
+        }
+    };
+
     let write_stdin_arguments = argument_summary("write_stdin", &write_stdin_arguments);
     let patch_body = match patch_tool {
         CommandStackPatchTool::ApplyPatch => {
@@ -68,7 +77,7 @@ pub(crate) fn create_command_stack_tool(
     ToolSpec::Freeform(FreeformTool {
         name: "command_stack".to_string(),
         description: format!(
-            "Runs 1-8 operations across up to 4 dependency steps. Every operation is a block: write `exec_command`, `write_stdin`, or `{patch_tool}` followed by optional ` step=N`; `exec_command` and `write_stdin` may also add ` continue_on_failure`. Put the body on following lines and terminate it with `end`. Step defaults to 1. Exec and stdin bodies are JSON argument objects. {exec_arguments} {write_stdin_arguments} Commands in one step must be independent; steps run in order. Patch operations run serially and always stop on failure. {patch_body}",
+            "Runs 1-8 operations across up to 4 dependency steps. Prefer one call: batch independent operations in the same step, use later steps for predetermined dependencies, and make a later call only when the next operation depends on unseen output. Every operation is a block: write `exec_command`, `write_stdin`, or `{patch_tool}` followed by optional ` step=N`; `exec_command` and `write_stdin` may also add ` continue_on_failure`. Put the body on following lines and terminate it with `end`. Step defaults to 1. Exec and stdin bodies are JSON argument objects. {exec_arguments} {write_stdin_arguments} {workdir_body} Patch operations run serially and always stop on failure. {patch_body}",
             patch_tool = patch_tool.name(),
         ),
         format: FreeformToolFormat {

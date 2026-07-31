@@ -31,8 +31,13 @@ fn instruction_body(command_stack_enabled: bool, hpatch_enabled: bool) -> Option
         } else {
             "apply_patch"
         };
+        let workdir_guidance = if hpatch_enabled {
+            "Optional leading `workdir PATH` defaults exec and hpatch operations; explicit operation workdirs override it."
+        } else {
+            "Optional leading `workdir PATH` defaults exec operations; apply_patch paths stay session-relative."
+        };
         let mut body = format!(
-            "When `command_stack` is available, it is the model-visible interface for shell, terminal continuation, and manual file-edit operations. Earlier base-instruction references to calling `exec_command`, `write_stdin`, `apply_patch`, or `hpatch` directly are superseded; use `exec_command`, `write_stdin`, and `{patch_tool}` only as `command_stack` operation types. Write each operation as `<type> [step=N] [continue_on_failure]`, put its body on following lines, then write `end`; step defaults to 1. `exec_command` and `write_stdin` bodies are JSON argument objects. A single operation is valid. Commands in the same step must be independent; use a later call when an operation depends on unseen output."
+            "When `command_stack` is available, use it for shell, terminal continuation, and manual edits; direct `exec_command`, `write_stdin`, `apply_patch`, and `hpatch` references are superseded. Use only `exec_command`, `write_stdin`, and `{patch_tool}` operation blocks: `<type> [step=N] [continue_on_failure]`, body, `end`; step defaults to 1 and exec/stdin bodies are JSON objects. Prefer one call: batch independent operations in the same step, use later steps for predetermined dependencies, and make a later call only when you must inspect output first. {workdir_guidance}"
         );
         if hpatch_enabled {
             body.push_str(STACK_HPATCH_BODY);
@@ -82,9 +87,10 @@ mod tests {
     fn command_stack_uses_apply_patch_with_shared_block_guidance() {
         let configured = configure_tool_surface_instructions("base".to_string(), true, false);
 
-        assert!(configured.contains("and `apply_patch` only as `command_stack` operation types"));
-        assert!(configured.contains("put its body on following lines, then write `end`"));
-        assert!(configured.contains("step defaults to 1"));
+        assert!(configured.contains("and `apply_patch` operation blocks"));
+        assert!(configured.contains("Prefer one call"));
+        assert!(configured.contains("batch independent operations in the same step"));
+        assert!(configured.contains("`workdir PATH` defaults exec operations"));
         assert!(!configured.contains("For `hpatch` bodies"));
     }
 
@@ -92,9 +98,10 @@ mod tests {
     fn command_stack_and_hpatch_compose_into_one_compact_section() {
         let configured = configure_tool_surface_instructions("base".to_string(), true, true);
 
-        assert!(configured.contains("and `hpatch` only as `command_stack` operation types"));
+        assert!(configured.contains("and `hpatch` operation blocks"));
         assert!(configured.contains("For `hpatch` bodies"));
-        assert!(configured.contains("put its body on following lines, then write `end`"));
+        assert!(configured.contains("Prefer one call"));
+        assert!(configured.contains("`workdir PATH` defaults exec and hpatch operations"));
         assert_eq!(configured.matches(START_MARKER).count(), 1);
         assert!(configured.len() - "base".len() < 1100);
     }
@@ -106,9 +113,9 @@ mod tests {
         let switched = configure_tool_surface_instructions(stacked, true, true);
 
         assert_eq!(repeated.matches(START_MARKER).count(), 1);
-        assert!(repeated.contains("and `apply_patch` only"));
-        assert!(switched.contains("and `hpatch` only"));
-        assert!(!switched.contains("and `apply_patch` only"));
+        assert!(repeated.contains("and `apply_patch` operation blocks"));
+        assert!(switched.contains("and `hpatch` operation blocks"));
+        assert!(!switched.contains("and `apply_patch` operation blocks"));
     }
 
     #[test]

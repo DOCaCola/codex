@@ -111,8 +111,13 @@ impl CommandStackHandler {
                 "command_stack received unsupported payload".to_string(),
             ));
         };
-        let args = parse_command_stack(input)?;
-        validate_commands(&args.commands, self.patch_tool)?;
+        let CommandStackArgs {
+            workdir,
+            mut commands,
+        } = parse_command_stack(input)?;
+        apply_stack_workdir(&mut commands, workdir.as_deref());
+
+        validate_commands(&commands, self.patch_tool)?;
         let tool_runtime = ToolCallRuntime::new(
             Arc::clone(&self.child_router),
             Arc::clone(&invocation.session),
@@ -121,7 +126,7 @@ impl CommandStackHandler {
         );
 
         let mut grouped = BTreeMap::<u8, Vec<(usize, CommandItem)>>::new();
-        for (index, command) in args.commands.into_iter().enumerate() {
+        for (index, command) in commands.into_iter().enumerate() {
             grouped
                 .entry(command.step)
                 .or_default()
@@ -225,6 +230,8 @@ impl CommandStackHandler {
 
 #[derive(Deserialize)]
 pub(super) struct CommandStackArgs {
+    #[serde(default)]
+    pub(super) workdir: Option<String>,
     pub(super) commands: Vec<CommandItem>,
 }
 
@@ -362,6 +369,44 @@ fn validate_commands(
         }
     }
     Ok(())
+}
+
+fn apply_stack_workdir(commands: &mut [CommandItem], workdir: Option<&str>) {
+    let Some(workdir) = workdir else {
+        return;
+    };
+
+    for command in commands {
+        let Some(arguments) = command.arguments.as_object_mut() else {
+            continue;
+        };
+        match command.command_type {
+            CommandType::ExecCommand => {
+                arguments
+                    .entry("workdir")
+                    .or_insert_with(|| Value::String(workdir.to_string()));
+            }
+            CommandType::Hpatch => {
+                let has_workdir_header = arguments
+                    .get("script")
+                    .and_then(Value::as_str)
+                    .is_some_and(hpatch_has_workdir_header);
+                if !has_workdir_header {
+                    arguments
+                        .entry("workdir")
+                        .or_insert_with(|| Value::String(workdir.to_string()));
+                }
+            }
+            CommandType::WriteStdin | CommandType::ApplyPatch => {}
+        }
+    }
+}
+
+fn hpatch_has_workdir_header(input: &str) -> bool {
+    input.lines().take(2).any(|line| {
+        line.trim_end_matches('\r')
+            .starts_with("*** Working Directory: ")
+    })
 }
 
 fn build_child_call(
@@ -620,6 +665,74 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("must be the only command in step 1")
+        );
+    }
+
+    #[test]
+    fn stack_workdir_defaults_exec_and_hpatch_but_preserves_overrides() {
+        let mut commands = vec![
+            CommandItem {
+                command_type: CommandType::ExecCommand,
+                step: 1,
+                arguments: serde_json::json!({"cmd": "echo default"}),
+                continue_on_failure: false,
+            },
+            CommandItem {
+                command_type: CommandType::ExecCommand,
+                step: 1,
+                arguments: serde_json::json!({"cmd": "echo override", "workdir": "explicit"}),
+                continue_on_failure: false,
+            },
+            CommandItem {
+                command_type: CommandType::Hpatch,
+                step: 2,
+                arguments: serde_json::json!({"script": "in src/lib.rs\ncommit"}),
+                continue_on_failure: false,
+            },
+            CommandItem {
+                command_type: CommandType::Hpatch,
+                step: 2,
+                arguments: serde_json::json!({
+                    "script": "*** Working Directory: explicit\nin src/main.rs\ncommit"
+                }),
+                continue_on_failure: false,
+            },
+            CommandItem {
+                command_type: CommandType::ApplyPatch,
+                step: 3,
+                arguments: serde_json::json!({
+                    "patch": "*** Begin Patch\n*** End Patch\n"
+                }),
+                continue_on_failure: false,
+            },
+        ];
+
+        apply_stack_workdir(&mut commands, Some("shared root"));
+
+        assert_eq!(commands[0].arguments["workdir"], "shared root");
+        assert_eq!(commands[1].arguments["workdir"], "explicit");
+        assert_eq!(commands[2].arguments["workdir"], "shared root");
+        assert!(commands[3].arguments.get("workdir").is_none());
+        assert!(commands[4].arguments.get("workdir").is_none());
+    }
+
+    #[test]
+    fn parsed_stack_workdir_reaches_hpatch_child_input() {
+        let CommandStackArgs {
+            workdir,
+            mut commands,
+        } = parse_command_stack("workdir nested repo\nhpatch\nin src/lib.rs\ncommit\nend")
+            .expect("parse stack");
+        apply_stack_workdir(&mut commands, workdir.as_deref());
+
+        let child = build_child_call("call-command-stack", 0, commands.remove(0))
+            .expect("build hpatch child");
+
+        assert_eq!(
+            child.payload,
+            ToolPayload::Custom {
+                input: "*** Working Directory: nested repo\nin src/lib.rs\ncommit".to_string(),
+            }
         );
     }
 

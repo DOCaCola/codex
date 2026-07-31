@@ -9,11 +9,31 @@ use crate::tools::handlers::command_stack::CommandType;
 pub(super) fn parse_command_stack(input: &str) -> Result<CommandStackArgs, FunctionCallError> {
     let lines = input.split('\n').collect::<Vec<_>>();
     let mut commands = Vec::new();
+    let mut workdir = None;
     let mut line_index = 0;
 
     while line_index < lines.len() {
         let line = strip_carriage_return(lines[line_index]);
         if line.trim().is_empty() {
+            line_index += 1;
+            continue;
+        }
+
+        if line == "workdir" || line.starts_with("workdir ") {
+            if workdir.is_some() || !commands.is_empty() {
+                return Err(model_error(format!(
+                    "`workdir PATH` must appear at most once before command_stack operations (line {})",
+                    line_index + 1
+                )));
+            }
+            let value = line.strip_prefix("workdir ").unwrap_or_default().trim_end();
+            if value.is_empty() {
+                return Err(model_error(format!(
+                    "command_stack workdir on line {} must not be empty",
+                    line_index + 1
+                )));
+            }
+            workdir = Some(value.to_string());
             line_index += 1;
             continue;
         }
@@ -96,7 +116,7 @@ pub(super) fn parse_command_stack(input: &str) -> Result<CommandStackArgs, Funct
         });
     }
 
-    Ok(CommandStackArgs { commands })
+    Ok(CommandStackArgs { workdir, commands })
 }
 
 struct OperationHeader {
@@ -236,6 +256,34 @@ end"#,
 
         assert_eq!(parsed.commands[0].step, 2);
         assert_eq!(parsed.commands[0].arguments["tty"], false);
+    }
+
+    #[test]
+    fn parses_leading_stack_workdir_with_spaces() {
+        let parsed = parse_command_stack(
+            "workdir C:\\repo with spaces\n\nexec_command\n{\"cmd\":\"cargo test\"}\nend\nhpatch\nin src/lib.rs\ncommit\nend",
+        )
+        .expect("parse stack workdir");
+
+        assert_eq!(parsed.workdir.as_deref(), Some("C:\\repo with spaces"));
+        assert_eq!(parsed.commands.len(), 2);
+    }
+
+    #[test]
+    fn rejects_empty_repeated_or_late_stack_workdir() {
+        assert!(parse_command_stack("workdir\nexec_command\n{\"cmd\":\"echo ok\"}\nend").is_err());
+        assert!(
+            parse_command_stack(
+                "workdir one\nworkdir two\nexec_command\n{\"cmd\":\"echo ok\"}\nend"
+            )
+            .is_err()
+        );
+        assert!(
+            parse_command_stack(
+                "exec_command\n{\"cmd\":\"echo ok\"}\nend\nworkdir later\nwrite_stdin\n{\"session_id\":1}\nend"
+            )
+            .is_err()
+        );
     }
 
     #[test]
