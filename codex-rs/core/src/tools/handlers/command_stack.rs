@@ -16,9 +16,11 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
+use crate::tools::handlers::command_stack_freeform::parse_command_stack;
 use crate::tools::handlers::command_stack_spec::CommandStackPatchTool;
+
 use crate::tools::handlers::command_stack_spec::create_command_stack_tool;
-use crate::tools::handlers::parse_arguments;
+
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::CoreToolRuntime;
@@ -75,6 +77,10 @@ impl ToolExecutor<ToolInvocation> for CommandStackHandler {
 }
 
 impl CoreToolRuntime for CommandStackHandler {
+    fn matches_kind(&self, payload: &ToolPayload) -> bool {
+        matches!(payload, ToolPayload::Custom { .. })
+    }
+
     fn waits_for_runtime_cancellation(&self) -> bool {
         true
     }
@@ -100,12 +106,12 @@ impl CommandStackHandler {
         &self,
         invocation: ToolInvocation,
     ) -> Result<Box<dyn crate::tools::context::ToolOutput>, FunctionCallError> {
-        let ToolPayload::Function { arguments } = &invocation.payload else {
+        let ToolPayload::Custom { input } = &invocation.payload else {
             return Err(FunctionCallError::RespondToModel(
                 "command_stack received unsupported payload".to_string(),
             ));
         };
-        let args: CommandStackArgs = parse_arguments(arguments)?;
+        let args = parse_command_stack(input)?;
         validate_commands(&args.commands, self.patch_tool)?;
         let tool_runtime = ToolCallRuntime::new(
             Arc::clone(&self.child_router),
@@ -218,22 +224,25 @@ impl CommandStackHandler {
 }
 
 #[derive(Deserialize)]
-struct CommandStackArgs {
-    commands: Vec<CommandItem>,
+pub(super) struct CommandStackArgs {
+    pub(super) commands: Vec<CommandItem>,
 }
 
 #[derive(Clone, Deserialize)]
-struct CommandItem {
-    command_type: CommandType,
-    step: u8,
-    arguments: Value,
+pub(super) struct CommandItem {
+    pub(super) command_type: CommandType,
+
+    pub(super) step: u8,
+
+    pub(super) arguments: Value,
+
     #[serde(default)]
-    continue_on_failure: bool,
+    pub(super) continue_on_failure: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum CommandType {
+pub(super) enum CommandType {
     ExecCommand,
     WriteStdin,
     ApplyPatch,
@@ -241,6 +250,15 @@ enum CommandType {
 }
 
 impl CommandType {
+    pub(super) fn name(self) -> &'static str {
+        match self {
+            Self::ExecCommand => "exec_command",
+            Self::WriteStdin => "write_stdin",
+            Self::ApplyPatch => "apply_patch",
+            Self::Hpatch => "hpatch",
+        }
+    }
+
     fn is_patch(self) -> bool {
         matches!(self, Self::ApplyPatch | Self::Hpatch)
     }
@@ -689,24 +707,17 @@ mod tests {
     async fn failed_patch_stops_later_steps() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let handler = recording_stack_handler(Arc::clone(&calls), false, false, true);
-        let invocation = invocation_for_commands(serde_json::json!({
-            "commands": [
-                {
-                    "command_type": "apply_patch",
-                    "step": 1,
-                    "arguments": {
-                        "patch": "*** Begin Patch\n*** End Patch\n"
-                    }
-                },
-                {
-                    "command_type": "exec_command",
-                    "step": 2,
-                    "arguments": {
-                        "cmd": "echo should-not-run"
-                    }
-                }
-            ]
-        }))
+        let invocation = invocation_for_stack(
+            r#"apply_patch
+*** Begin Patch
+*** Add File: sample.txt
++hello
+*** End Patch
+end
+exec_command step=2
+{"cmd":"echo should-not-run"}
+end"#,
+        )
         .await;
 
         let output = handler.handle_call(invocation).await.unwrap();
@@ -719,22 +730,17 @@ mod tests {
     async fn failed_exec_stops_later_steps_by_default() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let handler = recording_stack_handler(Arc::clone(&calls), true, false, false);
-        let invocation = invocation_for_commands(serde_json::json!({
-            "commands": [
-                {
-                    "command_type": "exec_command",
-                    "step": 1,
-                    "arguments": {"cmd": "false"}
-                },
-                {
-                    "command_type": "apply_patch",
-                    "step": 2,
-                    "arguments": {
-                        "patch": "*** Begin Patch\n*** End Patch\n"
-                    }
-                }
-            ]
-        }))
+        let invocation = invocation_for_stack(
+            r#"exec_command
+{"cmd":"false"}
+end
+apply_patch step=2
+*** Begin Patch
+*** Add File: sample.txt
++hello
+*** End Patch
+end"#,
+        )
         .await;
 
         let output = handler.handle_call(invocation).await.unwrap();
@@ -747,23 +753,17 @@ mod tests {
     async fn continue_on_failure_allows_later_steps_for_exec() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let handler = recording_stack_handler(Arc::clone(&calls), true, false, false);
-        let invocation = invocation_for_commands(serde_json::json!({
-            "commands": [
-                {
-                    "command_type": "exec_command",
-                    "step": 1,
-                    "arguments": {"cmd": "false"},
-                    "continue_on_failure": true
-                },
-                {
-                    "command_type": "apply_patch",
-                    "step": 2,
-                    "arguments": {
-                        "patch": "*** Begin Patch\n*** End Patch\n"
-                    }
-                }
-            ]
-        }))
+        let invocation = invocation_for_stack(
+            r#"exec_command continue_on_failure
+{"cmd":"false"}
+end
+apply_patch step=2
+*** Begin Patch
+*** Add File: sample.txt
++hello
+*** End Patch
+end"#,
+        )
         .await;
 
         let output = handler.handle_call(invocation).await.unwrap();
@@ -779,13 +779,11 @@ mod tests {
     async fn write_stdin_executes_through_the_child_router() {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let handler = recording_stack_handler(Arc::clone(&calls), false, false, false);
-        let invocation = invocation_for_commands(serde_json::json!({
-            "commands": [{
-                "command_type": "write_stdin",
-                "step": 1,
-                "arguments": {"session_id": 42, "chars": "q"}
-            }]
-        }))
+        let invocation = invocation_for_stack(
+            r#"write_stdin
+{"session_id":42,"chars":"q"}
+end"#,
+        )
         .await;
 
         let output = handler.handle_call(invocation).await.unwrap();
@@ -881,7 +879,7 @@ mod tests {
         }
     }
 
-    async fn invocation_for_commands(arguments: Value) -> ToolInvocation {
+    async fn invocation_for_stack(input: &str) -> ToolInvocation {
         let (session, turn) = make_session_and_context().await;
         let turn = Arc::new(turn);
         ToolInvocation {
@@ -893,8 +891,8 @@ mod tests {
             call_id: "call-command-stack".to_string(),
             tool_name: ToolName::plain("command_stack"),
             source: ToolCallSource::Direct,
-            payload: ToolPayload::Function {
-                arguments: arguments.to_string(),
+            payload: ToolPayload::Custom {
+                input: input.to_string(),
             },
         }
     }

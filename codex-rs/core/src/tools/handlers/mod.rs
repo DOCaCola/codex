@@ -1,7 +1,9 @@
 pub(crate) mod apply_patch;
 pub(crate) mod apply_patch_spec;
 mod command_stack;
+mod command_stack_freeform;
 mod command_stack_spec;
+
 mod current_time;
 mod dynamic;
 pub(crate) mod extension_tools;

@@ -1,8 +1,12 @@
+use codex_tools::FreeformTool;
+use codex_tools::FreeformToolFormat;
 use codex_tools::JsonSchema;
-use codex_tools::ResponsesApiTool;
 use codex_tools::ToolSpec;
-use serde_json::json;
-use std::collections::BTreeMap;
+
+use crate::tools::handlers::apply_patch_spec::apply_patch_lark_rules;
+use crate::tools::handlers::hpatch_spec::hpatch_lark_rules;
+
+const COMMAND_STACK_LARK_GRAMMAR: &str = include_str!("command_stack.lark");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CommandStackPatchTool {
@@ -17,22 +21,6 @@ impl CommandStackPatchTool {
             Self::Hpatch => "hpatch",
         }
     }
-
-    fn input_key(self) -> &'static str {
-        match self {
-            Self::ApplyPatch => "patch",
-            Self::Hpatch => "script",
-        }
-    }
-
-    fn input_description(self) -> &'static str {
-        match self {
-            Self::ApplyPatch => {
-                "Complete apply_patch input, including Begin Patch and End Patch markers."
-            }
-            Self::Hpatch => "Complete hpatch editing script.",
-        }
-    }
 }
 
 pub(crate) fn create_command_stack_tool(
@@ -41,102 +29,84 @@ pub(crate) fn create_command_stack_tool(
     include_environment_id: bool,
     patch_tool: CommandStackPatchTool,
 ) -> ToolSpec {
-    let mut patch_properties = BTreeMap::from([(
-        patch_tool.input_key().to_string(),
-        JsonSchema::string(Some(patch_tool.input_description().to_string())),
-    )]);
-    if include_environment_id {
-        patch_properties.insert(
-            "environment_id".to_string(),
-            JsonSchema::string(Some("Environment in which to apply the patch.".to_string())),
-        );
-    }
-    if patch_tool == CommandStackPatchTool::Hpatch {
-        patch_properties.insert(
-            "workdir".to_string(),
-            JsonSchema::string(Some(
-                "Working directory for this hpatch operation. Relative paths resolve from the selected environment cwd."
-                    .to_string(),
-            )),
-        );
-    }
-
-    let command_properties = BTreeMap::from([
-        (
-            "command_type".to_string(),
-            JsonSchema::string_enum(
-                vec![
-                    json!("exec_command"),
-                    json!("write_stdin"),
-                    json!(patch_tool.name()),
-                ],
-                Some("Child tool to invoke.".to_string()),
-            ),
-        ),
-        (
-            "step".to_string(),
-            JsonSchema::integer(Some(
-                "Dependency group from 1 through 4. Steps run in ascending order. Commands in the same step must not depend on one another."
-                    .to_string(),
-            )),
-        ),
-        (
-            "arguments".to_string(),
-            JsonSchema::any_of(
-                vec![
-                    exec_arguments,
-                    write_stdin_arguments,
-                    JsonSchema::object(
-                        patch_properties,
-                        Some(vec![patch_tool.input_key().to_string()]),
-                        Some(false.into()),
-                    ),
-                ],
-                Some(
-                    format!("Complete arguments for the selected child tool. exec_command and write_stdin arguments must match their displayed schemas; {} arguments contain the complete edit input.", patch_tool.name()),
+    let (patch_rule, patch_rules) = match patch_tool {
+        CommandStackPatchTool::ApplyPatch => {
+            let environment = include_environment_id
+                .then_some("environment_id? ")
+                .unwrap_or("");
+            (
+                format!(
+                    "patch_operation: \"apply_patch\" stack_step? STACK_NL stack_apply_patch_input \"end\"\nstack_apply_patch_input: begin_patch {environment}hunk+ stack_end_patch\nstack_end_patch: \"*** End Patch\" STACK_NL"
                 ),
-            ),
-        ),
-        (
-            "continue_on_failure".to_string(),
-            JsonSchema::boolean(Some(
-                format!("For exec_command and write_stdin only, continue to later steps if this command fails. Defaults to false. {} failures always stop execution.", patch_tool.name()),
-            )),
-        ),
-    ]);
+                apply_patch_lark_rules(include_environment_id),
+            )
+        }
+        CommandStackPatchTool::Hpatch => {
+            let environment = include_environment_id
+                .then_some("environment_id? ")
+                .unwrap_or("");
+            (
+                format!(
+                    "patch_operation: \"hpatch\" stack_step? STACK_NL stack_hpatch_input STACK_NL stack_blank_line* \"end\"\nstack_hpatch_input: {environment}working_directory? blank_line* script"
+                ),
+                hpatch_lark_rules(include_environment_id),
+            )
+        }
+    };
+    let definition = format!("{COMMAND_STACK_LARK_GRAMMAR}\n{patch_rule}\n\n{patch_rules}");
+    let exec_arguments = argument_summary("exec_command", &exec_arguments);
+    let write_stdin_arguments = argument_summary("write_stdin", &write_stdin_arguments);
+    let patch_body = match patch_tool {
+        CommandStackPatchTool::ApplyPatch => {
+            "An apply_patch body is a complete patch from `*** Begin Patch` through `*** End Patch`."
+        }
+        CommandStackPatchTool::Hpatch => {
+            "An hpatch body may start with a working-directory header, then uses `in`/`new`, `tsel`/`rsel`, and `type`/`del` commands. `tsel` selects only matching text; use `rsel N:N` for a whole line."
+        }
+    };
 
-    ToolSpec::Function(ResponsesApiTool {
+    ToolSpec::Freeform(FreeformTool {
         name: "command_stack".to_string(),
-        description: format!(r#"Runs between 1 and 8 exec_command, write_stdin, and {patch_tool_name} operations across at most 4 ordered steps.
-Include only operations whose complete arguments are already known. Put independent reads, searches, and other exec_command calls in the same step. Use a later step for known work that requires completed edits. If a command or patch must be chosen from output you have not seen, inspect that output first and make another command_stack call.
-Use write_stdin in a later command_stack call after exec_command returns a session id. Independent exec_command and write_stdin calls in the same step may run concurrently. A step containing {patch_tool_name} runs serially. A failed command stops later steps by default; continue_on_failure may override this for exec_command and write_stdin. A failed {patch_tool_name} always stops execution.
-"#, patch_tool_name = patch_tool.name()),
-        strict: false,
-        defer_loading: None,
-        parameters: JsonSchema::object(
-            BTreeMap::from([(
-                "commands".to_string(),
-                JsonSchema::array(
-                    JsonSchema::object(
-                        command_properties,
-                        Some(vec![
-                            "command_type".to_string(),
-                            "step".to_string(),
-                            "arguments".to_string(),
-                        ]),
-                        Some(false.into()),
-                    ),
-                    Some(
-                        "Between 1 and 8 commands. A single command is valid; do not add filler commands."
-                            .to_string(),
-                    ),
-                ),
-            )]),
-            Some(vec!["commands".to_string()]),
-            Some(false.into()),
+        description: format!(
+            "Runs 1-8 operations across up to 4 dependency steps. Every operation is a block: write `exec_command`, `write_stdin`, or `{patch_tool}` followed by optional ` step=N`; `exec_command` and `write_stdin` may also add ` continue_on_failure`. Put the body on following lines and terminate it with `end`. Step defaults to 1. Exec and stdin bodies are JSON argument objects. {exec_arguments} {write_stdin_arguments} Commands in one step must be independent; steps run in order. Patch operations run serially and always stop on failure. {patch_body}",
+            patch_tool = patch_tool.name(),
         ),
-        output_schema: None,
+        format: FreeformToolFormat {
+            r#type: "grammar".to_string(),
+            syntax: "lark".to_string(),
+            definition,
+        },
     })
+}
+
+fn argument_summary(tool_name: &str, schema: &JsonSchema) -> String {
+    let required = schema.required.as_deref().unwrap_or_default();
+    let optional = schema
+        .properties
+        .as_ref()
+        .map(|properties| {
+            properties
+                .keys()
+                .filter(|name| !required.contains(name))
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let required = required
+        .iter()
+        .map(|name| format!("`{name}`"))
+        .collect::<Vec<_>>();
+
+    match (required.is_empty(), optional.is_empty()) {
+        (false, false) => format!(
+            "`{tool_name}` requires {}; optional keys: {}.",
+            required.join(", "),
+            optional.join(", ")
+        ),
+        (false, true) => format!("`{tool_name}` requires {}.", required.join(", ")),
+        (true, false) => format!("`{tool_name}` has optional keys: {}.", optional.join(", ")),
+        (true, true) => format!("`{tool_name}` takes a JSON object."),
+    }
 }
 
 #[cfg(test)]

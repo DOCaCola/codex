@@ -1,101 +1,103 @@
 use super::*;
 
+fn arguments(required: &str, optional: &[&str]) -> JsonSchema {
+    let properties = std::iter::once(required)
+        .chain(optional.iter().copied())
+        .map(|name| (name.to_string(), JsonSchema::default()))
+        .collect();
+    JsonSchema::object(
+        properties,
+        Some(vec![required.to_string()]),
+        Some(false.into()),
+    )
+}
+
 #[test]
-fn command_stack_tool_describes_batching_and_dependency_rules() {
-    let exec_arguments = JsonSchema::object(
-        BTreeMap::from([(
-            "cmd".to_string(),
-            JsonSchema::string(Some("Shell command to execute.".to_string())),
-        )]),
-        Some(vec!["cmd".to_string()]),
-        Some(false.into()),
-    );
-    let write_stdin_arguments = JsonSchema::object(
-        BTreeMap::from([(
-            "session_id".to_string(),
-            JsonSchema::number(Some("Session identifier.".to_string())),
-        )]),
-        Some(vec!["session_id".to_string()]),
-        Some(false.into()),
-    );
-    let ToolSpec::Function(tool) = create_command_stack_tool(
+fn command_stack_uses_one_freeform_block_surface_with_apply_patch() {
+    let exec_arguments = arguments("cmd", &["workdir", "shell"]);
+    let write_stdin_arguments = arguments("session_id", &["chars", "yield_time_ms"]);
+    let ToolSpec::Freeform(tool) = create_command_stack_tool(
         exec_arguments,
         write_stdin_arguments,
         /*include_environment_id*/ false,
         CommandStackPatchTool::ApplyPatch,
     ) else {
-        panic!("expected function tool");
+        panic!("expected freeform tool");
     };
 
-    assert!(tool.description.contains("between 1 and 8"));
+    assert!(tool.description.contains("Every operation is a block"));
+    assert!(tool.description.contains("Step defaults to 1"));
     assert!(
         tool.description
-            .contains("complete arguments are already known")
+            .contains("Exec and stdin bodies are JSON argument objects")
     );
-    assert!(tool.description.contains("output you have not seen"));
-    assert!(tool.description.contains("write_stdin"));
-    assert!(tool.description.contains("continue_on_failure"));
-    assert!(tool.description.contains("failed apply_patch always stops"));
-
-    let commands = tool
-        .parameters
-        .properties
-        .as_ref()
-        .and_then(|properties| properties.get("commands"))
-        .expect("commands schema");
+    assert!(tool.description.contains("`exec_command` requires `cmd`"));
     assert!(
-        commands
-            .description
-            .as_deref()
-            .is_some_and(|description| description.contains("do not add filler commands"))
-    );
-
-    let command_properties = commands
-        .items
-        .as_deref()
-        .and_then(|items| items.properties.as_ref())
-        .expect("command item properties");
-    assert!(
-        command_properties
-            .get("step")
-            .and_then(|schema| schema.description.as_deref())
-            .is_some_and(|description| description.contains("must not depend on one another"))
+        tool.description
+            .contains("optional keys: `shell`, `workdir`")
     );
     assert!(
-        command_properties
-            .get("arguments")
-            .and_then(|schema| schema.description.as_deref())
-            .is_some_and(|description| description.contains("Complete arguments"))
+        tool.description
+            .contains("`write_stdin` requires `session_id`")
     );
+    assert!(tool.description.contains("terminate it with `end`"));
+    assert!(tool.description.contains("Patch operations run serially"));
+    assert!(tool.format.definition.contains("exec_command_operation"));
+    assert!(tool.format.definition.contains("write_stdin_operation"));
     assert!(
-        command_properties
-            .get("arguments")
-            .and_then(|schema| schema.any_of.as_ref())
-            .is_some_and(|variants| variants.len() == 3)
+        tool.format
+            .definition
+            .contains("patch_operation: \"apply_patch\"")
     );
+    assert!(tool.format.definition.contains("stack_step"));
+    assert!(tool.format.definition.contains("JSON_STRING"));
+    assert!(tool.format.definition.contains("*** Begin Patch"));
     assert!(
-        command_properties
-            .get("continue_on_failure")
-            .and_then(|schema| schema.description.as_deref())
-            .is_some_and(|description| description.contains("Defaults to false"))
+        !tool
+            .format
+            .definition
+            .contains("patch_operation: \"hpatch\"")
     );
+    assert!(!tool.format.definition.contains("environment_id:"));
 }
 
 #[test]
-fn command_stack_switches_patch_child_to_hpatch() {
-    let arguments = JsonSchema::object(Default::default(), None, Some(true.into()));
-    let ToolSpec::Function(tool) = create_command_stack_tool(
-        arguments.clone(),
-        arguments,
+fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
+    let exec_arguments = arguments("cmd", &["environment_id", "tty"]);
+    let write_stdin_arguments = arguments("session_id", &["chars"]);
+    let ToolSpec::Freeform(tool) = create_command_stack_tool(
+        exec_arguments,
+        write_stdin_arguments,
         /*include_environment_id*/ true,
         CommandStackPatchTool::Hpatch,
     ) else {
-        panic!("expected function tool");
+        panic!("expected freeform tool");
     };
 
-    let serialized = serde_json::to_value(tool).expect("serialize command_stack tool");
-    assert!(serialized.to_string().contains("hpatch"));
-    assert!(serialized.to_string().contains("script"));
-    assert!(serialized.to_string().contains("workdir"));
-    assert!(!serialized.to_string().contains("apply_patch"));
+    assert!(tool.description.contains("Every operation is a block"));
+    assert!(
+        tool.description
+            .contains("Exec and stdin bodies are JSON argument objects")
+    );
+    assert!(
+        tool.description
+            .contains("optional keys: `environment_id`, `tty`")
+    );
+    assert!(tool.description.contains("An hpatch body"));
+    assert!(tool.format.definition.contains("exec_command_operation"));
+    assert!(tool.format.definition.contains("write_stdin_operation"));
+    assert!(
+        tool.format
+            .definition
+            .contains("patch_operation: \"hpatch\"")
+    );
+    assert!(tool.format.definition.contains("working_directory"));
+    assert!(tool.format.definition.contains("tsel_command"));
+    assert!(tool.format.definition.contains("environment_id:"));
+    assert!(
+        !tool
+            .format
+            .definition
+            .contains("patch_operation: \"apply_patch\"")
+    );
 }
