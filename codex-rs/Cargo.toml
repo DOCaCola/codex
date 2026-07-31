@@ -547,6 +547,14 @@ strip = false
 # Balance parallel release code generation against binary size.
 codegen-units = 4
 
+# Fast local release builds retain release optimization while avoiding
+# cross-crate ThinLTO, increasing codegen parallelism, and omitting debug info.
+[profile.fast-release]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+debug = "none"
+
 [profile.profiling]
 inherits = "release"
 debug = "full"
