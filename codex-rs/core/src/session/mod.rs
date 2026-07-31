@@ -25,7 +25,6 @@ use crate::config::ManagedFeatures;
 use crate::config::resolve_tool_suggest_config_from_layer_stack;
 use crate::context::ApprovedCommandPrefixSaved;
 use crate::context::AvailableSkillsInstructions;
-use crate::context::CommandStackInstructions;
 use crate::context::ContextualUserFragment;
 use crate::context::ModelSwitchInstructions;
 use crate::context::NetworkRuleSaved;
@@ -652,14 +651,15 @@ impl Session {
         let history_mode = conversation_history.get_history_mode(
             requested_history_mode.unwrap_or_else(|| thread_store.default_history_mode()),
         );
-        let mut base_instructions = config
-            .base_instructions
-            .clone()
-            .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
-            .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
-        if config.features.enabled(Feature::Hpatch) {
-            base_instructions = crate::context::append_hpatch_instructions(base_instructions);
-        }
+        let base_instructions = crate::context::configure_tool_surface_instructions(
+            config
+                .base_instructions
+                .clone()
+                .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
+                .unwrap_or_else(|| model_info.get_model_instructions(config.personality)),
+            config.features.enabled(Feature::CommandStack),
+            config.features.enabled(Feature::Hpatch),
+        );
 
         // Dynamic tools are defined at thread start and persisted in rollout session metadata.
         let dynamic_tools = if dynamic_tools.is_empty() {
@@ -3351,9 +3351,6 @@ impl Session {
             && !developer_instructions.is_empty()
         {
             developer_sections.push(developer_instructions.to_string());
-        }
-        if turn_context.config.features.enabled(Feature::CommandStack) {
-            developer_sections.push(CommandStackInstructions.render());
         }
         if turn_context.config.include_skill_instructions {
             let host_catalog_in_world_state = turn_context

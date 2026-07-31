@@ -51,6 +51,15 @@ pub(crate) fn create_command_stack_tool(
             JsonSchema::string(Some("Environment in which to apply the patch.".to_string())),
         );
     }
+    if patch_tool == CommandStackPatchTool::Hpatch {
+        patch_properties.insert(
+            "workdir".to_string(),
+            JsonSchema::string(Some(
+                "Working directory for this hpatch operation. Relative paths resolve from the selected environment cwd."
+                    .to_string(),
+            )),
+        );
+    }
 
     let command_properties = BTreeMap::from([
         (

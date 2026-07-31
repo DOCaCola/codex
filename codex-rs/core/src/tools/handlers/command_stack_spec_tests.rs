@@ -96,5 +96,6 @@ fn command_stack_switches_patch_child_to_hpatch() {
     let serialized = serde_json::to_value(tool).expect("serialize command_stack tool");
     assert!(serialized.to_string().contains("hpatch"));
     assert!(serialized.to_string().contains("script"));
+    assert!(serialized.to_string().contains("workdir"));
     assert!(!serialized.to_string().contains("apply_patch"));
 }

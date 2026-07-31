@@ -1,5 +1,6 @@
-start: environment_id? blank_line* script blank_line*
+start: environment_id? working_directory? blank_line* script blank_line*
 environment_id: "*** Environment ID: " PATH NL
+working_directory: "*** Working Directory: " PATH NL
 script: command (separator command)*
 
 ?command: path_command

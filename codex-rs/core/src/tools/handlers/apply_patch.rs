@@ -61,6 +61,7 @@ pub struct ApplyPatchHandler {
     multi_environment: bool,
     permission_request_tool_name: HookToolName,
     permission_request_command: Option<String>,
+    cwd_override: Option<PathUri>,
 }
 
 impl ApplyPatchHandler {
@@ -69,14 +70,20 @@ impl ApplyPatchHandler {
             multi_environment,
             permission_request_tool_name: HookToolName::apply_patch(),
             permission_request_command: None,
+            cwd_override: None,
         }
     }
 
-    pub(crate) fn for_hpatch(multi_environment: bool, script: String) -> Self {
+    pub(crate) fn for_hpatch(
+        multi_environment: bool,
+        script: String,
+        translator_root: PathUri,
+    ) -> Self {
         Self {
             multi_environment,
             permission_request_tool_name: HookToolName::hpatch(),
             permission_request_command: Some(script),
+            cwd_override: Some(translator_root),
         }
     }
 }
@@ -404,9 +411,13 @@ impl ApplyPatchHandler {
         let fs = turn_environment.environment.get_filesystem();
         let sandbox = turn
             .file_system_sandbox_context(/*additional_permissions*/ None, turn_environment);
+        let patch_cwd = self
+            .cwd_override
+            .as_ref()
+            .unwrap_or_else(|| turn_environment.cwd());
         match codex_apply_patch::verify_apply_patch_args(
             args,
-            turn_environment.cwd(),
+            patch_cwd,
             fs.as_ref(),
             Some(&sandbox),
         )
@@ -419,7 +430,7 @@ impl ApplyPatchHandler {
                         turn.as_ref(),
                         &turn_environment.environment_id,
                         &changes,
-                        turn_environment.cwd(),
+                        patch_cwd,
                     )
                     .await
                     .unwrap_or_else(|_| patch_permissions_without_path_matching(&changes));

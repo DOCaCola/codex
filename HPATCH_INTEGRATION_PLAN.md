@@ -379,6 +379,10 @@ When both features are enabled, `command_stack` should expose `hpatch` as the pa
   safety semantics.
 - Do not include a hpatch operation whose script depends on output from another command in the same
   call. Inspect first and submit a later command-stack call.
+- Patch children may provide an explicit `workdir`; resolve it relative to the selected environment
+  cwd for hpatch translation.
+- Hpatch translation emits workspace-root-relative paths, so native verification and application
+  must use the exact translator root rather than the translation cwd.
 - Route the child through the normal tool router so hpatch hooks and cancellation behavior remain
   consistent.
 
@@ -645,6 +649,8 @@ required only if shared protocol, exec-server, or model metadata contracts chang
 - Multi-environment calls select the requested environment.
 - Remote calls execute hpatch remotely rather than reading through the host filesystem.
 - `command_stack` serializes hpatch and stops later work after patch failure.
+- `command_stack` hpatch workdirs resolve relative to the selected environment cwd while translated
+  patches apply relative to the translator root.
 - Hpatch PreToolUse/PostToolUse hooks fire once; internal apply-patch hooks do not fire.
 - Resumed threads and spawned subagents preserve the selected patch-tool mode.
 - Prompt/tool token estimates are covered by deterministic tests without runtime benchmarks.

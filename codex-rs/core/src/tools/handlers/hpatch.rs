@@ -10,6 +10,7 @@ use codex_exec_server::WriteStatus;
 use codex_protocol::models::PermissionProfile;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
+use codex_utils_path_uri::PathUri;
 use uuid::Uuid;
 
 use crate::function_tool::FunctionCallError;
@@ -47,7 +48,7 @@ impl HpatchHandler {
             ));
         };
         let original_input = input.clone();
-        let (environment_id, script) = parse_input(input, self.multi_environment)?;
+        let (environment_id, workdir, script) = parse_input(input, self.multi_environment)?;
         let Some(turn_environment) = resolve_tool_environment(
             &invocation.step_context.environments,
             environment_id.as_deref(),
@@ -57,13 +58,11 @@ impl HpatchHandler {
                 "hpatch is unavailable in this session".to_string(),
             ));
         };
-
-        let root = turn_environment
-            .workspace_roots()
-            .iter()
-            .filter(|root| turn_environment.cwd().starts_with(root))
-            .max_by_key(|root| root.encoded_path().len())
-            .unwrap_or_else(|| turn_environment.cwd());
+        let (cwd, root) = resolve_translation_paths(
+            turn_environment.cwd(),
+            turn_environment.workspace_roots(),
+            workdir.as_deref(),
+        )?;
         let mut sandbox = invocation
             .turn
             .file_system_sandbox_context(None, turn_environment);
@@ -80,9 +79,9 @@ impl HpatchHandler {
                     "--root".to_string(),
                     root.inferred_native_path_string(),
                     "--cwd".to_string(),
-                    turn_environment.cwd().inferred_native_path_string(),
+                    cwd.inferred_native_path_string(),
                 ],
-                cwd: turn_environment.cwd().clone(),
+                cwd: cwd.clone(),
                 env_policy: None,
                 env: HashMap::from([(
                     "CODEX_HPATCH_DISABLE_USER_DATA".to_string(),
@@ -153,7 +152,7 @@ impl HpatchHandler {
             },
             ..invocation
         };
-        ApplyPatchHandler::for_hpatch(self.multi_environment, original_input)
+        ApplyPatchHandler::for_hpatch(self.multi_environment, original_input, root)
             .handle(apply_invocation)
             .await
     }
@@ -202,29 +201,57 @@ async fn collect_translation(
 fn parse_input(
     input: &str,
     allow_environment_id: bool,
-) -> Result<(Option<String>, String), FunctionCallError> {
-    let normalized = input.strip_prefix('\n').unwrap_or(input);
-    let Some(first_newline) = normalized.find('\n') else {
-        return Ok((None, normalized.to_string()));
-    };
-    let first_line = normalized[..first_newline].trim_end_matches('\r');
-    let Some(environment_id) = first_line.strip_prefix("*** Environment ID: ") else {
-        return Ok((None, normalized.to_string()));
-    };
-    if !allow_environment_id {
+) -> Result<(Option<String>, Option<String>, String), FunctionCallError> {
+    let mut remaining = input.strip_prefix('\n').unwrap_or(input);
+    let environment_id = take_header(&mut remaining, "*** Environment ID: ");
+    if environment_id.is_some() && !allow_environment_id {
         return Err(FunctionCallError::RespondToModel(
             "hpatch environment selection is unavailable for this turn".to_string(),
         ));
     }
-    if environment_id.is_empty() {
+    if environment_id.as_deref().is_some_and(str::is_empty) {
         return Err(FunctionCallError::RespondToModel(
             "hpatch environment ID must not be empty".to_string(),
         ));
     }
-    Ok((
-        Some(environment_id.to_string()),
-        normalized[first_newline + 1..].to_string(),
-    ))
+
+    let workdir = take_header(&mut remaining, "*** Working Directory: ");
+    if workdir.as_deref().is_some_and(str::is_empty) {
+        return Err(FunctionCallError::RespondToModel(
+            "hpatch working directory must not be empty".to_string(),
+        ));
+    }
+
+    Ok((environment_id, workdir, remaining.to_string()))
+}
+
+fn take_header(input: &mut &str, prefix: &str) -> Option<String> {
+    let first_newline = input.find('\n')?;
+    let first_line = input[..first_newline].trim_end_matches('\r');
+    let value = first_line.strip_prefix(prefix)?;
+    *input = &input[first_newline + 1..];
+    Some(value.to_string())
+}
+
+fn resolve_translation_paths(
+    default_cwd: &PathUri,
+    workspace_roots: &[PathUri],
+    workdir: Option<&str>,
+) -> Result<(PathUri, PathUri), FunctionCallError> {
+    let cwd = workdir
+        .filter(|workdir| !workdir.is_empty())
+        .map_or_else(
+            || Ok(default_cwd.clone()),
+            |workdir| default_cwd.join(workdir),
+        )
+        .map_err(|err| FunctionCallError::RespondToModel(err.to_string()))?;
+    let root = workspace_roots
+        .iter()
+        .filter(|root| cwd.starts_with(root))
+        .max_by_key(|root| root.encoded_path().len())
+        .cloned()
+        .unwrap_or_else(|| cwd.clone());
+    Ok((cwd, root))
 }
 
 fn insert_environment_id(

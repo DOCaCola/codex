@@ -389,6 +389,7 @@ fn build_child_call(
                 patch,
                 script,
                 environment_id,
+                workdir,
             } = serde_json::from_value(command.arguments).map_err(|err| {
                 FunctionCallError::RespondToModel(format!("failed to parse patch arguments: {err}"))
             })?;
@@ -405,7 +406,12 @@ fn build_child_call(
             (
                 ToolName::plain(tool_name),
                 ToolPayload::Custom {
-                    input: insert_environment_id(input, environment_id, command.command_type)?,
+                    input: insert_patch_context(
+                        input,
+                        environment_id,
+                        workdir,
+                        command.command_type,
+                    )?,
                 },
             )
         }
@@ -427,23 +433,37 @@ struct PatchArguments {
     script: Option<String>,
     #[serde(default)]
     environment_id: Option<String>,
+    #[serde(default)]
+    workdir: Option<String>,
 }
 
-fn insert_environment_id(
+fn insert_patch_context(
     input: String,
     environment_id: Option<String>,
+    workdir: Option<String>,
     command_type: CommandType,
 ) -> Result<String, FunctionCallError> {
-    let Some(environment_id) = environment_id else {
-        return Ok(input);
-    };
-    if input.contains("*** Environment ID: ") {
+    if environment_id.is_some() && input.contains("*** Environment ID: ") {
         return Err(FunctionCallError::RespondToModel(
             "environment_id was provided both separately and in the edit input".to_string(),
         ));
     }
+    if workdir.is_some() && input.contains("*** Working Directory: ") {
+        return Err(FunctionCallError::RespondToModel(
+            "workdir was provided both separately and in the edit input".to_string(),
+        ));
+    }
+
     match command_type {
         CommandType::ApplyPatch => {
+            if workdir.is_some() {
+                return Err(FunctionCallError::RespondToModel(
+                    "workdir is unavailable for apply_patch command_stack children".to_string(),
+                ));
+            }
+            let Some(environment_id) = environment_id else {
+                return Ok(input);
+            };
             let Some(rest) = input.strip_prefix("*** Begin Patch\n") else {
                 return Err(FunctionCallError::RespondToModel(
                     "apply_patch input must start with `*** Begin Patch`".to_string(),
@@ -453,7 +473,21 @@ fn insert_environment_id(
                 "*** Begin Patch\n*** Environment ID: {environment_id}\n{rest}"
             ))
         }
-        CommandType::Hpatch => Ok(format!("*** Environment ID: {environment_id}\n{input}")),
+        CommandType::Hpatch => {
+            if workdir.as_deref().is_some_and(str::is_empty) {
+                return Err(FunctionCallError::RespondToModel(
+                    "hpatch workdir must not be empty".to_string(),
+                ));
+            }
+            let mut headers = String::new();
+            if let Some(environment_id) = environment_id {
+                headers.push_str(&format!("*** Environment ID: {environment_id}\n"));
+            }
+            if let Some(workdir) = workdir {
+                headers.push_str(&format!("*** Working Directory: {workdir}\n"));
+            }
+            Ok(format!("{headers}{input}"))
+        }
         CommandType::ExecCommand | CommandType::WriteStdin => unreachable!(),
     }
 }
@@ -575,9 +609,42 @@ mod tests {
     fn inserts_environment_id_after_begin_marker() {
         let patch = "*** Begin Patch\n*** End Patch\n".to_string();
         assert_eq!(
-            insert_environment_id(patch, Some("remote".to_string()), CommandType::ApplyPatch,)
-                .unwrap(),
+            insert_patch_context(
+                patch,
+                Some("remote".to_string()),
+                None,
+                CommandType::ApplyPatch,
+            )
+            .unwrap(),
             "*** Begin Patch\n*** Environment ID: remote\n*** End Patch\n"
+        );
+    }
+
+    #[test]
+    fn hpatch_child_includes_environment_and_workdir_headers() {
+        let child = build_child_call(
+            "call-command-stack",
+            0,
+            CommandItem {
+                command_type: CommandType::Hpatch,
+                step: 1,
+                arguments: serde_json::json!({
+                    "script": "in src/lib.rs\ncommit",
+                    "environment_id": "remote",
+                    "workdir": "codex"
+                }),
+                continue_on_failure: false,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(child.tool_name, ToolName::plain("hpatch"));
+        assert_eq!(
+            child.payload,
+            ToolPayload::Custom {
+                input: "*** Environment ID: remote\n*** Working Directory: codex\nin src/lib.rs\ncommit"
+                    .to_string(),
+            }
         );
     }
 
