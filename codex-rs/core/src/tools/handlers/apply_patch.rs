@@ -57,14 +57,33 @@ use codex_utils_path_uri::PathUri;
 const APPLY_PATCH_ARGUMENT_DIFF_BUFFER_INTERVAL: Duration = Duration::from_millis(500);
 /// Handles freeform `apply_patch` requests and routes verified patches to the
 /// selected environment filesystem.
-#[derive(Default)]
 pub struct ApplyPatchHandler {
     multi_environment: bool,
+    permission_request_tool_name: HookToolName,
+    permission_request_command: Option<String>,
 }
 
 impl ApplyPatchHandler {
     pub(crate) fn new(multi_environment: bool) -> Self {
-        Self { multi_environment }
+        Self {
+            multi_environment,
+            permission_request_tool_name: HookToolName::apply_patch(),
+            permission_request_command: None,
+        }
+    }
+
+    pub(crate) fn for_hpatch(multi_environment: bool, script: String) -> Self {
+        Self {
+            multi_environment,
+            permission_request_tool_name: HookToolName::hpatch(),
+            permission_request_command: Some(script),
+        }
+    }
+}
+
+impl Default for ApplyPatchHandler {
+    fn default() -> Self {
+        Self::new(false)
     }
 }
 
@@ -436,6 +455,11 @@ impl ApplyPatchHandler {
                                 .additional_permissions,
                             permissions_preapproved: effective_additional_permissions
                                 .permissions_preapproved,
+                            permission_request_tool_name: self.permission_request_tool_name.clone(),
+                            permission_request_command: self
+                                .permission_request_command
+                                .clone()
+                                .unwrap_or_else(|| patch_input.clone()),
                         };
 
                         let mut orchestrator = ToolOrchestrator::new();
@@ -590,6 +614,7 @@ pub(crate) async fn intercept_apply_patch(
                     );
                     emitter.begin(event_ctx).await;
 
+                    let permission_request_command = apply.action.patch.clone();
                     let req = ApplyPatchRequest {
                         turn_environment,
                         action: apply.action,
@@ -600,6 +625,8 @@ pub(crate) async fn intercept_apply_patch(
                             .additional_permissions,
                         permissions_preapproved: effective_additional_permissions
                             .permissions_preapproved,
+                        permission_request_tool_name: HookToolName::apply_patch(),
+                        permission_request_command,
                     };
 
                     let mut orchestrator = ToolOrchestrator::new();

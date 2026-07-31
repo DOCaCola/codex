@@ -104,6 +104,8 @@ pub enum Feature {
     UnifiedExec,
     /// Expose a single tool that stacks exec_command and apply_patch calls.
     CommandStack,
+    /// Use the bundled hpatch companion as the model-visible patch authoring tool.
+    Hpatch,
     /// Route shell tool execution through the zsh exec bridge.
     ShellZshFork,
     /// Allow unified exec to compose with the zsh exec bridge.
@@ -862,6 +864,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::CommandStack,
         key: "command_stack",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::Hpatch,
+        key: "hpatch",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

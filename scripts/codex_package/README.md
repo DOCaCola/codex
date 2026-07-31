@@ -11,7 +11,8 @@ The builder creates a canonical Codex package directory:
 ├── codex-package.json
 ├── bin
 │   ├── <entrypoint>[.exe]
-│   └── codex-code-mode-host[.exe]
+│   ├── codex-code-mode-host[.exe]
+│   └── hpatch[.exe]
 ├── codex-resources
 │   ├── bwrap                             # Linux only
 │   ├── zsh/bin/zsh                       # supported Unix targets only
@@ -54,6 +55,13 @@ binary instead of rebuilding it.
 
 Release jobs should likewise pass `--code-mode-host-bin` so the package contains
 the signed host executable beside the signed entrypoint.
+
+`hpatch` is a companion built from an explicit source checkout by
+`scripts/build-hpatch-companion.sh`, not a Cargo binary. Local development uses
+the sibling `../hpatch` fork by default. Direct package-builder invocations must
+pass `--hpatch-bin` or set `HPATCH_SOURCE_DIR`. Release workflows prepare the
+pinned source separately and pass the resulting signed or staged executable
+through to the canonical package builder.
 
 Release jobs that already built package resource binaries should also pass the
 corresponding resource flags: `--bwrap-bin` for Linux packages, and

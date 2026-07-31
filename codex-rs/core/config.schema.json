@@ -564,6 +564,9 @@
             "hooks": {
               "type": "boolean"
             },
+            "hpatch": {
+              "type": "boolean"
+            },
             "image_detail_original": {
               "type": "boolean"
             },
@@ -5122,6 +5125,9 @@
           "type": "boolean"
         },
         "hooks": {
+          "type": "boolean"
+        },
+        "hpatch": {
           "type": "boolean"
         },
         "image_detail_original": {

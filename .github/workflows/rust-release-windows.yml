@@ -240,11 +240,22 @@ jobs:
           name: windows-binaries-${{ matrix.target }}-app-server
           path: ${{ env.CARGO_TARGET_DIR }}/${{ matrix.target }}/release
 
+      - name: Build hpatch companion
+        shell: bash
+        run: |
+          hpatch_source="${RUNNER_TEMP}/codex-hpatch-source"
+          bash "${GITHUB_WORKSPACE}/scripts/prepare-hpatch-companion-source.sh" \
+            --output "$hpatch_source"
+          bash "${GITHUB_WORKSPACE}/scripts/build-hpatch-companion.sh" \
+            --source "$hpatch_source" \
+            --target "${{ matrix.target }}" \
+            --output "$CARGO_TARGET_DIR/${{ matrix.target }}/release/hpatch.exe"
+
       - name: Verify binaries
         shell: bash
         run: |
           set -euo pipefail
-          for binary in ${WINDOWS_BINARIES}; do
+          for binary in ${WINDOWS_BINARIES} hpatch; do
             ls -lh "$CARGO_TARGET_DIR/${{ matrix.target }}/release/${binary}.exe"
           done
 
@@ -252,7 +263,7 @@ jobs:
         uses: ./.github/actions/windows-code-sign
         with:
           target: ${{ matrix.target }}
-          binaries: ${{ env.WINDOWS_BINARIES }}
+          binaries: ${{ env.WINDOWS_BINARIES }} hpatch
           client-id: ${{ secrets.AZURE_ARTIFACT_SIGNING_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_ARTIFACT_SIGNING_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_ARTIFACT_SIGNING_SUBSCRIPTION_ID }}
@@ -266,7 +277,7 @@ jobs:
           dest="dist/${{ matrix.target }}"
           mkdir -p "$dest"
 
-          for binary in ${WINDOWS_BINARIES}; do
+          for binary in ${WINDOWS_BINARIES} hpatch; do
             cp "$CARGO_TARGET_DIR/${{ matrix.target }}/release/${binary}.exe" \
               "$dest/${binary}-${{ matrix.target }}.exe"
           done
@@ -380,16 +391,18 @@ jobs:
               bundle_dir="$(mktemp -d)"
               runner_src="$dest/codex-command-runner-${target}.exe"
               setup_src="$dest/codex-windows-sandbox-setup-${target}.exe"
-              if [[ -f "$runner_src" && -f "$setup_src" ]]; then
+              hpatch_src="$dest/hpatch-${target}.exe"
+              if [[ -f "$runner_src" && -f "$setup_src" && -f "$hpatch_src" ]]; then
                 cp "$dest/$base" "$bundle_dir/$base"
                 cp "$runner_src" "$bundle_dir/codex-command-runner.exe"
                 cp "$setup_src" "$bundle_dir/codex-windows-sandbox-setup.exe"
+                cp "$hpatch_src" "$bundle_dir/hpatch.exe"
                 # Use an absolute path so bundle zips land in the real dist
                 # dir even when 7z runs from a temp directory.
                 (cd "$bundle_dir" && 7z a "$repo_root/$dest/${base}.zip" .)
               else
                 echo "warning: missing sandbox binaries; falling back to single-binary zip"
-                echo "warning: expected $runner_src and $setup_src"
+                echo "warning: expected $runner_src, $setup_src, and $hpatch_src"
                 (cd "$dest" && 7z a "${base}.zip" "$base")
               fi
               rm -rf "$bundle_dir"

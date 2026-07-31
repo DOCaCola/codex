@@ -24,6 +24,7 @@ use tokio::time::timeout;
 use super::prepare_exec_request;
 #[cfg(unix)]
 use crate::CODEX_ARG0_EXEC_HELPER_ARG1;
+use crate::CODEX_HPATCH_COMPANION_ARGV0;
 use crate::ExecParams;
 #[cfg(any(unix, windows))]
 use crate::ExecServerRuntimePaths;
@@ -249,6 +250,57 @@ async fn native_request_preserves_native_launch_fields() {
     assert_eq!(prepared.cwd, cwd);
     assert_eq!(prepared.env, env);
     assert_eq!(prepared.arg0, params.arg0);
+}
+
+#[tokio::test]
+async fn native_request_resolves_hpatch_beside_executor() {
+    let cwd: AbsolutePathBuf = std::env::current_dir()
+        .expect("current directory")
+        .try_into()
+        .expect("absolute cwd");
+    let self_exe = std::env::current_exe().expect("current executable");
+    let runtime_paths = ExecServerRuntimePaths::new(self_exe, None).expect("runtime paths");
+    let params = ExecParams {
+        process_id: ProcessId::from("process-hpatch"),
+        argv: vec![
+            CODEX_HPATCH_COMPANION_ARGV0.to_string(),
+            "translate".to_string(),
+        ],
+        cwd: PathUri::from_abs_path(&cwd),
+        env_policy: None,
+        env: HashMap::new(),
+        tty: false,
+        pipe_stdin: true,
+        arg0: None,
+        sandbox: None,
+        enforce_managed_network: false,
+        managed_network: None,
+        network_proxy: None,
+    };
+
+    let prepared = prepare_exec_request(
+        &params,
+        HashMap::new(),
+        Some(&runtime_paths),
+        /*network_policy_decider*/ None,
+    )
+    .await
+    .expect("prepare hpatch request");
+
+    assert_eq!(
+        prepared.command.first(),
+        Some(
+            &runtime_paths
+                .hpatch_exe()
+                .expect("hpatch path")
+                .to_string_lossy()
+                .into_owned()
+        )
+    );
+    assert_eq!(
+        prepared.command.get(1).map(String::as_str),
+        Some("translate")
+    );
 }
 
 #[tokio::test]

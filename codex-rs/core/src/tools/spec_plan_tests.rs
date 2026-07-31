@@ -693,6 +693,34 @@ async fn command_stack_hides_child_tools_and_stays_visible_in_code_mode_only() {
 }
 
 #[tokio::test]
+async fn hpatch_replaces_visible_apply_patch_and_composes_with_command_stack() {
+    let direct = probe(|turn| {
+        set_feature(turn, Feature::Hpatch, /*enabled*/ true);
+        turn.model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+    })
+    .await;
+
+    direct.assert_visible_contains(&["hpatch"]);
+    direct.assert_visible_lacks(&["apply_patch"]);
+    direct.assert_registered_contains(&["hpatch", "apply_patch"]);
+    assert_eq!(direct.exposure("apply_patch"), ToolExposure::Hidden);
+
+    let stacked = probe(|turn| {
+        set_features(turn, &[Feature::CommandStack, Feature::Hpatch]);
+        turn.model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+    })
+    .await;
+
+    stacked.assert_visible_contains(&["command_stack"]);
+    stacked.assert_visible_lacks(&["hpatch", "apply_patch"]);
+    stacked.assert_registered_contains(&["command_stack", "hpatch", "apply_patch"]);
+    let command_stack = serde_json::to_string(stacked.visible_spec("command_stack"))
+        .expect("command_stack spec should serialize");
+    assert!(command_stack.contains("hpatch"));
+    assert!(!command_stack.contains("apply_patch"));
+}
+
+#[tokio::test]
 async fn shell_zsh_fork_stays_standalone_until_unified_exec_composition_is_enabled() {
     let standalone = probe(|turn| {
         set_features(turn, &[Feature::ShellTool, Feature::UnifiedExec]);

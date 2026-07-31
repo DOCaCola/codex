@@ -15,6 +15,42 @@ from codex_package.targets import TARGET_SPECS
 
 
 class PackageLayoutTest(unittest.TestCase):
+    def test_windows_package_places_hpatch_beside_entrypoint(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            package_dir = root / "package"
+            package_dir.mkdir()
+            inputs = PackageInputs(
+                entrypoint_bin=touch_executable(root / "codex.exe"),
+                code_mode_host_bin=touch_executable(root / "codex-code-mode-host.exe"),
+                hpatch_bin=touch_executable(root / "hpatch.exe"),
+                rg_bin=touch_executable(root / "rg.exe"),
+                zsh_bin=None,
+                bwrap_bin=None,
+                codex_command_runner_bin=touch_executable(
+                    root / "codex-command-runner.exe"
+                ),
+                codex_windows_sandbox_setup_bin=touch_executable(
+                    root / "codex-windows-sandbox-setup.exe"
+                ),
+            )
+
+            build_package_dir(
+                package_dir,
+                "1.2.3",
+                PACKAGE_VARIANTS["codex"],
+                TARGET_SPECS["x86_64-pc-windows-msvc"],
+                inputs,
+            )
+            validate_package_dir(
+                package_dir,
+                PACKAGE_VARIANTS["codex"],
+                TARGET_SPECS["x86_64-pc-windows-msvc"],
+                include_zsh=False,
+            )
+
+            self.assertTrue((package_dir / "bin" / "hpatch.exe").is_file())
+
     def test_macos_package_preserves_prebuilt_resource_binaries(self) -> None:
         for variant_name in ("codex", "codex-app-server"):
             for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
@@ -36,6 +72,7 @@ class PackageLayoutTest(unittest.TestCase):
                             code_mode_host_bin=touch_executable(
                                 root / "codex-code-mode-host"
                             ),
+                            hpatch_bin=touch_executable(root / "hpatch"),
                             rg_bin=rg_bin,
                             zsh_bin=zsh_bin,
                             bwrap_bin=None,
@@ -73,6 +110,7 @@ class PackageLayoutTest(unittest.TestCase):
             inputs = PackageInputs(
                 entrypoint_bin=touch_executable(root / "codex-app-server"),
                 code_mode_host_bin=touch_executable(root / "codex-code-mode-host"),
+                hpatch_bin=touch_executable(root / "hpatch"),
                 rg_bin=touch_executable(root / "rg"),
                 zsh_bin=None,
                 bwrap_bin=touch_executable(root / "bwrap"),
@@ -95,6 +133,7 @@ class PackageLayoutTest(unittest.TestCase):
             )
 
             self.assertTrue((package_dir / "bin" / "codex-code-mode-host").is_file())
+            self.assertTrue((package_dir / "bin" / "hpatch").is_file())
 
 
 def touch_executable(path: Path) -> Path:

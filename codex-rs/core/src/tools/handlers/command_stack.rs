@@ -16,6 +16,7 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
+use crate::tools::handlers::command_stack_spec::CommandStackPatchTool;
 use crate::tools::handlers::command_stack_spec::create_command_stack_tool;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::parallel::ToolCallRuntime;
@@ -33,6 +34,7 @@ pub(crate) struct CommandStackHandler {
     exec_arguments: JsonSchema,
     write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
+    patch_tool: CommandStackPatchTool,
 }
 
 impl CommandStackHandler {
@@ -41,12 +43,14 @@ impl CommandStackHandler {
         exec_arguments: JsonSchema,
         write_stdin_arguments: JsonSchema,
         include_environment_id: bool,
+        patch_tool: CommandStackPatchTool,
     ) -> Self {
         Self {
             child_router,
             exec_arguments,
             write_stdin_arguments,
             include_environment_id,
+            patch_tool,
         }
     }
 }
@@ -61,6 +65,7 @@ impl ToolExecutor<ToolInvocation> for CommandStackHandler {
             self.exec_arguments.clone(),
             self.write_stdin_arguments.clone(),
             self.include_environment_id,
+            self.patch_tool,
         )
     }
 
@@ -101,7 +106,7 @@ impl CommandStackHandler {
             ));
         };
         let args: CommandStackArgs = parse_arguments(arguments)?;
-        validate_commands(&args.commands)?;
+        validate_commands(&args.commands, self.patch_tool)?;
         let tool_runtime = ToolCallRuntime::new(
             Arc::clone(&self.child_router),
             Arc::clone(&invocation.session),
@@ -122,7 +127,7 @@ impl CommandStackHandler {
         for commands in grouped.into_values() {
             let contains_patch = commands
                 .iter()
-                .any(|(_, command)| command.command_type == CommandType::ApplyPatch);
+                .any(|(_, command)| command.command_type.is_patch());
             let step_executions = if contains_patch {
                 let mut step_executions = Vec::with_capacity(commands.len());
                 for (index, command) in commands {
@@ -232,6 +237,13 @@ enum CommandType {
     ExecCommand,
     WriteStdin,
     ApplyPatch,
+    Hpatch,
+}
+
+impl CommandType {
+    fn is_patch(self) -> bool {
+        matches!(self, Self::ApplyPatch | Self::Hpatch)
+    }
 }
 
 #[derive(Serialize)]
@@ -258,7 +270,7 @@ struct CommandExecution {
 impl CommandExecution {
     fn from_result(result: CommandResult, continue_on_failure: bool) -> Self {
         let failed = !result.success;
-        let patch_failed = failed && result.command_type == CommandType::ApplyPatch;
+        let patch_failed = failed && result.command_type.is_patch();
         Self {
             blocks_later_steps: failed && (patch_failed || !continue_on_failure),
             stop_current_step: patch_failed,
@@ -267,7 +279,10 @@ impl CommandExecution {
     }
 }
 
-fn validate_commands(commands: &[CommandItem]) -> Result<(), FunctionCallError> {
+fn validate_commands(
+    commands: &[CommandItem],
+    patch_tool: CommandStackPatchTool,
+) -> Result<(), FunctionCallError> {
     if commands.is_empty() || commands.len() > MAX_COMMANDS {
         return Err(FunctionCallError::RespondToModel(format!(
             "command_stack requires between 1 and {MAX_COMMANDS} commands"
@@ -282,12 +297,31 @@ fn validate_commands(commands: &[CommandItem]) -> Result<(), FunctionCallError> 
             command.step
         )));
     }
-    if commands.iter().any(|command| {
-        command.command_type == CommandType::ApplyPatch && command.continue_on_failure
-    }) {
+    if commands
+        .iter()
+        .any(|command| command.command_type.is_patch() && command.continue_on_failure)
+    {
         return Err(FunctionCallError::RespondToModel(
-            "apply_patch does not support continue_on_failure".to_string(),
+            "patch operations do not support continue_on_failure".to_string(),
         ));
+    }
+    if let Some(command) = commands.iter().find(|command| {
+        command.command_type.is_patch()
+            && match patch_tool {
+                CommandStackPatchTool::ApplyPatch => {
+                    command.command_type != CommandType::ApplyPatch
+                }
+                CommandStackPatchTool::Hpatch => command.command_type != CommandType::Hpatch,
+            }
+    }) {
+        return Err(FunctionCallError::RespondToModel(format!(
+            "{} is not available in this command_stack configuration",
+            match command.command_type {
+                CommandType::ApplyPatch => "apply_patch",
+                CommandType::Hpatch => "hpatch",
+                CommandType::ExecCommand | CommandType::WriteStdin => unreachable!(),
+            }
+        )));
     }
     for command in commands.iter().filter(|command| {
         command.command_type == CommandType::ExecCommand
@@ -350,19 +384,28 @@ fn build_child_call(
                 ToolPayload::Function { arguments },
             )
         }
-        CommandType::ApplyPatch => {
+        CommandType::ApplyPatch | CommandType::Hpatch => {
             let PatchArguments {
                 patch,
+                script,
                 environment_id,
             } = serde_json::from_value(command.arguments).map_err(|err| {
+                FunctionCallError::RespondToModel(format!("failed to parse patch arguments: {err}"))
+            })?;
+            let (tool_name, input) = match command.command_type {
+                CommandType::ApplyPatch => ("apply_patch", patch),
+                CommandType::Hpatch => ("hpatch", script),
+                CommandType::ExecCommand | CommandType::WriteStdin => unreachable!(),
+            };
+            let input = input.ok_or_else(|| {
                 FunctionCallError::RespondToModel(format!(
-                    "failed to parse apply_patch arguments: {err}"
+                    "{tool_name} arguments are missing the edit input"
                 ))
             })?;
             (
-                ToolName::plain("apply_patch"),
+                ToolName::plain(tool_name),
                 ToolPayload::Custom {
-                    input: insert_environment_id(patch, environment_id)?,
+                    input: insert_environment_id(input, environment_id, command.command_type)?,
                 },
             )
         }
@@ -378,31 +421,41 @@ fn build_child_call(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PatchArguments {
-    patch: String,
+    #[serde(default)]
+    patch: Option<String>,
+    #[serde(default)]
+    script: Option<String>,
     #[serde(default)]
     environment_id: Option<String>,
 }
 
 fn insert_environment_id(
-    patch: String,
+    input: String,
     environment_id: Option<String>,
+    command_type: CommandType,
 ) -> Result<String, FunctionCallError> {
     let Some(environment_id) = environment_id else {
-        return Ok(patch);
+        return Ok(input);
     };
-    if patch.contains("*** Environment ID: ") {
+    if input.contains("*** Environment ID: ") {
         return Err(FunctionCallError::RespondToModel(
-            "apply_patch environment_id was provided both separately and in the patch".to_string(),
+            "environment_id was provided both separately and in the edit input".to_string(),
         ));
     }
-    let Some(rest) = patch.strip_prefix("*** Begin Patch\n") else {
-        return Err(FunctionCallError::RespondToModel(
-            "apply_patch input must start with `*** Begin Patch`".to_string(),
-        ));
-    };
-    Ok(format!(
-        "*** Begin Patch\n*** Environment ID: {environment_id}\n{rest}"
-    ))
+    match command_type {
+        CommandType::ApplyPatch => {
+            let Some(rest) = input.strip_prefix("*** Begin Patch\n") else {
+                return Err(FunctionCallError::RespondToModel(
+                    "apply_patch input must start with `*** Begin Patch`".to_string(),
+                ));
+            };
+            Ok(format!(
+                "*** Begin Patch\n*** Environment ID: {environment_id}\n{rest}"
+            ))
+        }
+        CommandType::Hpatch => Ok(format!("*** Environment ID: {environment_id}\n{input}")),
+        CommandType::ExecCommand | CommandType::WriteStdin => unreachable!(),
+    }
 }
 
 fn normalize_child_result(
@@ -464,25 +517,31 @@ mod tests {
 
     #[test]
     fn validation_rejects_empty_and_out_of_range_steps() {
-        assert!(validate_commands(&[]).is_err());
+        assert!(validate_commands(&[], CommandStackPatchTool::ApplyPatch).is_err());
         assert!(
-            validate_commands(&[CommandItem {
-                command_type: CommandType::ExecCommand,
-                step: 5,
-                arguments: serde_json::json!({"cmd": "echo ok"}),
-                continue_on_failure: false,
-            }])
+            validate_commands(
+                &[CommandItem {
+                    command_type: CommandType::ExecCommand,
+                    step: 5,
+                    arguments: serde_json::json!({"cmd": "echo ok"}),
+                    continue_on_failure: false,
+                }],
+                CommandStackPatchTool::ApplyPatch
+            )
             .is_err()
         );
         assert!(
-            validate_commands(&[CommandItem {
-                command_type: CommandType::ApplyPatch,
-                step: 1,
-                arguments: serde_json::json!({
-                    "patch": "*** Begin Patch\n*** End Patch\n"
-                }),
-                continue_on_failure: true,
-            }])
+            validate_commands(
+                &[CommandItem {
+                    command_type: CommandType::ApplyPatch,
+                    step: 1,
+                    arguments: serde_json::json!({
+                        "patch": "*** Begin Patch\n*** End Patch\n"
+                    }),
+                    continue_on_failure: true,
+                }],
+                CommandStackPatchTool::ApplyPatch
+            )
             .is_err()
         );
     }
@@ -504,7 +563,8 @@ mod tests {
             },
         ];
 
-        let err = validate_commands(&commands).expect_err("shell switch must be isolated");
+        let err = validate_commands(&commands, CommandStackPatchTool::ApplyPatch)
+            .expect_err("shell switch must be isolated");
         assert!(
             err.to_string()
                 .contains("must be the only command in step 1")
@@ -515,7 +575,8 @@ mod tests {
     fn inserts_environment_id_after_begin_marker() {
         let patch = "*** Begin Patch\n*** End Patch\n".to_string();
         assert_eq!(
-            insert_environment_id(patch, Some("remote".to_string())).unwrap(),
+            insert_environment_id(patch, Some("remote".to_string()), CommandType::ApplyPatch,)
+                .unwrap(),
             "*** Begin Patch\n*** Environment ID: remote\n*** End Patch\n"
         );
     }
@@ -688,7 +749,13 @@ mod tests {
         ]);
         let child_router = Arc::new(ToolRouter::from_parts(child_registry, Vec::new()));
         let arguments = JsonSchema::object(Default::default(), None, Some(true.into()));
-        CommandStackHandler::new(child_router, arguments.clone(), arguments, false)
+        CommandStackHandler::new(
+            child_router,
+            arguments.clone(),
+            arguments,
+            false,
+            CommandStackPatchTool::ApplyPatch,
+        )
     }
 
     struct RecordingHandler {

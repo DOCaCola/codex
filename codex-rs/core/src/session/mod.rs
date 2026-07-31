@@ -652,11 +652,14 @@ impl Session {
         let history_mode = conversation_history.get_history_mode(
             requested_history_mode.unwrap_or_else(|| thread_store.default_history_mode()),
         );
-        let base_instructions = config
+        let mut base_instructions = config
             .base_instructions
             .clone()
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
+        if config.features.enabled(Feature::Hpatch) {
+            base_instructions = crate::context::append_hpatch_instructions(base_instructions);
+        }
 
         // Dynamic tools are defined at thread start and persisted in rollout session metadata.
         let dynamic_tools = if dynamic_tools.is_empty() {

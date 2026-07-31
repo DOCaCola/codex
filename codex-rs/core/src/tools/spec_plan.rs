@@ -10,11 +10,13 @@ use crate::tools::handlers::ApplyPatchHandler;
 use crate::tools::handlers::CodeModeExecuteHandler;
 use crate::tools::handlers::CodeModeWaitHandler;
 use crate::tools::handlers::CommandStackHandler;
+use crate::tools::handlers::CommandStackPatchTool;
 use crate::tools::handlers::CurrentTimeHandler;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ExecCommandHandlerOptions;
 use crate::tools::handlers::GetContextRemainingHandler;
+use crate::tools::handlers::HpatchHandler;
 use crate::tools::handlers::ListAvailablePluginsToInstallHandler;
 use crate::tools::handlers::ListMcpResourceTemplatesHandler;
 use crate::tools::handlers::ListMcpResourcesHandler;
@@ -830,14 +832,25 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
         ));
     }
 
+    let hpatch_enabled = features.enabled(Feature::Hpatch);
     if environment_mode.has_environment() && features.enabled(Feature::CommandStack) {
         let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
-        planned_tools.add_command_stack_child(ApplyPatchHandler::new(include_environment_id));
+        if hpatch_enabled {
+            planned_tools.add_command_stack_child(HpatchHandler::new(include_environment_id));
+            planned_tools.add_dispatch_only(ApplyPatchHandler::new(include_environment_id));
+        } else {
+            planned_tools.add_command_stack_child(ApplyPatchHandler::new(include_environment_id));
+        }
     } else if environment_mode.has_environment()
-        && turn_context.model_info.apply_patch_tool_type.is_some()
+        && (hpatch_enabled || turn_context.model_info.apply_patch_tool_type.is_some())
     {
         let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
-        planned_tools.add(ApplyPatchHandler::new(include_environment_id));
+        if hpatch_enabled {
+            planned_tools.add(HpatchHandler::new(include_environment_id));
+            planned_tools.add_dispatch_only(ApplyPatchHandler::new(include_environment_id));
+        } else {
+            planned_tools.add(ApplyPatchHandler::new(include_environment_id));
+        }
     }
 
     if turn_context
@@ -873,7 +886,12 @@ fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, planned_tools: &mut
 
     let exec_name = ToolName::plain("exec_command");
     let write_stdin_name = ToolName::plain("write_stdin");
-    let patch_name = ToolName::plain("apply_patch");
+    let patch_tool = if turn_context.config.features.enabled(Feature::Hpatch) {
+        CommandStackPatchTool::Hpatch
+    } else {
+        CommandStackPatchTool::ApplyPatch
+    };
+    let patch_name = ToolName::plain(patch_tool.name());
     let Some(exec_runtime) = planned_tools
         .command_stack_children
         .iter()
@@ -920,6 +938,7 @@ fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, planned_tools: &mut
             exec_spec.parameters,
             write_stdin_spec.parameters,
             include_environment_id,
+            patch_tool,
         ),
         ToolExposure::DirectModelOnly,
     );

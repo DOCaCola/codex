@@ -22,6 +22,7 @@ fn command_stack_tool_describes_batching_and_dependency_rules() {
         exec_arguments,
         write_stdin_arguments,
         /*include_environment_id*/ false,
+        CommandStackPatchTool::ApplyPatch,
     ) else {
         panic!("expected function tool");
     };
@@ -78,4 +79,22 @@ fn command_stack_tool_describes_batching_and_dependency_rules() {
             .and_then(|schema| schema.description.as_deref())
             .is_some_and(|description| description.contains("Defaults to false"))
     );
+}
+
+#[test]
+fn command_stack_switches_patch_child_to_hpatch() {
+    let arguments = JsonSchema::object(Default::default(), None, Some(true.into()));
+    let ToolSpec::Function(tool) = create_command_stack_tool(
+        arguments.clone(),
+        arguments,
+        /*include_environment_id*/ true,
+        CommandStackPatchTool::Hpatch,
+    ) else {
+        panic!("expected function tool");
+    };
+
+    let serialized = serde_json::to_value(tool).expect("serialize command_stack tool");
+    assert!(serialized.to_string().contains("hpatch"));
+    assert!(serialized.to_string().contains("script"));
+    assert!(!serialized.to_string().contains("apply_patch"));
 }

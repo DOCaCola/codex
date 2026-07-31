@@ -51,6 +51,8 @@ pub struct ApplyPatchRequest {
     pub exec_approval_requirement: ExecApprovalRequirement,
     pub additional_permissions: Option<AdditionalPermissionProfile>,
     pub permissions_preapproved: bool,
+    pub permission_request_tool_name: HookToolName,
+    pub permission_request_command: String,
 }
 
 #[derive(Default)]
@@ -204,8 +206,8 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         req: &ApplyPatchRequest,
     ) -> Option<PermissionRequestPayload> {
         Some(PermissionRequestPayload {
-            tool_name: HookToolName::apply_patch(),
-            tool_input: serde_json::json!({ "command": req.action.patch }),
+            tool_name: req.permission_request_tool_name.clone(),
+            tool_input: serde_json::json!({ "command": req.permission_request_command }),
         })
     }
 }

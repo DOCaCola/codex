@@ -23,7 +23,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-target_base="${CODEX_OUTPUT_TARGET_DIR:-${TEMP:-${TMP:-/tmp}}}"
+target_base="${CODEX_OUTPUT_TARGET_DIR:-/c/temp}"
 if [[ "${target_base}" =~ ^[A-Za-z]:\\ ]]; then
     target_base="$(cygpath -u "${target_base}")"
 fi
@@ -31,10 +31,17 @@ fi
 target_dir="${target_base%/}/codex-output-target"
 target_dir_win="$(cygpath -w "${target_dir}")"
 binary_path="${target_dir}/${profile}/codex.exe"
+hpatch_path="${target_dir}/${profile}/hpatch.exe"
+hpatch_source_dir="${HPATCH_SOURCE_DIR:-${repo_root}/../hpatch}"
 output_path="${output_dir}/codex.exe"
 staged_output_path="${output_dir}/codex.exe.tmp"
 
 mkdir -p "${target_dir}" "${output_dir}"
+
+"${repo_root}/scripts/build-hpatch-companion.sh" \
+    --source "${hpatch_source_dir}" \
+    --target x86_64-pc-windows-msvc \
+    --output "${hpatch_path}"
 
 (
     cd "${workspace_root}"
@@ -51,4 +58,7 @@ if ! mv -f "${staged_output_path}" "${output_path}"; then
     exit 1
 fi
 
+cp -f "${hpatch_path}" "${output_dir}/hpatch.exe"
+
 echo "synced ${binary_path} -> ${output_path}"
+echo "synced ${hpatch_path} -> ${output_dir}/hpatch.exe"
