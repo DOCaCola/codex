@@ -5,6 +5,27 @@ const LEGACY_HPATCH_END_MARKER: &str = "</hpatch_instructions>";
 
 const DIRECT_HPATCH_BODY: &str = "When `hpatch` is available without `command_stack`, use it directly for manual file edits. Earlier base-instruction references to `apply_patch` are superseded; do not call or shell-wrap `apply_patch`.";
 const STACK_HPATCH_BODY: &str = " For `hpatch` bodies, start with `in PATH` or `new PATH`; select with `tsel FROM_LINE \"TEXT\" [COUNT]` or `rsel START:END`. `tsel` selects only matching text; use `rsel N:N` for a whole line. Then use `type`, `del`, `copy`, `cut`, `paste`, `mv`, or `rm`; use `type <<PATCH` for multiline text.";
+const STACK_BATCHING_BODY: &str = r#" Tool calls are expensive. Include every currently known useful operation in one call. Independent operations must share the same step. Use later steps only for predetermined dependencies, and make another call only when the next operation depends on unseen output. Use one operation only when no other useful operation is currently known. Examples:
+```text
+exec_command
+{"cmd":"git status --short"}
+end
+
+exec_command
+{"cmd":"rg -n TODO src"}
+end
+```
+The two operations above share step 1 and run together.
+```text
+exec_command
+{"cmd":"cargo build"}
+end
+
+exec_command step=2
+{"cmd":"cargo test"}
+end
+```
+The step 2 operation waits for step 1."#;
 
 pub(crate) fn configure_tool_surface_instructions(
     base: String,
@@ -37,7 +58,7 @@ fn instruction_body(command_stack_enabled: bool, hpatch_enabled: bool) -> Option
             "Optional leading `workdir PATH` defaults exec operations; apply_patch paths stay session-relative."
         };
         let mut body = format!(
-            "When `command_stack` is available, use it for shell, terminal continuation, and manual edits; direct `exec_command`, `write_stdin`, `apply_patch`, and `hpatch` references are superseded. Use only `exec_command`, `write_stdin`, and `{patch_tool}` operation blocks: `<type> [step=N] [continue_on_failure]`, body, `end`; step defaults to 1 and exec/stdin bodies are JSON objects. Prefer one call: batch independent operations in the same step, use later steps for predetermined dependencies, and make a later call only when you must inspect output first. {workdir_guidance}"
+            "When `command_stack` is available, use it for shell, terminal continuation, and manual edits; direct `exec_command`, `write_stdin`, `apply_patch`, and `hpatch` references are superseded. Use only `exec_command`, `write_stdin`, and `{patch_tool}` operation blocks: `<type> [step=N] [continue_on_failure]`, body, `end`; step defaults to 1 and exec/stdin bodies are JSON objects.{STACK_BATCHING_BODY} {workdir_guidance}"
         );
         if hpatch_enabled {
             body.push_str(STACK_HPATCH_BODY);
@@ -88,8 +109,17 @@ mod tests {
         let configured = configure_tool_surface_instructions("base".to_string(), true, false);
 
         assert!(configured.contains("and `apply_patch` operation blocks"));
-        assert!(configured.contains("Prefer one call"));
-        assert!(configured.contains("batch independent operations in the same step"));
+        assert!(configured.contains("Tool calls are expensive"));
+        assert!(configured.contains("Independent operations must share the same step"));
+        assert!(
+            configured.contains(
+                "Use one operation only when no other useful operation is currently known"
+            )
+        );
+        assert!(configured.contains("The two operations above share step 1 and run together"));
+        assert!(configured.contains("exec_command step=2"));
+        assert!(configured.contains("The step 2 operation waits for step 1"));
+
         assert!(configured.contains("`workdir PATH` defaults exec operations"));
         assert!(!configured.contains("For `hpatch` bodies"));
     }
@@ -100,10 +130,19 @@ mod tests {
 
         assert!(configured.contains("and `hpatch` operation blocks"));
         assert!(configured.contains("For `hpatch` bodies"));
-        assert!(configured.contains("Prefer one call"));
+        assert!(configured.contains("Tool calls are expensive"));
+        assert!(configured.contains("Independent operations must share the same step"));
+        assert!(
+            configured.contains(
+                "Use one operation only when no other useful operation is currently known"
+            )
+        );
+        assert!(configured.contains("The two operations above share step 1 and run together"));
+        assert!(configured.contains("exec_command step=2"));
+        assert!(configured.contains("The step 2 operation waits for step 1"));
         assert!(configured.contains("`workdir PATH` defaults exec and hpatch operations"));
         assert_eq!(configured.matches(START_MARKER).count(), 1);
-        assert!(configured.len() - "base".len() < 1100);
+        assert!(configured.len() - "base".len() < 1800);
     }
 
     #[test]

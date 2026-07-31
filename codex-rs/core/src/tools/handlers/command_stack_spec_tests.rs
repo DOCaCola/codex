@@ -26,8 +26,23 @@ fn command_stack_uses_one_freeform_block_surface_with_apply_patch() {
     };
 
     assert!(tool.description.contains("Every operation is a block"));
-    assert!(tool.description.contains("Prefer one call"));
-    assert!(tool.description.contains("batch independent operations"));
+    assert!(tool.description.contains("Tool calls are expensive"));
+    assert!(
+        tool.description
+            .contains("Independent operations must share the same step")
+    );
+    assert!(
+        tool.description
+            .contains("Use one operation only when no other useful operation is currently known")
+    );
+    assert!(
+        tool.description
+            .contains("omit `step` on independent blocks")
+    );
+    assert!(
+        tool.description
+            .contains("use `step=2` for a known follow-up")
+    );
     assert!(tool.description.contains("Step defaults to 1"));
     assert!(
         tool.description
@@ -83,8 +98,23 @@ fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
     };
 
     assert!(tool.description.contains("Every operation is a block"));
-    assert!(tool.description.contains("Prefer one call"));
-    assert!(tool.description.contains("batch independent operations"));
+    assert!(tool.description.contains("Tool calls are expensive"));
+    assert!(
+        tool.description
+            .contains("Independent operations must share the same step")
+    );
+    assert!(
+        tool.description
+            .contains("Use one operation only when no other useful operation is currently known")
+    );
+    assert!(
+        tool.description
+            .contains("omit `step` on independent blocks")
+    );
+    assert!(
+        tool.description
+            .contains("use `step=2` for a known follow-up")
+    );
     assert!(
         tool.description
             .contains("Exec and stdin bodies are JSON argument objects")
