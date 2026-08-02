@@ -11,6 +11,7 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_protocol::protocol::MultiAgentVersion;
 use std::fmt;
 use std::future::Future;
 use std::path::PathBuf;
@@ -24,6 +25,7 @@ use tracing::error;
 use tracing::info;
 
 const MODEL_CACHE_FILE: &str = "models_cache.json";
+const GPT_5_6_LUNA_MODEL: &str = "gpt-5.6-luna";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 
 /// Remote endpoint used by the OpenAI-compatible model manager.
@@ -419,7 +421,8 @@ impl OpenAiModelsManager {
     }
 
     /// Replace the cached remote models and rebuild the derived presets list.
-    async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
+    async fn apply_remote_models(&self, mut models: Vec<ModelInfo>) {
+        apply_remote_model_compatibility_overrides(&mut models);
         // Use the remote models list as the source of truth if it contains at least one
         // non-hidden model and the user is using ChatGPT auth.
         let should_use_remote_models_only = !models.is_empty()
@@ -551,6 +554,20 @@ impl ModelsManager for StaticModelsManager {
         _http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, ()> {
         Box::pin(async {})
+    }
+}
+
+/// Correct temporary compatibility metadata served by the OpenAI model catalog.
+///
+/// This intentionally matches only the canonical Luna slug so variants and other V1 models remain
+/// controlled by their catalog metadata.
+fn apply_remote_model_compatibility_overrides(models: &mut [ModelInfo]) {
+    for model in models {
+        if model.slug == GPT_5_6_LUNA_MODEL
+            && model.multi_agent_version == Some(MultiAgentVersion::V1)
+        {
+            model.multi_agent_version = Some(MultiAgentVersion::V2);
+        }
     }
 }
 
