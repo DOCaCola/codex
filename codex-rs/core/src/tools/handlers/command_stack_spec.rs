@@ -4,6 +4,7 @@ use codex_tools::JsonSchema;
 use codex_tools::ToolSpec;
 
 use crate::tools::handlers::apply_patch_spec::apply_patch_lark_rules;
+use crate::tools::handlers::hpatch_spec::HPATCH_SELECTOR_GUIDANCE;
 use crate::tools::handlers::hpatch_spec::hpatch_lark_rules;
 
 const COMMAND_STACK_LARK_GRAMMAR: &str = include_str!("command_stack.lark");
@@ -68,10 +69,11 @@ pub(crate) fn create_command_stack_tool(
     let patch_body = match patch_tool {
         CommandStackPatchTool::ApplyPatch => {
             "An apply_patch body is a complete patch from `*** Begin Patch` through `*** End Patch`."
+                .to_string()
         }
-        CommandStackPatchTool::Hpatch => {
-            "An hpatch body may start with a working-directory header, then uses `in`/`new`, `tsel`/`rsel`, and `type`/`del` commands. `tsel` selects only matching text; use `rsel N:N` for a whole line."
-        }
+        CommandStackPatchTool::Hpatch => format!(
+            "An hpatch body may start with a working-directory header, then uses `in`/`new`, `tsel`/`rsel`, and `type`/`del` commands. {HPATCH_SELECTOR_GUIDANCE}"
+        ),
     };
 
     ToolSpec::Freeform(FreeformTool {

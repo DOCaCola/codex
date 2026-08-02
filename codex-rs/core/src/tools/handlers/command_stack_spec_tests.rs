@@ -124,6 +124,16 @@ fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
             .contains("optional keys: `environment_id`, `tty`")
     );
     assert!(tool.description.contains("An hpatch body"));
+    assert!(tool.description.contains("exact and non-syntax-aware"));
+    assert!(
+        tool.description
+            .contains("Never encode `\\n` or a multiline block")
+    );
+    assert!(
+        tool.description
+            .contains("verify short or repeated text with `rg -nF`")
+    );
+    assert!(tool.description.contains("selectors use it until `commit`"));
     assert!(
         tool.description
             .contains("default for exec and hpatch operations")
