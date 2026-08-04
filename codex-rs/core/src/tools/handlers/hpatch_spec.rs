@@ -4,7 +4,7 @@ use codex_tools::ToolSpec;
 
 const HPATCH_LARK_GRAMMAR: &str = include_str!("hpatch.lark");
 
-pub(crate) const HPATCH_SELECTOR_GUIDANCE: &str = "`tsel FROM_LINE \"TEXT\" [COUNT]` is exact and non-syntax-aware; `TEXT` must be a nonempty fragment on one logical line. Never encode `\\n` or a multiline block in `TEXT`. Start at stable non-whitespace content, avoid leading indentation, choose `FROM_LINE` near the intended occurrence, and verify short or repeated text with `rg -nF`. Use `rsel START:END` for complete lines, multiline regions, or indentation-sensitive edits. The first `in` freezes an immutable baseline; selectors use it until `commit`. Use `commit` only when later selectors must target content changed earlier in the same script. Rejection changes nothing.";
+pub(crate) const HPATCH_SELECTOR_GUIDANCE: &str = "`tsel FROM_LINE \"TEXT\" [COUNT]` is an exact plain-text search on one logical line. Start `FROM_LINE` at or before the intended match and use stable text without leading indentation; verify short or repeated fragments with `rg -nF`. Use `rsel START:END` for complete lines, multiline regions, or indentation-sensitive edits. `type <<PATCH` writes literal file text: use real lines and do not JSON-escape quotes or newlines. The first `in` freezes the baseline; selectors use it until `commit`, which is needed only when later selectors target earlier edits. Rejection changes nothing.";
 
 fn configured_hpatch_grammar(include_environment_id: bool) -> String {
     if include_environment_id {

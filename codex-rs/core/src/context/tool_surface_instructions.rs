@@ -6,7 +6,7 @@ const LEGACY_HPATCH_START_MARKER: &str = "<hpatch_instructions>";
 const LEGACY_HPATCH_END_MARKER: &str = "</hpatch_instructions>";
 
 const DIRECT_HPATCH_BODY: &str = "When `hpatch` is available without `command_stack`, use it directly for manual file edits. Earlier base-instruction references to `apply_patch` are superseded; do not call or shell-wrap `apply_patch`.";
-const STACK_HPATCH_BODY: &str = " For `hpatch` bodies, start with `in PATH` or `new PATH`; select with `tsel FROM_LINE \"TEXT\" [COUNT]` or `rsel START:END`. Then use `type`, `del`, `copy`, `cut`, `paste`, `mv`, or `rm`; use `type <<PATCH` for multiline replacement text.";
+const STACK_HPATCH_BODY: &str = " For `hpatch` bodies use `in`/`new`, `tsel`/`rsel`, then `type`/`del`/`copy`/`cut`/`paste`/`mv`/`rm`. `type <<PATCH` is literal multiline file text. Follow structural edits with a focused build or check in `step=2`.";
 const STACK_BATCHING_BODY: &str = r#" Tool calls are expensive. Include every currently known useful operation in one call. Independent operations must share the same step. Use later steps only for predetermined dependencies, and make another call only when the next operation depends on unseen output. Use one operation only when no other useful operation is currently known. Examples:
 ```text
 exec_command
@@ -145,9 +145,10 @@ mod tests {
         assert!(configured.contains("exec_command step=2"));
         assert!(configured.contains("The step 2 operation waits for step 1"));
         assert!(configured.contains("`workdir PATH` defaults exec and hpatch operations"));
-        assert!(configured.contains("exact and non-syntax-aware"));
-        assert!(configured.contains("Never encode `\\n` or a multiline block"));
-        assert!(configured.contains("verify short or repeated text with `rg -nF`"));
+        assert!(configured.contains("exact plain-text search"));
+        assert!(configured.contains("do not JSON-escape quotes or newlines"));
+        assert!(configured.contains("verify short or repeated fragments with `rg -nF`"));
+        assert!(configured.contains("Follow structural edits"));
         assert!(configured.contains("selectors use it until `commit`"));
         assert_eq!(configured.matches(START_MARKER).count(), 1);
         assert!(configured.len() - "base".len() < 2400);

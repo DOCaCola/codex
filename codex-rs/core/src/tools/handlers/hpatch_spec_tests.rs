@@ -8,14 +8,14 @@ fn hpatch_spec_is_compact_and_freeform() {
     assert_eq!(tool.name, "hpatch");
     assert!(!tool.format.definition.contains("environment_id"));
     assert!(tool.format.definition.contains("tsel_command"));
-    assert!(tool.description.contains("exact and non-syntax-aware"));
+    assert!(tool.description.contains("exact plain-text search"));
     assert!(
         tool.description
-            .contains("Never encode `\\n` or a multiline block")
+            .contains("do not JSON-escape quotes or newlines")
     );
     assert!(
         tool.description
-            .contains("verify short or repeated text with `rg -nF`")
+            .contains("verify short or repeated fragments with `rg -nF`")
     );
     assert!(tool.description.contains("selectors use it until `commit`"));
     assert!(tool.description.len() < 1200);
