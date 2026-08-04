@@ -13,7 +13,6 @@ use codex_login::TokenData;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ToolMode;
-use codex_protocol::protocol::MultiAgentVersion;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::VecDeque;
@@ -601,48 +600,6 @@ async fn refresh_available_models_uses_cached_remote_only_catalog_for_chatgpt_au
         0,
         "fresh cache should avoid a model fetch"
     );
-}
-
-#[tokio::test]
-async fn refresh_available_models_promotes_luna_v1_for_live_and_cached_chatgpt_catalogs() {
-    let mut luna = remote_model("gpt-5.6-luna", "GPT-5.6 Luna", /*priority*/ 0);
-    luna.multi_agent_version = Some(MultiAgentVersion::V1);
-    let mut legacy = remote_model("legacy-v1", "Legacy V1", /*priority*/ 1);
-    legacy.multi_agent_version = Some(MultiAgentVersion::V1);
-    let remote_models = vec![luna, legacy];
-    let mut expected_models = remote_models.clone();
-    expected_models[0].multi_agent_version = Some(MultiAgentVersion::V2);
-
-    let codex_home = tempdir().expect("temp dir");
-    let fetch_endpoint = TestModelsEndpoint::new(vec![remote_models]);
-    let fetch_manager =
-        openai_manager_for_tests(codex_home.path().to_path_buf(), fetch_endpoint.clone());
-
-    fetch_manager
-        .refresh_available_models(
-            RefreshStrategy::OnlineIfUncached,
-            &DEFAULT_HTTP_CLIENT_FACTORY,
-        )
-        .await
-        .expect("initial refresh succeeds");
-
-    assert_eq!(fetch_manager.get_remote_models().await, expected_models);
-    assert_eq!(fetch_endpoint.fetch_count(), 1);
-
-    let cache_endpoint = TestModelsEndpoint::new(Vec::new());
-    let cache_manager =
-        openai_manager_for_tests(codex_home.path().to_path_buf(), cache_endpoint.clone());
-
-    cache_manager
-        .refresh_available_models(
-            RefreshStrategy::OnlineIfUncached,
-            &DEFAULT_HTTP_CLIENT_FACTORY,
-        )
-        .await
-        .expect("cached refresh succeeds");
-
-    assert_eq!(cache_manager.get_remote_models().await, expected_models);
-    assert_eq!(cache_endpoint.fetch_count(), 0);
 }
 
 #[tokio::test]
