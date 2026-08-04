@@ -257,6 +257,8 @@ async fn shell_command_handler_rejects_justification_without_sandbox_permissions
         command: "echo hello".to_string(),
         workdir: None,
         login: None,
+        shell: None,
+
         timeout_ms: None,
         sandbox_permissions: None,
         additional_permissions: None,
@@ -335,7 +337,6 @@ async fn shell_command_handler_rejects_large_windows_bash_heredoc_writes() {
         &turn_context,
         turn_environment,
         cwd,
-        /*allow_login_shell*/ true,
     )
     .expect_err("large inline bash writes should be rejected on Windows");
 
@@ -406,7 +407,6 @@ async fn shell_command_handler_gives_windows_bash_its_own_path_order() {
         &turn_context,
         turn_environment,
         cwd,
-        /*allow_login_shell*/ false,
     )
     .expect("Windows Bash should produce exec params");
 
@@ -497,7 +497,6 @@ async fn shell_command_handler_switching_shell_preserves_inherited_env() {
         &turn_context,
         turn_environment,
         cwd.clone(),
-        /*allow_login_shell*/ true,
     )
     .expect("baseline shell command should produce exec params");
 
@@ -514,7 +513,6 @@ async fn shell_command_handler_switching_shell_preserves_inherited_env() {
         &turn_context,
         turn_environment,
         cwd,
-        /*allow_login_shell*/ true,
     )
     .expect("switched shell command should produce exec params");
 

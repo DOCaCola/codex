@@ -25,6 +25,8 @@ use crate::tools::registry::AnyToolResult;
 use crate::tools::registry::ToolArgumentDiffConsumer;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
+use crate::tools::router::ToolRouter;
+
 use codex_protocol::error::CodexErr;
 use codex_protocol::models::ResponseInputItem;
 
@@ -43,6 +45,8 @@ pub(crate) struct ToolCallRuntime {
     // Tool calls may run later, so retain the step whose tool list advertised them.
     step_context: Arc<StepContext>,
     tracker: SharedTurnDiffTracker,
+    tool_router: Option<Arc<ToolRouter>>,
+
     parallel_execution: Arc<RwLock<()>>,
 }
 
@@ -56,17 +60,38 @@ impl ToolCallRuntime {
             session,
             step_context,
             tracker,
+            tool_router: None,
+
             parallel_execution: Arc::new(RwLock::new(())),
         }
+    }
+
+    pub(crate) fn new_with_router(
+        session: Arc<Session>,
+        step_context: Arc<StepContext>,
+        tracker: SharedTurnDiffTracker,
+        tool_router: Arc<ToolRouter>,
+    ) -> Self {
+        Self {
+            session,
+            step_context,
+            tracker,
+            tool_router: Some(tool_router),
+            parallel_execution: Arc::new(RwLock::new(())),
+        }
+    }
+
+    fn tool_router(&self) -> &Arc<ToolRouter> {
+        self.tool_router
+            .as_ref()
+            .unwrap_or(&self.step_context.tool_router)
     }
 
     pub(crate) fn create_diff_consumer(
         &self,
         tool_name: &codex_tools::ToolName,
     ) -> Option<Box<dyn ToolArgumentDiffConsumer>> {
-        self.step_context
-            .tool_router
-            .create_diff_consumer(tool_name)
+        self.tool_router().create_diff_consumer(tool_name)
     }
 
     #[instrument(level = "trace", skip_all)]
@@ -109,7 +134,7 @@ impl ToolCallRuntime {
                 super::effective_tool_mode(&self.step_context.turn),
             );
         }
-        let router = &self.step_context.tool_router;
+        let router = self.tool_router();
         let supports_parallel = router.tool_supports_parallel(&call);
         let tool_runtime = router.tool_runtime(&call);
         let wait_for_runtime_cancellation = router.tool_waits_for_runtime_cancellation(&call);

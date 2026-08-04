@@ -32,7 +32,7 @@ const MAX_COMMANDS: usize = 8;
 const MAX_STEP: u8 = 4;
 
 pub(crate) struct CommandStackHandler {
-    _child_router: Arc<ToolRouter>,
+    child_router: Arc<ToolRouter>,
     exec_arguments: JsonSchema,
     write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
@@ -48,7 +48,7 @@ impl CommandStackHandler {
         patch_tool: CommandStackPatchTool,
     ) -> Self {
         Self {
-            _child_router: child_router,
+            child_router,
             exec_arguments,
             write_stdin_arguments,
             include_environment_id,
@@ -118,10 +118,11 @@ impl CommandStackHandler {
         apply_stack_workdir(&mut commands, workdir.as_deref());
 
         validate_commands(&commands, self.patch_tool)?;
-        let tool_runtime = ToolCallRuntime::new(
+        let tool_runtime = ToolCallRuntime::new_with_router(
             Arc::clone(&invocation.session),
             Arc::clone(&invocation.step_context),
             Arc::clone(&invocation.tracker),
+            Arc::clone(&self.child_router),
         );
 
         let mut grouped = BTreeMap::<u8, Vec<(usize, CommandItem)>>::new();
