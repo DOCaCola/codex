@@ -32,7 +32,7 @@ const MAX_COMMANDS: usize = 8;
 const MAX_STEP: u8 = 4;
 
 pub(crate) struct CommandStackHandler {
-    child_router: Arc<ToolRouter>,
+    _child_router: Arc<ToolRouter>,
     exec_arguments: JsonSchema,
     write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
@@ -48,7 +48,7 @@ impl CommandStackHandler {
         patch_tool: CommandStackPatchTool,
     ) -> Self {
         Self {
-            child_router,
+            _child_router: child_router,
             exec_arguments,
             write_stdin_arguments,
             include_environment_id,
@@ -119,7 +119,6 @@ impl CommandStackHandler {
 
         validate_commands(&commands, self.patch_tool)?;
         let tool_runtime = ToolCallRuntime::new(
-            Arc::clone(&self.child_router),
             Arc::clone(&invocation.session),
             Arc::clone(&invocation.step_context),
             Arc::clone(&invocation.tracker),
@@ -484,6 +483,7 @@ fn build_child_call(
         call_id: format!("{parent_call_id}:{}:{index}", command.step),
         tool_name,
         payload,
+        encrypted_function_args: None,
     })
 }
 

@@ -29,6 +29,7 @@ pub(crate) fn create_hpatch_freeform_tool(include_environment_id: bool) -> ToolS
         description: format!(
             "Edit files with a compact baseline-oriented script. Use an optional `*** Working Directory: PATH` header to change the path base. Select files with `in PATH` or `new PATH`. {HPATCH_SELECTOR_GUIDANCE} Then edit with `type`, `del`, `copy`, `cut`, `paste`, or `mv`. Multiline replacement text uses `type <<PATCH`. Submit one complete script without JSON or shell wrapping."
         ),
+        defer_loading: None,
         format: FreeformToolFormat {
             r#type: "grammar".to_string(),
             syntax: "lark".to_string(),

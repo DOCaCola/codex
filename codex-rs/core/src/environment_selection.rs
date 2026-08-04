@@ -22,6 +22,7 @@ use futures::future::BoxFuture;
 use futures::future::Shared;
 use tokio_util::task::AbortOnDropHandle;
 
+use crate::session::turn_context::EnvironmentConfig;
 use crate::session::turn_context::TurnEnvironment;
 use crate::shell::Shell;
 use crate::shell_snapshot::ShellSnapshot;
@@ -79,6 +80,8 @@ impl StartingTurnEnvironment {
 pub(crate) struct ThreadEnvironments {
     environment_manager: Arc<EnvironmentManager>,
     local_shell: ArcSwap<Shell>,
+    // Temporary thread-wide config source until environments supply their own config.
+    fallback_environment_config: EnvironmentConfig,
     shell_snapshot: ShellSnapshot,
     non_blocking_snapshots: bool,
     environments: ArcSwap<Vec<SelectedTurnEnvironment>>,
@@ -89,6 +92,7 @@ impl ThreadEnvironments {
     pub(crate) fn new(
         environment_manager: Arc<EnvironmentManager>,
         local_shell: Shell,
+        fallback_environment_config: EnvironmentConfig,
         shell_snapshot: ShellSnapshot,
         current: TurnEnvironmentSnapshot,
         non_blocking_snapshots: bool,
@@ -98,9 +102,11 @@ impl ThreadEnvironments {
             .environments
             .into_iter()
             .filter_map(|environment| {
-                let TurnEnvironmentState::Ready(environment) = environment else {
+                let TurnEnvironmentState::Ready(mut environment) = environment else {
                     return None;
                 };
+                // Child threads can have a different shell policy from their parent.
+                environment.config = fallback_environment_config.clone();
                 let selection = environment.selection();
                 let selected_environment = Arc::clone(&environment.environment);
                 let resolution: TurnEnvironmentResolution =
@@ -116,6 +122,7 @@ impl ThreadEnvironments {
         Self {
             environment_manager,
             local_shell: ArcSwap::from_pointee(local_shell),
+            fallback_environment_config,
             shell_snapshot,
             non_blocking_snapshots,
             environments: ArcSwap::from_pointee(environments),
@@ -166,6 +173,7 @@ impl ThreadEnvironments {
                 selected_environment.clone(),
                 Arc::clone(&environment),
                 self.local_shell.load_full().as_ref().clone(),
+                self.fallback_environment_config.clone(),
                 self.shell_snapshot.clone(),
             )
             .remote_handle();
@@ -275,6 +283,7 @@ impl ThreadEnvironments {
         selection: TurnEnvironmentSelection,
         environment: Arc<Environment>,
         local_shell: Shell,
+        config: EnvironmentConfig,
         shell_snapshot: ShellSnapshot,
     ) -> BoxFuture<'static, TurnEnvironmentResult> {
         async move {
@@ -310,6 +319,7 @@ impl ThreadEnvironments {
                 selection.cwd,
                 selection.workspace_roots,
                 shell,
+                config,
             );
             let task = shell_snapshot
                 .build(turn_environment.clone())
@@ -516,6 +526,9 @@ mod tests {
         let turn_environments = Arc::new(ThreadEnvironments::new(
             environment_manager,
             crate::shell::default_user_shell(),
+            EnvironmentConfig {
+                allow_login_shell: true,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot::default(),
             /*non_blocking_snapshots*/ false,
@@ -659,7 +672,7 @@ url = "ws://127.0.0.1:8765"
     }
 
     #[tokio::test]
-    async fn local_environment_uses_configured_shell() {
+    async fn local_environment_uses_configured_shell_and_login_policy() {
         let cwd = AbsolutePathBuf::current_dir().expect("cwd");
         let local_shell = Shell {
             shell_type: crate::shell::ShellType::Zsh,
@@ -669,6 +682,9 @@ url = "ws://127.0.0.1:8765"
         let turn_environments = ThreadEnvironments::new(
             Arc::new(EnvironmentManager::default_for_tests()),
             local_shell.clone(),
+            EnvironmentConfig {
+                allow_login_shell: false,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot::default(),
             /*non_blocking_snapshots*/ false,
@@ -680,13 +696,10 @@ url = "ws://127.0.0.1:8765"
         }]);
 
         let snapshot = turn_environments.snapshot().await;
+        let environment = snapshot.primary().expect("local environment");
 
-        assert_eq!(
-            snapshot
-                .primary()
-                .and_then(|environment| environment.shell.as_ref()),
-            Some(&local_shell)
-        );
+        assert_eq!(environment.shell.as_ref(), Some(&local_shell));
+        assert!(!environment.config.allow_login_shell);
     }
 
     #[tokio::test]
@@ -808,6 +821,9 @@ url = "ws://127.0.0.1:8765"
         let environments = Arc::new(ThreadEnvironments::new(
             manager,
             crate::shell::default_user_shell(),
+            EnvironmentConfig {
+                allow_login_shell: true,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot::default(),
             /*non_blocking_snapshots*/ false,
@@ -861,6 +877,9 @@ url = "ws://127.0.0.1:8765"
         let turn_environments = ThreadEnvironments::new(
             manager,
             crate::shell::default_user_shell(),
+            EnvironmentConfig {
+                allow_login_shell: true,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot::default(),
             /*non_blocking_snapshots*/ true,
@@ -935,6 +954,9 @@ url = "ws://127.0.0.1:8765"
         let environments = ThreadEnvironments::new(
             Arc::clone(&manager),
             crate::shell::default_user_shell(),
+            EnvironmentConfig {
+                allow_login_shell: true,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot::default(),
             /*non_blocking_snapshots*/ true,
@@ -989,6 +1011,9 @@ url = "ws://127.0.0.1:8765"
         let environments = Arc::new(ThreadEnvironments::new(
             Arc::clone(&manager),
             crate::shell::default_user_shell(),
+            EnvironmentConfig {
+                allow_login_shell: true,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot::default(),
             /*non_blocking_snapshots*/ true,
@@ -1061,7 +1086,7 @@ url = "ws://127.0.0.1:8765"
     }
 
     #[tokio::test]
-    async fn inherited_environment_reuses_parent_handle() {
+    async fn inherited_environment_reuses_parent_handle_and_uses_child_login_policy() {
         let cwd = AbsolutePathBuf::current_dir().expect("cwd");
         let selection = TurnEnvironmentSelection {
             environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
@@ -1078,6 +1103,9 @@ url = "ws://127.0.0.1:8765"
             selection.cwd.clone(),
             Vec::new(),
             /*shell*/ None,
+            EnvironmentConfig {
+                allow_login_shell: true,
+            },
         );
         let manager = Arc::new(environment_manager_without_environments());
         manager
@@ -1090,6 +1118,9 @@ url = "ws://127.0.0.1:8765"
         let environments = ThreadEnvironments::new(
             manager,
             crate::shell::default_user_shell(),
+            EnvironmentConfig {
+                allow_login_shell: false,
+            },
             ShellSnapshot::disabled(),
             TurnEnvironmentSnapshot {
                 environments: vec![TurnEnvironmentState::Ready(inherited)],
@@ -1100,13 +1131,9 @@ url = "ws://127.0.0.1:8765"
         environments.update_selections(std::slice::from_ref(&selection));
         let snapshot = environments.snapshot().await;
 
-        assert!(Arc::ptr_eq(
-            &snapshot
-                .primary()
-                .expect("inherited environment")
-                .environment,
-            &inherited_environment,
-        ));
+        let inherited = snapshot.primary().expect("inherited environment");
+        assert!(Arc::ptr_eq(&inherited.environment, &inherited_environment));
+        assert!(!inherited.config.allow_login_shell);
     }
 
     #[tokio::test]
@@ -1135,6 +1162,9 @@ url = "ws://127.0.0.1:8765"
                 cwd_uri.clone(),
                 Vec::new(),
                 /*shell*/ None,
+                EnvironmentConfig {
+                    allow_login_shell: true,
+                },
             ))],
         };
         let multiple = TurnEnvironmentSnapshot {
@@ -1146,6 +1176,9 @@ url = "ws://127.0.0.1:8765"
                     cwd_uri,
                     Vec::new(),
                     /*shell*/ None,
+                    EnvironmentConfig {
+                        allow_login_shell: true,
+                    },
                 )),
             ],
         };

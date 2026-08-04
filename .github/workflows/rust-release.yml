@@ -40,6 +40,8 @@ jobs:
             || { echo "❌  Not a tag ref"; exit 1; }
 
           # Release tags must match the version in Cargo.toml.
+          # Keep this pattern in sync with VERSION_RE in
+          # .github/scripts/publish_r2_release.py.
           [[ "${GITHUB_REF_NAME}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha(\.[0-9]+){0,2}|beta(\.[0-9]+)?))?$ ]] \
             || { echo "❌  Tag '${GITHUB_REF_NAME}' doesn't match expected format"; exit 1; }
 
@@ -286,17 +288,6 @@ jobs:
           path: codex-rs/symbols-dist/${{ matrix.artifact_name }}/*
           if-no-files-found: error
 
-      - name: Build hpatch companion
-        shell: bash
-        run: |
-          hpatch_source="${RUNNER_TEMP}/codex-hpatch-source"
-          bash "${GITHUB_WORKSPACE}/scripts/prepare-hpatch-companion-source.sh" \
-            --output "$hpatch_source"
-          bash "${GITHUB_WORKSPACE}/scripts/build-hpatch-companion.sh" \
-            --source "$hpatch_source" \
-            --target "${{ matrix.target }}" \
-            --output "target/${{ matrix.target }}/release/hpatch"
-
       - if: ${{ runner.os == 'macOS' }}
         name: Stage unsigned macOS artifacts
         shell: bash
@@ -308,7 +299,7 @@ jobs:
           dest="unsigned-dist/${target}"
           mkdir -p "$dest"
 
-          for binary in ${{ matrix.binaries }} hpatch; do
+          for binary in ${{ matrix.binaries }}; do
             binary_path="${release_dir}/${binary}"
             unsigned_name="${binary}-${target}-unsigned"
             unsigned_path="${dest}/${unsigned_name}"
@@ -336,7 +327,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           artifacts-dir: ${{ github.workspace }}/codex-rs/target/${{ matrix.target }}/release
-          binaries: ${{ matrix.binaries }} hpatch
+          binaries: ${{ matrix.binaries }}
 
       - name: Stage artifacts
         if: ${{ runner.os != 'macOS' }}
@@ -376,6 +367,7 @@ jobs:
           fi
 
           if [[ "${{ matrix.build_dmg }}" == "true" ]]; then
+
             cp target/${{ matrix.target }}/release/codex-${{ matrix.target }}.dmg "$dest/codex-${{ matrix.target }}.dmg"
           fi
 
@@ -563,7 +555,7 @@ jobs:
         shell: bash
         env:
           TARGET: ${{ matrix.target }}
-          BINARIES: ${{ matrix.binaries }} hpatch
+          BINARIES: ${{ matrix.binaries }}
           APPLE_NOTARIZATION_KEY_P8: ${{ secrets.APPLE_NOTARIZATION_KEY_P8 }}
           APPLE_NOTARIZATION_KEY_ID: ${{ secrets.APPLE_NOTARIZATION_KEY_ID }}
           APPLE_NOTARIZATION_ISSUER_ID: ${{ secrets.APPLE_NOTARIZATION_ISSUER_ID }}
@@ -586,23 +578,20 @@ jobs:
             zstd -d --stdout "$unsigned_path" >"$signed_path"
             chmod 0755 "$signed_path"
 
-            sign_args=(
-              --target "$signed_path"
-              --identity unused
-              --deep false
-              --identifier "$binary"
-              --options runtime
-              --timestamp true
-            )
             entitlements="${GITHUB_WORKSPACE}/.github/scripts/macos-signing/${binary}.entitlements.plist"
-            if [[ -f "$entitlements" ]]; then
-              sign_args+=(--entitlements "$entitlements")
-            elif [[ "$binary" != "hpatch" ]]; then
+            if [[ ! -f "$entitlements" ]]; then
               echo "Entitlements file $entitlements not found"
               exit 1
             fi
 
-            .github/scripts/macos-signing/sign_macos_code.sh "${sign_args[@]}"
+            .github/scripts/macos-signing/sign_macos_code.sh \
+              --target "$signed_path" \
+              --identity unused \
+              --deep false \
+              --identifier "$binary" \
+              --options runtime \
+              --timestamp true \
+              --entitlements "$entitlements"
 
             mkdir -p "${report_dir}/${binary}"
             rcodesign print-signature-info "$signed_path" \
@@ -750,7 +739,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for binary in ${{ matrix.binaries }} hpatch; do
+          for binary in ${{ matrix.binaries }}; do
             binary_path="target/${{ matrix.target }}/release/${binary}"
             chmod 0755 "$binary_path"
             codesign --verify --strict --verbose=2 "$binary_path"
@@ -777,7 +766,7 @@ jobs:
           rm -rf "$dmg_root"
           mkdir -p "$dmg_root"
 
-          for binary in ${{ matrix.binaries }} hpatch; do
+          for binary in ${{ matrix.binaries }}; do
             binary_path="${release_dir}/${binary}"
             if [[ ! -f "$binary_path" ]]; then
               echo "Binary $binary_path not found"
@@ -1385,9 +1374,9 @@ jobs:
           # (e.g. -alpha, -beta). Otherwise publish a normal release.
           prerelease: ${{ steps.release_name.outputs.prerelease }}
 
-  publish-r2:
-    name: publish-r2
-    needs: [release, publish-dotslash]
+  publish-r2-assets:
+    name: publish-r2-assets
+    needs: release
     permissions:
       contents: read
     uses: ./.github/workflows/r2-release.yml
@@ -1396,6 +1385,20 @@ jobs:
       tag: ${{ needs.release.outputs.tag }}
       make_latest: ${{ fromJSON(needs.release.outputs.make_latest) }}
       prerelease: ${{ fromJSON(needs.release.outputs.prerelease) }}
+      stage: assets
+
+  publish-r2:
+    name: publish-r2
+    needs: [release, publish-dotslash, publish-r2-assets]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/r2-release.yml
+    secrets: inherit
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+      make_latest: ${{ fromJSON(needs.release.outputs.make_latest) }}
+      prerelease: ${{ fromJSON(needs.release.outputs.prerelease) }}
+      stage: finalize
 
   publish-dotslash:
     name: publish-dotslash
@@ -1651,11 +1654,20 @@ jobs:
     if: >-
       ${{
         !cancelled() &&
-        needs.release.result == 'success'
+        needs.release.result == 'success' &&
+        needs.publish-r2.result == 'success' &&
+        (
+          needs.release.outputs.should_publish_npm != 'true' ||
+          needs.publish-npm.result == 'success'
+        )
       }}
     permissions:
       contents: write
-    needs: release
+    # R2 waits for the GitHub release and DotSlash release-asset uploads.
+    needs:
+      - release
+      - publish-r2
+      - publish-npm
     runs-on: ubuntu-latest
 
     steps:

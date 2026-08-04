@@ -58,12 +58,8 @@ fn streamable_http_server_bin() -> Result<PathBuf, CargoBinError> {
 
 fn init_params() -> InitializeRequestParams {
     let mut capabilities = ClientCapabilities::default();
-    capabilities.elicitation = Some(ElicitationCapability {
-        form: Some(FormElicitationCapability {
-            schema_validation: None,
-        }),
-        url: None,
-    });
+    capabilities.elicitation =
+        Some(ElicitationCapability::new().with_form(FormElicitationCapability::new()));
     InitializeRequestParams::new(
         capabilities,
         Implementation::new("codex-test", "0.0.0-test").with_title("Codex rmcp recovery test"),
@@ -73,6 +69,7 @@ fn init_params() -> InitializeRequestParams {
 
 pub(crate) fn expected_echo_result(message: &str) -> CallToolResult {
     let mut result = CallToolResult::success(Vec::new());
+    result.result_type = None;
     result.structured_content = Some(json!({
         "echo": format!("ECHOING: {message}"),
         "env": null,
@@ -182,13 +179,17 @@ pub(crate) async fn call_echo_tool(
         .await
 }
 
+fn control_client() -> anyhow::Result<codex_http_client::HttpClient> {
+    Ok(codex_http_client::HttpClientBuilder::new().build_direct()?)
+}
+
 pub(crate) async fn arm_session_post_failure(
     base_url: &str,
     status: u16,
     remaining: usize,
     www_authenticate_headers: &[&str],
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{SESSION_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -198,7 +199,7 @@ pub(crate) async fn arm_session_post_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -207,7 +208,7 @@ pub(crate) async fn arm_session_post_json_rpc_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{SESSION_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -225,7 +226,7 @@ pub(crate) async fn arm_session_post_json_rpc_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -234,7 +235,7 @@ pub(crate) async fn arm_initialized_notification_post_json_rpc_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!(
             "{base_url}{INITIALIZED_NOTIFICATION_POST_FAILURE_CONTROL_PATH}"
         ))
@@ -254,7 +255,7 @@ pub(crate) async fn arm_initialized_notification_post_json_rpc_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -263,7 +264,7 @@ pub(crate) async fn arm_initialize_post_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{INITIALIZE_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -272,7 +273,7 @@ pub(crate) async fn arm_initialize_post_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 
@@ -281,7 +282,7 @@ pub(crate) async fn arm_initialize_post_json_rpc_failure(
     status: u16,
     remaining: usize,
 ) -> anyhow::Result<()> {
-    let response = reqwest::Client::new()
+    let response = control_client()?
         .post(format!("{base_url}{INITIALIZE_POST_FAILURE_CONTROL_PATH}"))
         .json(&json!({
             "status": status,
@@ -299,7 +300,7 @@ pub(crate) async fn arm_initialize_post_json_rpc_failure(
         .send()
         .await?;
 
-    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+    assert_eq!(response.status(), http::StatusCode::NO_CONTENT);
     Ok(())
 }
 

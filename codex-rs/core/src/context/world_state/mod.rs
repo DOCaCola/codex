@@ -1,6 +1,8 @@
 mod agents_md;
 mod apps_instructions;
 mod collaboration_mode;
+mod compact_permissions;
+mod context_window_guidance;
 mod environment;
 mod environments_instructions;
 mod model;
@@ -32,6 +34,8 @@ use std::fmt;
 pub(crate) use agents_md::AgentsMdState;
 pub(crate) use apps_instructions::AppsInstructionsState;
 pub(crate) use collaboration_mode::CollaborationModeState;
+pub(crate) use compact_permissions::CompactPermissionsState;
+pub(crate) use context_window_guidance::ContextWindowGuidanceState;
 pub(crate) use environment::EnvironmentsState;
 pub(crate) use environments_instructions::EnvironmentsInstructionsState;
 pub(crate) use model::ModelInstructionsState;
@@ -309,8 +313,14 @@ impl WorldState {
             !self.sections.contains_key(id),
             "duplicate world-state section ID: {id}"
         );
-        self.sections
-            .insert(id, Box::new(ExtensionWorldStateSection(section)));
+        let section = Box::new(ExtensionWorldStateSection(section));
+        if id == "host_skills"
+            && let Some(index) = self.sections.get_index_of(PermissionsState::ID)
+        {
+            self.sections.shift_insert(index, id, section);
+        } else {
+            self.sections.insert(id, section);
+        }
     }
 
     pub(crate) fn snapshot(&self) -> WorldStateSnapshot {

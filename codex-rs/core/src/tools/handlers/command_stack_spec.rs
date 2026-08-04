@@ -82,6 +82,7 @@ pub(crate) fn create_command_stack_tool(
             "Runs 1-8 operations across up to 4 dependency steps. Tool calls are expensive: include every currently known useful operation in one call. Independent operations must share the same step. Use later steps only for predetermined dependencies, and make another call only when the next operation depends on unseen output. Use one operation only when no other useful operation is currently known. For example, omit `step` on independent blocks so they share step 1; use `step=2` for a known follow-up after step 1. Every operation is a block: write `exec_command`, `write_stdin`, or `{patch_tool}` followed by optional ` step=N`; `exec_command` and `write_stdin` may also add ` continue_on_failure`. Put the body on following lines and terminate it with `end`. Step defaults to 1. Exec and stdin bodies are JSON argument objects. {exec_arguments} {write_stdin_arguments} {workdir_body} Patch operations run serially and always stop on failure. {patch_body}",
             patch_tool = patch_tool.name(),
         ),
+        defer_loading: None,
         format: FreeformToolFormat {
             r#type: "grammar".to_string(),
             syntax: "lark".to_string(),
