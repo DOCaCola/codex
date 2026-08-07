@@ -245,7 +245,8 @@ impl ShellCommandHandler {
             env.insert(path_key, path_entries);
         }
 
-        let active_permission_profile = turn_context.config.permissions.active_permission_profile();
+        let active_permission_profile = turn_environment.active_permission_profile();
+
         inject_permission_profile_env(&mut env, active_permission_profile.as_ref());
         let sandbox_permissions = resolve_sandbox_permissions(
             params.sandbox_permissions,

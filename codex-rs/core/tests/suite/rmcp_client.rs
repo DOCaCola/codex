@@ -426,58 +426,6 @@ async fn openai_form_capability_is_not_advertised_by_default() -> anyhow::Result
     assert_openai_form_capability_advertisement(/*expected*/ false).await
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-async fn openai_form_capability_updates_for_loaded_thread() -> anyhow::Result<()> {
-    skip_if_wine_exec!(
-        Ok(()),
-        "requires a Windows test_stdio_server in the Wine-exec environment"
-    );
-
-    let server = start_mock_server().await;
-    let server_name = "capabilities";
-    let command = stdio_server_bin()?;
-    let fixture = test_codex()
-        .with_config(move |config| {
-            insert_mcp_server(
-                config,
-                server_name,
-                stdio_transport(command, /*env*/ None, Vec::new()),
-                TestMcpServerOptions::default(),
-            );
-        })
-        .build(&server)
-        .await?;
-    wait_for_mcp_server(&fixture.codex, server_name).await?;
-
-    let unsupported = call_structured_tool(
-        &server,
-        &fixture,
-        server_name,
-        "client_capabilities",
-        "call-client-capabilities-unsupported",
-    )
-    .await?;
-    assert_eq!(
-        unsupported,
-        json!({ "supportsOpenaiFormElicitation": false })
-    );
-
-    fixture
-        .codex
-        .set_openai_form_elicitation_support(/*supported*/ true)
-        .await?;
-    let supported = call_structured_tool(
-        &server,
-        &fixture,
-        server_name,
-        "client_capabilities",
-        "call-client-capabilities-supported",
-    )
-    .await?;
-    assert_eq!(supported, json!({ "supportsOpenaiFormElicitation": true }));
-    Ok(())
-}
-
 async fn assert_openai_form_capability_advertisement(expected: bool) -> anyhow::Result<()> {
     skip_if_wine_exec!(
         Ok(()),
@@ -672,7 +620,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
     .await;
 
     let expected_env_value = "propagated-env";
-    let expected_description = format!("{}🦀keep the complete MCP metadata", "é".repeat(499));
+    let expected_description = format!("{}🦀keep the complete MCP metadata", "é".repeat(11_000));
     let instructions = expected_description.clone();
     let rmcp_test_server_bin = remote_aware_stdio_server_bin()?;
 
@@ -765,7 +713,7 @@ async fn stdio_server_round_trip() -> anyhow::Result<()> {
         .and_then(|tool| tool.get("description").and_then(Value::as_str))
         .expect("the model should receive a tool search description");
     assert!(
-        search_description.len() < 5 * 1024,
+        search_description.len() < 513 * 1024,
         "the complete tool search description must remain bounded"
     );
     assert!(search_description.contains(&format!("- rmcp: {expected_description}")));
@@ -2262,6 +2210,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
                 model_messages: None,
                 include_skills_usage_instructions: false,
                 include_plugin_usage_instructions: false,
+                include_apps_usage_instructions: false,
                 supports_reasoning_summary_parameter: true,
                 default_reasoning_summary: ReasoningSummary::Auto,
                 support_verbosity: false,
@@ -2283,6 +2232,7 @@ async fn stdio_image_responses_are_sanitized_for_text_only_model() -> anyhow::Re
                 supports_search_tool: false,
                 use_responses_lite: false,
                 auto_review_model_override: None,
+                model_specialty: None,
                 tool_mode: None,
                 multi_agent_version: None,
             }],

@@ -537,6 +537,8 @@ fn stdio_server(
         required: false,
         supports_parallel_tool_calls: false,
         omit_tools_from: None,
+        surface_notifications: false,
+
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -572,6 +574,8 @@ fn declared_placement_preserves_local_plugin_normalization() {
         required: false,
         supports_parallel_tool_calls: false,
         omit_tools_from: None,
+        surface_notifications: false,
+
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -845,6 +849,8 @@ fn local_environment_placement_preserves_http_env_references() {
                     required: false,
                     supports_parallel_tool_calls: false,
                     omit_tools_from: None,
+                    surface_notifications: false,
+
                     disabled_reason: None,
                     startup_timeout_sec: None,
                     tool_timeout_sec: None,

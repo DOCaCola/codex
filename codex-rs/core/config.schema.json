@@ -576,6 +576,9 @@
             "image_generation": {
               "type": "boolean"
             },
+            "image_resize_notice": {
+              "type": "boolean"
+            },
             "imagegenext": {
               "type": "boolean"
             },
@@ -732,6 +735,9 @@
             "tool_call_mcp_elicitation": {
               "type": "boolean"
             },
+            "tool_registry": {
+              "$ref": "#/definitions/ToolRegistryConfigToml"
+            },
             "tool_search": {
               "type": "boolean"
             },
@@ -763,6 +769,9 @@
               "type": "boolean"
             },
             "use_linux_sandbox_bwrap": {
+              "type": "boolean"
+            },
+            "view_image": {
               "type": "boolean"
             },
             "web_search": {
@@ -3123,6 +3132,14 @@
           "maxLength": 2000,
           "type": "string"
         },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TokenBudgetMode"
+            }
+          ],
+          "description": "Select whether context-window metadata identifies the thread or agent name."
+        },
         "reminder_message_template": {
           "description": "Reminder template. `{n_remaining}` is replaced with the tokens remaining before auto-compaction.",
           "maxLength": 2000,
@@ -3137,6 +3154,14 @@
         }
       },
       "type": "object"
+    },
+    "TokenBudgetMode": {
+      "description": "Identity included in the context-window developer message.",
+      "enum": [
+        "thread",
+        "name"
+      ],
+      "type": "string"
     },
     "ToolExposureSurface": {
       "description": "A model-facing surface on which a tool can be exposed.",
@@ -3163,6 +3188,16 @@
           "type": "string"
         }
       ]
+    },
+    "ToolRegistryConfigToml": {
+      "additionalProperties": false,
+      "properties": {
+        "error_on_tool_collisions": {
+          "description": "Fail the turn when multiple tools share the same effective name.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     },
     "ToolSuggestConfig": {
       "additionalProperties": false,
@@ -5182,6 +5217,9 @@
         "image_generation": {
           "type": "boolean"
         },
+        "image_resize_notice": {
+          "type": "boolean"
+        },
         "imagegenext": {
           "type": "boolean"
         },
@@ -5338,6 +5376,9 @@
         "tool_call_mcp_elicitation": {
           "type": "boolean"
         },
+        "tool_registry": {
+          "$ref": "#/definitions/ToolRegistryConfigToml"
+        },
         "tool_search": {
           "type": "boolean"
         },
@@ -5369,6 +5410,9 @@
           "type": "boolean"
         },
         "use_linux_sandbox_bwrap": {
+          "type": "boolean"
+        },
+        "view_image": {
           "type": "boolean"
         },
         "web_search": {

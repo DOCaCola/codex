@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::PermissionProfileSnapshot;
 use crate::session::turn_context::EnvironmentConfig;
 use crate::tools::sandboxing::SandboxAttempt;
 use codex_protocol::config_types::WindowsSandboxLevel;
@@ -24,6 +25,7 @@ fn test_turn_environment(environment_id: &str) -> crate::session::turn_context::
         /*shell*/ None,
         EnvironmentConfig {
             allow_login_shell: true,
+            permission_profile: PermissionProfileSnapshot::legacy(PermissionProfile::read_only()),
         },
     )
 }
@@ -63,7 +65,7 @@ async fn approval_action_preserves_patch_path_uris() {
         turn_environment: test_turn_environment(codex_exec_server::LOCAL_ENVIRONMENT_ID),
         action,
         file_paths: vec![path.clone()],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
             reason: None,
             proposed_execpolicy_amendment: None,
@@ -84,13 +86,16 @@ async fn approval_action_preserves_patch_path_uris() {
             cwd: expected_cwd,
             files: vec![path],
             patch: expected_patch,
+            changes: Arc::new(HashMap::new()),
+            permissions_preapproved: false,
+            permission_request_tool_name: HookToolName::apply_patch(),
+            permission_request_command: "patch".to_string(),
         }
     );
 }
 
 #[tokio::test]
 async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
-    let runtime = ApplyPatchRuntime::new();
     let path = std::env::temp_dir()
         .join("apply-patch-permission-request-payload.txt")
         .abs();
@@ -101,7 +106,7 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
         turn_environment: test_turn_environment(codex_exec_server::LOCAL_ENVIRONMENT_ID),
         action,
         file_paths: vec![PathUri::from_abs_path(&path)],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
             reason: None,
             proposed_execpolicy_amendment: None,
@@ -112,9 +117,8 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
         permission_request_command: expected_patch.clone(),
     };
 
-    let payload = runtime
-        .permission_request_payload(&req)
-        .expect("permission request payload");
+    let payload =
+        ApplyPatchRuntime::build_approval_action(&req, "call-1").permission_request_payload();
 
     assert_eq!(payload.tool_name.name(), "apply_patch");
     assert_eq!(
@@ -129,7 +133,6 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
 
 #[tokio::test]
 async fn permission_request_payload_preserves_hpatch_input() {
-    let runtime = ApplyPatchRuntime::new();
     let path = std::env::temp_dir()
         .join("hpatch-permission-request-payload.txt")
         .abs();
@@ -139,7 +142,7 @@ async fn permission_request_payload_preserves_hpatch_input() {
         turn_environment: test_turn_environment(codex_exec_server::LOCAL_ENVIRONMENT_ID),
         action: ApplyPatchAction::new_add_for_test(&path_uri, "hello".to_string()),
         file_paths: vec![path_uri],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
             reason: None,
             proposed_execpolicy_amendment: None,
@@ -150,14 +153,12 @@ async fn permission_request_payload_preserves_hpatch_input() {
         permission_request_command: script.clone(),
     };
 
-    let payload = runtime
-        .permission_request_payload(&req)
-        .expect("permission request payload");
+    let payload =
+        ApplyPatchRuntime::build_approval_action(&req, "call-1").permission_request_payload();
 
     assert_eq!(payload.tool_name.name(), "hpatch");
     assert_eq!(payload.tool_input, serde_json::json!({ "command": script }));
 }
-
 #[tokio::test]
 async fn approval_keys_include_environment_id() {
     let runtime = ApplyPatchRuntime::new();
@@ -169,7 +170,7 @@ async fn approval_keys_include_environment_id() {
         turn_environment: test_turn_environment("remote"),
         action: ApplyPatchAction::new_add_for_test(&path_uri, "hello".to_string()),
         file_paths: vec![path_uri.clone()],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::Skip {
             bypass_sandbox: false,
             proposed_execpolicy_amendment: None,
@@ -180,7 +181,10 @@ async fn approval_keys_include_environment_id() {
         permission_request_command: "patch".to_string(),
     };
 
-    let keys = runtime.approval_keys(&req);
+    let keys = runtime
+        .approval_action(&req, "call-1")
+        .expect("build approval action")
+        .cache_keys();
 
     assert_eq!(
         serde_json::to_value(&keys).expect("serialize approval keys"),
@@ -206,7 +210,7 @@ async fn sandbox_cwd_uses_patch_action_cwd() {
             "hello".to_string(),
         ),
         file_paths: vec![PathUri::from_abs_path(&path)],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::Skip {
             bypass_sandbox: false,
             proposed_execpolicy_amendment: None,
@@ -239,7 +243,7 @@ async fn file_system_sandbox_context_preserves_executor_workspace_permissions() 
             "hello".to_string(),
         ),
         file_paths: vec![PathUri::from_abs_path(&path)],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::Skip {
             bypass_sandbox: false,
             proposed_execpolicy_amendment: None,
@@ -314,7 +318,7 @@ async fn no_sandbox_attempt_has_no_file_system_context() {
             "hello".to_string(),
         ),
         file_paths: vec![PathUri::from_abs_path(&path)],
-        changes: HashMap::new(),
+        changes: Arc::new(HashMap::new()),
         exec_approval_requirement: ExecApprovalRequirement::Skip {
             bypass_sandbox: false,
             proposed_execpolicy_amendment: None,
