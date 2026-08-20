@@ -353,7 +353,6 @@
         "mode": "tokens",
         "limit": 10000
       },
-      "supports_parallel_tool_calls": true,
       "tool_mode": null,
       "multi_agent_version": null,
       "use_responses_lite": false,
@@ -460,7 +459,6 @@
         "mode": "tokens",
         "limit": 10000
       },
-      "supports_parallel_tool_calls": true,
       "tool_mode": null,
       "multi_agent_version": null,
       "use_responses_lite": false,
@@ -565,7 +563,6 @@
         "mode": "tokens",
         "limit": 10000
       },
-      "supports_parallel_tool_calls": true,
       "tool_mode": null,
       "multi_agent_version": null,
       "use_responses_lite": false,
@@ -665,7 +662,6 @@
         "mode": "bytes",
         "limit": 10000
       },
-      "supports_parallel_tool_calls": true,
       "tool_mode": null,
       "multi_agent_version": null,
       "use_responses_lite": false,
@@ -762,7 +758,6 @@
         "mode": "tokens",
         "limit": 10000
       },
-      "supports_parallel_tool_calls": true,
       "tool_mode": null,
       "multi_agent_version": null,
       "use_responses_lite": false,

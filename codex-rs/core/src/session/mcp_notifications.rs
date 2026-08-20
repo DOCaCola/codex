@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use codex_history::ResponseItemEnvelope;
 use codex_mcp::McpServerNotification;
 use codex_mcp::SendMcpServerNotification;
 use codex_protocol::models::ResponseItem;
@@ -296,7 +297,11 @@ impl Session {
         self.input_queue
             .extend_pending_input_and_accept_mailbox_delivery_for_turn_state(
                 active_turn.turn_state.as_ref(),
-                items.into_iter().map(TurnInput::ResponseItem).collect(),
+                items
+                    .into_iter()
+                    .map(ResponseItemEnvelope::new)
+                    .map(TurnInput::ResponseItem)
+                    .collect(),
             )
             .await;
     }
