@@ -6,7 +6,7 @@ use std::process::Command;
 #[test]
 #[cfg(target_os = "macos")]
 fn detects_zsh() {
-    let zsh_shell = get_shell(ShellType::Zsh, /*path*/ None).unwrap();
+    let zsh_shell = get_shell(ShellType::Zsh).unwrap();
 
     let shell_path = zsh_shell.shell_path;
 
@@ -25,7 +25,7 @@ fn fish_fallback_to_zsh() {
 
 #[test]
 fn detects_bash() {
-    let bash_shell = get_shell(ShellType::Bash, /*path*/ None).unwrap();
+    let bash_shell = get_shell(ShellType::Bash).unwrap();
     let shell_path = bash_shell.shell_path;
 
     assert!(
@@ -36,7 +36,7 @@ fn detects_bash() {
 
 #[test]
 fn detects_sh() {
-    let sh_shell = get_shell(ShellType::Sh, /*path*/ None).unwrap();
+    let sh_shell = get_shell(ShellType::Sh).unwrap();
     let shell_path = sh_shell.shell_path;
     assert!(
         shell_path.file_stem().and_then(|name| name.to_str()) == Some("sh"),
@@ -49,12 +49,12 @@ fn can_run_on_shell_test() {
     let cmd = "echo \"Works\"";
     if cfg!(windows) {
         assert!(shell_works(
-            get_shell(ShellType::PowerShell, /*path*/ None),
+            get_shell(ShellType::PowerShell),
             "Out-String 'Works'",
             /*required*/ true,
         ));
         assert!(shell_works(
-            get_shell(ShellType::Cmd, /*path*/ None),
+            get_shell(ShellType::Cmd),
             cmd,
             /*required*/ true,
         ));
@@ -70,17 +70,17 @@ fn can_run_on_shell_test() {
             /*required*/ true
         ));
         assert!(shell_works(
-            get_shell(ShellType::Zsh, /*path*/ None),
+            get_shell(ShellType::Zsh),
             cmd,
             /*required*/ false
         ));
         assert!(shell_works(
-            get_shell(ShellType::Bash, /*path*/ None),
+            get_shell(ShellType::Bash),
             cmd,
             /*required*/ true
         ));
         assert!(shell_works(
-            get_shell(ShellType::Sh, /*path*/ None),
+            get_shell(ShellType::Sh),
             cmd,
             /*required*/ true
         ));
@@ -207,7 +207,7 @@ fn finds_powershell() {
         return;
     }
 
-    let powershell_shell = get_shell(ShellType::PowerShell, /*path*/ None).unwrap();
+    let powershell_shell = get_shell(ShellType::PowerShell).unwrap();
     let shell_path = powershell_shell.shell_path;
 
     assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
