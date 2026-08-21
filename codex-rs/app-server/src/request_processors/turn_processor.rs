@@ -18,6 +18,22 @@ use crate::image_url::is_remote_image_url;
 pub(super) const DIRECT_INPUT_TO_MULTI_AGENT_V2_SUBAGENT_ERROR: &str =
     "direct app-server input is not allowed for multi-agent v2 sub-agents";
 
+#[cfg(test)]
+#[path = "turn_processor_tests.rs"]
+mod tests;
+
+fn same_environment_attachments(
+    current: &[TurnEnvironmentSelection],
+    requested: &[TurnEnvironmentSelection],
+) -> bool {
+    current.len() == requested.len()
+        && current.iter().zip(requested).all(|(current, requested)| {
+            current.environment_id == requested.environment_id
+                && current.cwd == requested.cwd
+                && current.workspace_roots == requested.workspace_roots
+        })
+}
+
 /// Mirrors the direct-input policy in both request validation and thread capability responses.
 pub(super) fn can_accept_direct_input(
     multi_agent_version: Option<MultiAgentVersion>,
@@ -624,6 +640,9 @@ impl TurnRequestProcessor {
             return None;
         }
 
+        let snapshot = thread.config_snapshot().await;
+        let current_cwd = snapshot.cwd().clone();
+
         // Explicit environment selections own their roots and pass through unchanged. Top-level
         // `runtimeWorkspaceRoots` is only a compatibility input for default environments.
         if let Some(environment_selections) = environment_selections {
@@ -635,17 +654,23 @@ impl TurnRequestProcessor {
                     .and_then(|selection| selection.cwd.to_abs_path().ok())
                 {
                     Some(cwd) => cwd,
-                    None => thread.config_snapshot().await.cwd().clone(),
+                    None => current_cwd,
                 },
             };
+            if legacy_fallback_cwd == *snapshot.cwd()
+                && same_environment_attachments(
+                    snapshot.environment_selections(),
+                    &environment_selections,
+                )
+            {
+                return None;
+            }
             return Some(TurnEnvironmentSelections::new(
                 legacy_fallback_cwd,
                 environment_selections,
             ));
         }
 
-        let snapshot = thread.config_snapshot().await;
-        let current_cwd = snapshot.cwd().clone();
         let legacy_fallback_cwd = cwd.unwrap_or_else(|| current_cwd.clone());
         let workspace_roots = match workspace_roots {
             Some(workspace_roots) => workspace_roots,
@@ -654,11 +679,11 @@ impl TurnRequestProcessor {
                 // the old cwd root while preserving any additional roots. Deduplicate because the
                 // new cwd may already be present as an additional root.
                 let mut retargeted_workspace_roots = Vec::new();
-                for root in snapshot.workspace_roots {
-                    let root = if root == current_cwd {
+                for root in &snapshot.workspace_roots {
+                    let root = if root == &current_cwd {
                         legacy_fallback_cwd.clone()
                     } else {
-                        root
+                        root.clone()
                     };
                     if !retargeted_workspace_roots.contains(&root) {
                         retargeted_workspace_roots.push(root);
@@ -670,6 +695,14 @@ impl TurnRequestProcessor {
         let environment_selections = self
             .thread_manager
             .default_environment_selections(&legacy_fallback_cwd, &workspace_roots);
+        if legacy_fallback_cwd == *snapshot.cwd()
+            && same_environment_attachments(
+                snapshot.environment_selections(),
+                &environment_selections,
+            )
+        {
+            return None;
+        }
         Some(TurnEnvironmentSelections::new(
             legacy_fallback_cwd,
             environment_selections,
