@@ -532,6 +532,9 @@
             "command_stack": {
               "type": "boolean"
             },
+            "compaction_image_budget": {
+              "type": "boolean"
+            },
             "computer_use": {
               "type": "boolean"
             },
@@ -5437,6 +5440,9 @@
           "type": "boolean"
         },
         "command_stack": {
+          "type": "boolean"
+        },
+        "compaction_image_budget": {
           "type": "boolean"
         },
         "computer_use": {
