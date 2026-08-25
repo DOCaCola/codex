@@ -778,6 +778,79 @@ async fn shell_command_is_not_registered_without_a_single_local_environment() {
 }
 
 #[tokio::test]
+async fn command_stack_replaces_direct_shell_tools_for_custom_tool_models() {
+    let plan = probe(|turn| {
+        set_features(
+            turn,
+            &[
+                Feature::ShellTool,
+                Feature::UnifiedExec,
+                Feature::CommandStack,
+            ],
+        );
+        let model_info = Arc::make_mut(&mut turn.model_info);
+        model_info.shell_type = ConfigShellToolType::ShellCommand;
+        model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+    })
+    .await;
+
+    plan.assert_visible_contains(&["command_stack"]);
+    plan.assert_visible_lacks(&[
+        "shell_command",
+        "exec_command",
+        "write_stdin",
+        "apply_patch",
+    ]);
+    plan.assert_registered_contains(&[
+        "command_stack",
+        "shell_command",
+        "exec_command",
+        "write_stdin",
+        "apply_patch",
+    ]);
+    for hidden_child in [
+        "shell_command",
+        "exec_command",
+        "write_stdin",
+        "apply_patch",
+    ] {
+        assert_eq!(plan.exposure(hidden_child), ToolExposure::Hidden);
+    }
+}
+
+#[tokio::test]
+async fn command_stack_falls_back_to_direct_tools_without_custom_tool_support() {
+    let plan = probe(|turn| {
+        set_features(
+            turn,
+            &[
+                Feature::ShellTool,
+                Feature::UnifiedExec,
+                Feature::CommandStack,
+                Feature::Hpatch,
+            ],
+        );
+        let model_info = Arc::make_mut(&mut turn.model_info);
+        model_info.shell_type = ConfigShellToolType::ShellCommand;
+        model_info.apply_patch_tool_type = None;
+    })
+    .await;
+
+    plan.assert_visible_contains(&["exec_command", "write_stdin", "hpatch"]);
+    plan.assert_visible_lacks(&["command_stack", "shell_command", "apply_patch"]);
+    plan.assert_registered_contains(&[
+        "shell_command",
+        "exec_command",
+        "write_stdin",
+        "hpatch",
+        "apply_patch",
+    ]);
+    plan.assert_registered_lacks(&["command_stack"]);
+    assert_eq!(plan.exposure("shell_command"), ToolExposure::Hidden);
+    assert_eq!(plan.exposure("apply_patch"), ToolExposure::Hidden);
+}
+
+#[tokio::test]
 async fn dynamic_tools_cannot_reclaim_the_reserved_shell_command_name() {
     let plan = probe_with(
         duplicate_primary_environment,

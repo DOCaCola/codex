@@ -481,6 +481,19 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
+    /// Whether this model supports Responses API custom tools with freeform input.
+    ///
+    /// The model catalog currently advertises that capability through the
+    /// freeform `apply_patch` tool type. Keep custom-tool consumers behind this
+    /// capability check instead of assuming every Responses-compatible model
+    /// accepts custom tool definitions.
+    pub fn supports_custom_tools(&self) -> bool {
+        matches!(
+            self.apply_patch_tool_type,
+            Some(ApplyPatchToolType::Freeform)
+        )
+    }
+
     pub fn resolved_context_window(&self) -> Option<i64> {
         self.context_window.or(self.max_context_window)
     }
@@ -1446,6 +1459,15 @@ mod tests {
             personality_template.get_personality_message(/*personality*/ None),
             Some("default".to_string())
         );
+    }
+
+    #[test]
+    fn custom_tool_support_follows_freeform_tool_metadata() {
+        let mut model = test_model(/*spec*/ None);
+        assert!(!model.supports_custom_tools());
+
+        model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+        assert!(model.supports_custom_tools());
     }
 
     #[test]

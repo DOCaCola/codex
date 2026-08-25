@@ -985,7 +985,10 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
         exec_permission_approvals_enabled,
     };
 
-    if features.enabled(Feature::CommandStack) {
+    if crate::tools::command_stack_available(
+        features.enabled(Feature::CommandStack),
+        &turn_context.model_info,
+    ) {
         let exec_runtime: Arc<dyn CoreToolRuntime> =
             Arc::new(ExecCommandHandler::new(ExecCommandHandlerOptions {
                 allow_login_shell,
@@ -1142,7 +1145,12 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
     }
 
     let hpatch_enabled = features.enabled(Feature::Hpatch);
-    if environment_mode.has_environment() && features.enabled(Feature::CommandStack) {
+    if environment_mode.has_environment()
+        && crate::tools::command_stack_available(
+            features.enabled(Feature::CommandStack),
+            &turn_context.model_info,
+        )
+    {
         let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
         if hpatch_enabled {
             registry.add_with_exposure(
@@ -1200,7 +1208,10 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
 
 fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistry) {
     let turn_context = context.turn_context;
-    if !turn_context.config.features.enabled(Feature::CommandStack) {
+    if !crate::tools::command_stack_available(
+        turn_context.config.features.enabled(Feature::CommandStack),
+        &turn_context.model_info,
+    ) {
         return;
     }
 

@@ -25,6 +25,7 @@ use crate::session::turn_context::TurnContext;
 pub(crate) use approvals::ApprovalContext;
 use codex_features::Feature;
 use codex_protocol::exec_output::ExecToolCallOutput;
+use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ToolMode;
 use codex_tools::ToolName;
 use codex_utils_output_truncation::TruncationPolicy;
@@ -92,6 +93,10 @@ pub(crate) fn effective_tool_mode(turn_context: &TurnContext) -> ToolMode {
     } else {
         requested_tool_mode
     }
+}
+
+pub(crate) fn command_stack_available(command_stack_enabled: bool, model_info: &ModelInfo) -> bool {
+    command_stack_enabled && model_info.supports_custom_tools()
 }
 
 /// Format the combined exec output for sending back to the model.

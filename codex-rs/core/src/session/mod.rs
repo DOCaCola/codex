@@ -661,7 +661,10 @@ impl Session {
                 .clone()
                 .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
                 .unwrap_or_else(|| model_info.get_model_instructions(config.personality)),
-            config.features.enabled(Feature::CommandStack),
+            crate::tools::command_stack_available(
+                config.features.enabled(Feature::CommandStack),
+                &model_info,
+            ),
             config.features.enabled(Feature::Hpatch),
         );
 
