@@ -81,10 +81,6 @@ impl CoreToolRuntime for CommandStackHandler {
         matches!(payload, ToolPayload::Custom { .. })
     }
 
-    fn waits_for_runtime_cancellation(&self) -> bool {
-        true
-    }
-
     fn pre_tool_use_payload(
         &self,
         _invocation: &ToolInvocation,

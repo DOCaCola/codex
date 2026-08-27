@@ -63,9 +63,7 @@ impl HpatchHandler {
             turn_environment.workspace_roots(),
             workdir.as_deref(),
         )?;
-        let mut sandbox = invocation
-            .turn
-            .file_system_sandbox_context(None, turn_environment);
+        let mut sandbox = turn_environment.sandbox_context(None);
         sandbox.permissions = PermissionProfile::read_only().into();
 
         let started = turn_environment
@@ -90,6 +88,7 @@ impl HpatchHandler {
                 tty: false,
                 pipe_stdin: true,
                 arg0: None,
+                shell_snapshot: None,
                 sandbox: Some(sandbox),
                 enforce_managed_network: false,
                 managed_network: None,

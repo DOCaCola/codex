@@ -1,3 +1,4 @@
+use codex_protocol::models::ContentItemKind;
 use serde_json::Value;
 
 use super::ContextualUserFragment;
@@ -34,6 +35,10 @@ impl McpNotification {
 }
 
 impl ContextualUserFragment for McpNotification {
+    fn content_kind(&self) -> ContentItemKind {
+        ContentItemKind("mcp.notification".to_string())
+    }
+
     fn role(&self) -> &'static str {
         "user"
     }

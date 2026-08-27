@@ -53,6 +53,7 @@ pub use rmcp_client::ListToolsWithConnectorIdResult;
 pub use rmcp_client::RmcpClient;
 pub use rmcp_client::SendElicitation;
 pub use rmcp_client::SendNotification;
+pub use rmcp_client::StreamableHttpBearerToken;
 pub use rmcp_client::SurfaceNotification;
 pub use rmcp_client::ToolWithConnectorId;
 pub use startup_error::is_authentication_required_error;
