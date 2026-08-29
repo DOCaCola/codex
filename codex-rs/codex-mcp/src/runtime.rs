@@ -81,7 +81,7 @@ pub struct McpRuntimeInput {
     pub codex_apps_tools_cache_key: ConnectorRuntimeContextKey,
     pub client_mcp_extensions: ClientMcpExtensions,
     pub auth: Option<CodexAuth>,
-    pub codex_apps_auth_manager: Option<Arc<AuthManager>>,
+    pub auth_manager: Option<Arc<AuthManager>>,
     pub elicitation_reviewer: Option<ElicitationReviewerHandle>,
     pub elicitation_lifecycle: Option<ElicitationLifecycle>,
     pub mcp_server_notification_sender: SendMcpServerNotification,
@@ -106,6 +106,7 @@ struct PublishedMcpRuntime {
     auth_token: Option<String>,
     plugins_available: bool,
     ready_selected_capability_roots: Vec<SelectedCapabilityRoot>,
+    selected_environments: HashMap<String, Arc<Environment>>,
     cached_binding: Mutex<Option<CachedMcpBinding>>,
 }
 
@@ -176,6 +177,7 @@ impl McpRuntime {
                 auth_token: None,
                 plugins_available: false,
                 ready_selected_capability_roots: Vec::new(),
+                selected_environments: HashMap::new(),
                 cached_binding: Mutex::new(None),
             }),
             hosted_event_server_removals: watch::channel(()).0,
@@ -272,6 +274,7 @@ impl McpRuntime {
         let auth_token = auth.as_ref().and_then(|auth| auth.get_token().ok());
         let plugins_available = input.plugins_available;
         let ready_selected_capability_roots = input.ready_selected_capability_roots.clone();
+        let selected_environments = input.runtime_context.selected_environments.clone();
         let connections = Arc::new(
             McpConnectionSet::new(
                 previous,
@@ -297,6 +300,7 @@ impl McpRuntime {
             auth_token,
             plugins_available,
             ready_selected_capability_roots,
+            selected_environments,
             cached_binding: Mutex::new(None),
         }));
         let _ = publish.send(true);
@@ -432,6 +436,22 @@ impl McpRuntime {
 
     pub fn current_ready_selected_capability_roots(&self) -> Vec<SelectedCapabilityRoot> {
         self.current.load().ready_selected_capability_roots.clone()
+    }
+
+    /// Whether this publication uses the currently ready environment handles.
+    pub fn current_environments_match(
+        &self,
+        environments: &HashMap<String, Arc<Environment>>,
+    ) -> bool {
+        let current = self.current.load();
+        current.config.is_some()
+            && current.selected_environments.len() == environments.len()
+            && environments.iter().all(|(id, environment)| {
+                current
+                    .selected_environments
+                    .get(id)
+                    .is_some_and(|published| Arc::ptr_eq(published, environment))
+            })
     }
 
     pub fn elicitations_auto_deny(&self) -> bool {
@@ -654,7 +674,7 @@ impl McpRuntimeContext {
         self.local_process_cwd.clone()
     }
 
-    fn local_http_client(&self) -> Arc<dyn HttpClient> {
+    pub(crate) fn local_http_client(&self) -> Arc<dyn HttpClient> {
         Arc::clone(&self.local_http_client)
     }
 
@@ -792,6 +812,7 @@ mod tests {
             auth_token: None,
             plugins_available: false,
             ready_selected_capability_roots: Vec::new(),
+            selected_environments: HashMap::new(),
             cached_binding: Mutex::new(None),
         });
         let first = McpRuntime::binding_from_published_runtime(

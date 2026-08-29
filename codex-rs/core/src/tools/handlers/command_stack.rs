@@ -71,7 +71,10 @@ impl ToolExecutor<ToolInvocation> for CommandStackHandler {
         )
     }
 
-    fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+    fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+    where
+        ToolInvocation: 'a,
+    {
         Box::pin(self.handle_call(invocation))
     }
 }
@@ -922,7 +925,14 @@ end"#,
             Arc::new(RecordingHandler::new("apply_patch", calls, patch_fails))
                 as Arc<dyn CoreToolRuntime>,
         ]);
-        let child_router = Arc::new(ToolRouter::from_parts(child_registry, Vec::new()));
+        let child_router = Arc::new(ToolRouter::from_parts(
+            child_registry,
+            Vec::new(),
+            codex_protocol::openai_models::ToolMode::Direct,
+            BTreeMap::new(),
+            /*tool_namespaces_info*/ None,
+            &[],
+        ));
         let arguments = JsonSchema::object(Default::default(), None, Some(true.into()));
         CommandStackHandler::new(
             child_router,
@@ -961,7 +971,10 @@ end"#,
             })
         }
 
-        fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+        fn handle<'a>(&'a self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'a>
+        where
+            ToolInvocation: 'a,
+        {
             let calls = Arc::clone(&self.calls);
             let fail = self.fail;
             let name = self.name;
