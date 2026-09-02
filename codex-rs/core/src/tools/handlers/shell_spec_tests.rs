@@ -110,6 +110,7 @@ fn exec_command_tool_can_hide_shell_parameter() {
         /*include_environment_id*/ false,
         /*include_shell_parameter*/ false,
         /*persist_shell_selection*/ false,
+        /*include_windows_shell_guidance*/ cfg!(windows),
     );
 
     assert!(!has_parameter(&tool, "shell"));
@@ -127,6 +128,7 @@ fn exec_command_tool_can_describe_persistent_shell_selection() {
         /*include_environment_id*/ false,
         /*include_shell_parameter*/ true,
         /*persist_shell_selection*/ true,
+        /*include_windows_shell_guidance*/ cfg!(windows),
     );
 
     let tool_json = serde_json::to_value(tool).expect("tool spec should serialize");

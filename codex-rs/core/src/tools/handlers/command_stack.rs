@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use codex_protocol::models::FunctionCallOutputBody;
-use codex_protocol::models::ResponseInputItem;
+use codex_protocol::models::ResponseItem;
 use codex_tools::JsonSchema;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
@@ -564,7 +564,7 @@ fn normalize_child_result(
     match result {
         Ok(result) => {
             let success = result.success_for_logging();
-            let output = response_text(result.into_response());
+            let output = response_text(result.into_response().item);
             CommandResult {
                 index,
                 step,
@@ -583,10 +583,10 @@ fn normalize_child_result(
     }
 }
 
-fn response_text(item: ResponseInputItem) -> String {
+fn response_text(item: ResponseItem) -> String {
     let body = match item {
-        ResponseInputItem::FunctionCallOutput { output, .. }
-        | ResponseInputItem::CustomToolCallOutput { output, .. } => output.body,
+        ResponseItem::FunctionCallOutput { output, .. }
+        | ResponseItem::CustomToolCallOutput { output, .. } => output.body,
         other => return format!("{other:?}"),
     };
     body.to_text().unwrap_or_else(|| match body {

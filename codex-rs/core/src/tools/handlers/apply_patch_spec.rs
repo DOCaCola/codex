@@ -2,7 +2,7 @@ use codex_tools::FreeformTool;
 use codex_tools::FreeformToolFormat;
 use codex_tools::ToolSpec;
 
-const APPLY_PATCH_LARK_GRAMMAR: &str = include_str!("apply_patch.lark");
+const APPLY_PATCH_LARK_GRAMMAR: &str = include_str!("../../../assets/tools/apply_patch.lark");
 
 fn configured_apply_patch_grammar(include_environment_id: bool) -> String {
     if include_environment_id {

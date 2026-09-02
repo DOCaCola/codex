@@ -111,6 +111,7 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
         include_environment_id: false,
         include_shell_parameter: true,
         persist_shell_selection: true,
+        include_windows_shell_guidance: cfg!(windows),
     });
     let mut args: ExecCommandArgs = parse_arguments(
         &serde_json::json!({

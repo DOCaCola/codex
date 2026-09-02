@@ -59,6 +59,7 @@ pub(crate) struct ExecCommandHandlerOptions {
     pub(crate) include_environment_id: bool,
     pub(crate) include_shell_parameter: bool,
     pub(crate) persist_shell_selection: bool,
+    pub(crate) include_windows_shell_guidance: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -82,6 +83,7 @@ impl Default for ExecCommandHandler {
                 include_environment_id: false,
                 include_shell_parameter: true,
                 persist_shell_selection: false,
+                include_windows_shell_guidance: cfg!(windows),
             },
         }
     }
@@ -162,6 +164,7 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
             self.options.include_environment_id,
             self.options.include_shell_parameter,
             self.options.persist_shell_selection,
+            self.options.include_windows_shell_guidance,
         );
         match self.lifetime {
             ExecCommandLifetime::Interactive => spec,
