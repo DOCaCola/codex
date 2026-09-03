@@ -196,11 +196,10 @@ impl Session {
         })
     }
 
-    pub(super) fn mcp_server_notification_sender(&self) -> SendMcpServerNotification {
-        match self.mcp_notification_sender.get() {
-            Some(sender) => sender.clone(),
-            None => panic!("MCP notification sender should be initialized"),
-        }
+    pub(super) fn mcp_server_notification_sender(self: &Arc<Self>) -> SendMcpServerNotification {
+        self.mcp_notification_sender
+            .get_or_init(|| self.new_mcp_server_notification_sender())
+            .clone()
     }
 
     pub(super) async fn enable_mcp_server_notification_delivery(self: &Arc<Self>) {
