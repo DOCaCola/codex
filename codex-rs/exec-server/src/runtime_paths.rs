@@ -4,7 +4,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 
 pub const CODEX_HPATCH_COMPANION_ARGV0: &str = "__codex_hpatch_companion__";
 
-/// Runtime paths needed by exec-server child processes.
+/// Paths and sandbox settings initialized when creating an executor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecServerRuntimePaths {
     /// Stable path to the Codex executable used to launch hidden helper modes.
@@ -12,6 +12,9 @@ pub struct ExecServerRuntimePaths {
     /// Path to the Linux sandbox helper alias used when the platform sandbox
     /// needs to re-enter Codex by argv0.
     pub codex_linux_sandbox_exe: Option<AbsolutePathBuf>,
+    /// User-config opt-out of writable-root symlink checks beneath this host's home.
+    #[cfg(target_os = "macos")]
+    pub allowed_symlinked_codex_home: Option<AbsolutePathBuf>,
 }
 
 impl ExecServerRuntimePaths {
@@ -51,7 +54,19 @@ impl ExecServerRuntimePaths {
         Ok(Self {
             codex_self_exe: absolute_path(codex_self_exe)?,
             codex_linux_sandbox_exe: codex_linux_sandbox_exe.map(absolute_path).transpose()?,
+            #[cfg(target_os = "macos")]
+            allowed_symlinked_codex_home: None,
         })
+    }
+
+    /// Applies the symlink opt-in resolved by the execution host's config loader.
+    #[cfg(target_os = "macos")]
+    pub fn with_allowed_symlinked_codex_home(
+        mut self,
+        allowed_symlinked_codex_home: Option<AbsolutePathBuf>,
+    ) -> Self {
+        self.allowed_symlinked_codex_home = allowed_symlinked_codex_home;
+        self
     }
 }
 

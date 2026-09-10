@@ -124,6 +124,8 @@ pub enum Feature {
     CodeModeOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
+    /// Allow unified exec commands to allocate an interactive terminal.
+    UnifiedExecTty,
     /// Expose a single tool that stacks exec_command and apply_patch calls.
     CommandStack,
     /// Use the bundled hpatch companion as the model-visible patch authoring tool.
@@ -191,6 +193,8 @@ pub enum Feature {
     UnboundedConnectionRetries,
     /// Start the managed network proxy for sandboxed sessions.
     NetworkProxy,
+    /// Enable managed worktree creation and repository-aware sessions.
+    Worktrees,
     /// Respect host system proxy settings for Codex-owned network clients.
     RespectSystemProxy,
     /// Enable collab tools.
@@ -303,6 +307,9 @@ pub enum Feature {
     SendAsyncMessage,
     /// Enable automatic review for approval prompts.
     GuardianApproval,
+    /// Select thread-owned context for both Guardian reviewers.
+    /// Read once from the thread's fixed feature set when Guardian evidence is initialized.
+    GuardianThreadContext,
     /// Reuse encrypted parent compaction when restarting Guardian review sessions.
     GuardianReuseParentCompaction,
     /// Include completed node_repl or cua_repl Code Mode responses in Guardian reviews.
@@ -321,6 +328,8 @@ pub enum Feature {
     ContextManagement,
     /// Track and report a shared token budget across a session's agent threads.
     RolloutBudget,
+    /// Append trusted response configuration items when the selected reasoning effort changes.
+    ReasoningEffortOverride,
     /// Add current-time reminders to model-visible context.
     CurrentTimeReminder,
     /// Route MCP tool approval prompts through the MCP elicitation request path.
@@ -337,7 +346,7 @@ pub enum Feature {
     FastMode,
     /// Enable explicitly requested model changes for later step captures.
     StepModelSwitching,
-    /// Enable experimental realtime voice conversation mode in the TUI.
+    /// Removed compatibility flag. Realtime sessions no longer require a per-thread opt-in.
     RealtimeConversation,
     /// Prevent idle system sleep while a turn is actively running.
     PreventIdleSleep,
@@ -371,6 +380,8 @@ pub enum Feature {
     WindowsSandbox,
     /// Use the elevated Windows sandbox pipeline (setup + runner).
     WindowsSandboxElevated,
+    /// Attempt elevated Windows sandbox provisioning through the installed service.
+    WindowsSandboxService,
     /// Legacy remote models flag kept for backward compatibility.
     RemoteModels,
     /// Removed legacy git commit attribution guidance flag.
@@ -810,6 +821,11 @@ impl FeaturesToml {
         if let Some(enabled) = self.guardianv2.as_ref().and_then(FeatureToml::enabled) {
             entries.insert(Feature::GuardianV2.key().to_string(), enabled);
         }
+        if let Some(FeatureToml::Config(config)) = &self.guardianv2
+            && let Some(enabled) = config.thread_context
+        {
+            entries.insert(Feature::GuardianThreadContext.key().to_string(), enabled);
+        }
         if let Some(enabled) = self.multi_agent_v2.as_ref().and_then(FeatureToml::enabled) {
             entries.insert(Feature::MultiAgentV2.key().to_string(), enabled);
         }
@@ -926,6 +942,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::UnifiedExec,
         key: "unified_exec",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::UnifiedExecTty,
+        key: "unified_exec_tty",
         stage: Stage::Stable,
         default_enabled: true,
     },
@@ -1200,6 +1222,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: false,
     },
     FeatureSpec {
+        id: Feature::WindowsSandboxService,
+        key: "windows_sandbox_service",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
         id: Feature::RemoteModels,
         key: "remote_models",
         stage: Stage::Removed,
@@ -1224,6 +1252,16 @@ pub const FEATURES: &[FeatureSpec] = &[
             name: "Network proxy",
             menu_description: "Apply network proxy restrictions to sandboxed sessions that already have network access.",
             announcement: "NEW: Network proxy can now be enabled from /experimental. Restart Codex after enabling it.",
+        },
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::Worktrees,
+        key: "worktrees",
+        stage: Stage::Experimental {
+            name: "Worktrees",
+            menu_description: "Create isolated Git worktrees and group sessions by repository.",
+            announcement: "NEW: Worktrees can now be enabled from /experimental. Restart Codex after enabling it.",
         },
         default_enabled: false,
     },
@@ -1528,6 +1566,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
+        id: Feature::GuardianThreadContext,
+        key: "guardianv2.thread_context",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
         id: Feature::GuardianReuseParentCompaction,
         key: "guardian_reuse_parent_compaction",
         stage: Stage::UnderDevelopment,
@@ -1578,6 +1622,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::RolloutBudget,
         key: "rollout_budget",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::ReasoningEffortOverride,
+        key: "reasoning_effort_override",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },
@@ -1638,7 +1688,7 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::RealtimeConversation,
         key: "realtime_conversation",
-        stage: Stage::UnderDevelopment,
+        stage: Stage::Removed,
         default_enabled: false,
     },
     FeatureSpec {

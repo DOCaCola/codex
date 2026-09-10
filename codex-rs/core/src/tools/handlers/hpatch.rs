@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use codex_exec_server::CODEX_HPATCH_COMPANION_ARGV0;
+use codex_exec_server::ExecMetadata;
 use codex_exec_server::ExecOutputStream;
 use codex_exec_server::ExecParams;
 use codex_exec_server::ProcessSignal;
@@ -71,6 +72,10 @@ impl HpatchHandler {
             .get_exec_backend()
             .start(ExecParams {
                 process_id: format!("hpatch-{}", Uuid::new_v4()).into(),
+                metadata: Some(ExecMetadata {
+                    thread_id: Some(invocation.session.thread_id()),
+                    tool_call_id: Some(invocation.call_id.clone()),
+                }),
                 argv: vec![
                     CODEX_HPATCH_COMPANION_ARGV0.to_string(),
                     "translate".to_string(),

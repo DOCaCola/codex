@@ -184,10 +184,6 @@ sync-output-exe *args:
 clean-output-build-cache:
     {{ justfile_directory() }}/scripts/clean-output-build-cache.sh
 
-# Run the MCP server
-mcp-server-run *args:
-    cargo run -p codex-mcp-server -- {args}
-
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:
     cargo run -p codex-config-schema --bin codex-write-config-schema
