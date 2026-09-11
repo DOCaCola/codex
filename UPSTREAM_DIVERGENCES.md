@@ -9,6 +9,20 @@ maintaining parallel logic or compatibility fallbacks.
 - Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
 - Remove when: upstream provides an official MCP notification or session-ingress surface.
 
+## Migration line endings matching the Windows release
+
+- Added: 2026-09-11.
+- Local behavior: `.gitattributes` pins state-crate SQL files to CRLF, matching all 67
+  migration checksums embedded in the official Windows x64 `rust-v0.154.0` release.
+- Reason: SQLx hashes the migration text at build time. A mixed checkout produced LF
+  checksums for state migrations 19, 20, and 32 and logs migration 1, preventing the
+  fork from opening databases initialized by the stock Windows executable.
+- Scope: this matches the Windows release; it does not establish compatibility with
+  upstream Linux/macOS builds or databases created by earlier mixed-ending fork builds.
+- Remove when: upstream provides an explicit migration line-ending policy that preserves
+  compatibility with existing Windows databases.
+- Local code: `.gitattributes`.
+
 ## Optional Luna reserve fallback
 
 - Added: 2026-09-11.
