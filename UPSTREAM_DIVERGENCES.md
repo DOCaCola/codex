@@ -9,6 +9,18 @@ maintaining parallel logic or compatibility fallbacks.
 - Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
 - Remove when: upstream provides an official MCP notification or session-ingress surface.
 
+## Optional Luna reserve fallback
+
+- Added: 2026-09-11.
+- Local behavior: `features.luna_reserve_fallback` defaults to `false`. Reserve usage banners
+  do not switch models or hold submissions, and existing Reserve tasks retain the normal model
+  picker. Set the flag to `true` to restore Reserve fallback and recovery behavior.
+- Reason: local ChatGPT account usage can differ from the independent upstream credentials used
+  for inference through a gateway. Actual inference errors and other usage banners still apply.
+- Remove when: upstream scopes reserve fallback to the credentials used for inference or provides
+  an equivalent opt-out.
+- Local code: `codex-rs/features/src/lib.rs`, `codex-rs/tui/src/chatwidget/backend_banners.rs`.
+
 ## Image generation with independent provider credentials
 
 - Added: 2026-09-11.

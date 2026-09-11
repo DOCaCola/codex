@@ -828,6 +828,9 @@
             "local_thread_store_shared_compression": {
               "type": "boolean"
             },
+            "luna_reserve_fallback": {
+              "type": "boolean"
+            },
             "mcp_2026_07_28": {
               "type": "boolean"
             },
@@ -6231,6 +6234,9 @@
           "type": "boolean"
         },
         "local_thread_store_shared_compression": {
+          "type": "boolean"
+        },
+        "luna_reserve_fallback": {
           "type": "boolean"
         },
         "mcp_2026_07_28": {

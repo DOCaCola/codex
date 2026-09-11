@@ -27,6 +27,33 @@ fn reserve_snapshot(primary_used: i32, weekly_used: i32) -> RateLimitSnapshot {
 }
 
 #[tokio::test]
+async fn luna_reserve_disabled_keeps_normal_picker_for_existing_reserve_task() {
+    let (mut chat, _events, _ops) = make_chatwidget_manual(Some("gpt-reserve")).await;
+    chat.has_chatgpt_account = true;
+    chat.update_backend_banner(
+        &serde_json::from_value(json!({
+            "accountId": "account-preview", "rateLimits": {},
+            "ordinaryUsageAllowed": false,
+            "rateLimitUpsell": {
+                "banner_type": "luna_reserve", "presentation": "dismissible",
+                "title": "Reserve fallback", "description": "Ordinary usage exhausted",
+                "ctas": [{"action": "add_credits", "label": "Add credits"}]
+            }
+        }))
+        .unwrap(),
+    );
+    assert!(!chat.restrict_model_picker_to_luna_reserve());
+    assert!(!chat.waiting_for_luna_reserve());
+    assert!(chat.backend_banner_fallback().is_none());
+    assert!(!chat.has_applicable_backend_banner());
+    chat.open_model_popup_with_presets(chat.model_catalog.try_list_models().unwrap());
+    insta::assert_snapshot!(
+        "luna_reserve_disabled_model_picker",
+        normalize_snapshot_paths(render_bottom_popup(&chat, /*width*/ 90))
+    );
+}
+
+#[tokio::test]
 async fn luna_reserve_selector_supports_arrows_enter_shortcuts_and_escape_without_losing_draft() {
     for (keys, destination) in [
         (
@@ -48,6 +75,7 @@ async fn luna_reserve_selector_supports_arrows_enter_shortcuts_and_escape_withou
         (vec![KeyCode::Down, KeyCode::Esc], None),
     ] {
         let (mut chat, mut events, _ops) = make_chatwidget_manual(Some("gpt-reserve")).await;
+        chat.set_feature_enabled(Feature::LunaReserveFallback, /*enabled*/ true);
         chat.has_chatgpt_account = true;
         chat.apply_external_edit("saved draft".into());
         chat.on_rate_limit_snapshot(Some(reserve_snapshot(
@@ -140,6 +168,7 @@ async fn luna_reserve_status_tracks_the_active_model() {
 #[tokio::test]
 async fn luna_reserve_usage_survives_banner_dismissal_and_typing_during_a_turn() {
     let (mut chat, _rx, _ops) = make_chatwidget_manual(Some("gpt-reserve")).await;
+    chat.set_feature_enabled(Feature::LunaReserveFallback, /*enabled*/ true);
     chat.has_chatgpt_account = true;
     chat.on_rate_limit_snapshot(Some(reserve_snapshot(
         /*primary_used*/ 48, /*weekly_used*/ 20,

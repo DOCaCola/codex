@@ -104,6 +104,8 @@ pub enum Feature {
     CodexHooks,
     /// Store CLI auth in the encrypted local secrets backend when keyring storage is selected.
     SecretAuthStorage,
+    /// Allow account usage to switch tasks into Luna reserve and restrict model selection.
+    LunaReserveFallback,
 
     // Experimental
     /// Send per-content-entry classifications in internal Responses metadata.
@@ -938,6 +940,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "secret_auth_storage",
         stage: Stage::Stable,
         default_enabled: cfg!(windows),
+    },
+    FeatureSpec {
+        id: Feature::LunaReserveFallback,
+        key: "luna_reserve_fallback",
+        stage: Stage::Stable,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::UnifiedExec,
