@@ -107,6 +107,7 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
         .expect("primary local environment");
     let handler = ExecCommandHandler::new(ExecCommandHandlerOptions {
         allow_login_shell: false,
+        allow_tty: false,
         exec_permission_approvals_enabled: false,
         include_environment_id: false,
         include_shell_parameter: true,

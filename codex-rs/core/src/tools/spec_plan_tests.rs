@@ -3199,6 +3199,38 @@ async fn hosted_web_search_fallback_follows_winning_browser_runtime() {
 }
 
 #[tokio::test]
+async fn image_generation_with_provider_env_key_ignores_local_free_plan() {
+    let plan = probe_with(
+        |turn| {
+            turn.auth_manager = Some(AuthManager::from_auth_for_testing(
+                CodexAuth::from_external_chatgpt_tokens(
+                    "header.e30.signature",
+                    "local-account",
+                    Some("free"),
+                )
+                .unwrap(),
+            ));
+            let mut provider = turn.config.model_provider.clone();
+            provider.env_key = Some("GATEWAY_IMAGE_API_KEY".to_string());
+            turn.provider = create_model_provider(provider, turn.auth_manager.clone());
+            update_turn_settings_for_test(turn, |settings| {
+                Arc::make_mut(&mut settings.model_info).input_modalities =
+                    vec![InputModality::Image];
+            });
+        },
+        ToolPlanInputs {
+            extension_tool_executors: vec![Arc::new(TestNamespaceExtensionTool {
+                namespace: "image_gen",
+                tool_name: "imagegen",
+            })],
+            ..Default::default()
+        },
+    )
+    .await;
+    plan.assert_visible_contains(&["image_gen"]);
+}
+
+#[tokio::test]
 async fn hosted_web_search_and_standalone_image_generation_follow_runtime_gates() {
     let image_generation_tool = Arc::new(TestNamespaceExtensionTool {
         namespace: "image_gen",

@@ -9,6 +9,18 @@ maintaining parallel logic or compatibility fallbacks.
 - Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
 - Remove when: upstream provides an official MCP notification or session-ingress surface.
 
+## Image generation with independent provider credentials
+
+- Added: 2026-09-11.
+- Local behavior: the image tool's Free-plan exclusion applies only when requests use the
+  local ChatGPT authentication path. Providers with an environment API key, explicit bearer
+  token, or actor-authorized route defer entitlement to the server on actual image requests.
+- Reason: a local Free account does not describe the upstream account used by a gateway such
+  as codex-lb. No eligibility probes or test generations are sent; server failures remain
+  recoverable tool errors. Other feature, model, and provider eligibility gates still apply.
+- Remove when: upstream makes image-generation plan gating follow request authentication.
+- Local code: `codex-rs/core/src/tools/spec_plan.rs`.
+
 ## Owner-provided environment configuration on repeated TUI turns
 
 - Added: 2026-08-21.
