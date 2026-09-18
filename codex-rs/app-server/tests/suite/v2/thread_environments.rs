@@ -29,6 +29,45 @@ use super::connection_handling_websocket::send_request;
 use super::connection_handling_websocket::spawn_websocket_server;
 
 #[tokio::test]
+async fn repeated_turns_accept_default_workspace_overrides() -> Result<()> {
+    let responses = create_mock_responses_server_repeating_assistant("Done").await;
+    let home = TempDir::new()?;
+    MockResponsesConfig::new(&responses.uri()).write(home.path())?;
+    let mut server = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .build_initialized()
+        .await?;
+    // Exercise the same default selection on thread/start and turn/start, without
+    // introducing the test helper's explicit environment attachment.
+    let request = server
+        .send_thread_start_request(ThreadStartParams::default())
+        .await?;
+    let started: ThreadStartResponse =
+        timeout(DEFAULT_READ_TIMEOUT, server.read_response(request)).await??;
+    let expected_environments = started.thread.environments.clone();
+    for prompt in ["first turn", "same workspace again"] {
+        let completed = timeout(
+            DEFAULT_READ_TIMEOUT,
+            server.start_turn_and_wait_for_completion(TurnStartParams {
+                thread_id: started.thread.id.clone(),
+                input: vec![UserInput::Text {
+                    text: prompt.into(),
+                    text_elements: vec![],
+                }],
+                cwd: Some(started.cwd.to_path_buf()),
+                runtime_workspace_roots: Some(started.runtime_workspace_roots.clone()),
+                ..Default::default()
+            }),
+        )
+        .await??;
+        assert_eq!(completed.turn.status, TurnStatus::Completed);
+    }
+    assert_read_and_list_environments(&mut server, &started.thread.id, &expected_environments)
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn thread_environments_follow_the_loaded_thread_selection() -> Result<()> {
     let responses = create_mock_responses_server_repeating_assistant("Done").await;
     let home = TempDir::new()?;

@@ -51,7 +51,8 @@ maintaining parallel logic or compatibility fallbacks.
 
 - Added: 2026-08-21.
 - Local behavior: app-server omits redundant environment overrides when `turn/start` repeats the
-  current attachment.
+  current attachment, for both explicit selections and default-environment requests. Task runtime
+  workspace roots remain independently updated using upstream's thread-settings representation.
 - Reason: the TUI sends `cwd` and runtime workspace roots on every turn. Upstream stable
   `rust-v0.149.0` can reconstruct `local` as `FromThread` and reject the turn after owner-provided
   environment configuration becomes pending, ready, or failed.
@@ -60,3 +61,7 @@ maintaining parallel logic or compatibility fallbacks.
 - Remove when: upstream prevents redundant TUI environment overrides while preserving
   owner-provided configuration.
 - Local code: `codex-rs/app-server/src/request_processors/turn_processor.rs`.
+- Regression coverage: exercise the default-environment override builder against live core threads
+  with pending, ready, and failed owner configuration; verify task roots still update and changed
+  attachments remain subject to ownership validation. The v0.155.0 merge had dropped the
+  default-environment check while retaining only the explicit-selection check.
