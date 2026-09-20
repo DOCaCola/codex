@@ -30,11 +30,22 @@ pub(crate) fn create_command_stack_tool(
     include_environment_id: bool,
     patch_tool: CommandStackPatchTool,
 ) -> ToolSpec {
+    let managed_guidance = if exec_arguments
+        .properties
+        .as_ref()
+        .is_some_and(|properties| properties.contains_key("execution_mode"))
+    {
+        " execution_mode values: auto (default: initial wait then automatic completion delivery), background (return promptly with automatic delivery), foreground (wait until exit), interactive (manual supervision for servers/watchers; default with tty=true). timeout_ms is a positive execution deadline, separate from yield_time_ms; foreground defaults to 300000 ms and auto/background have no implicit deadline. Finite commands in earlier steps run to completion before dependent steps start. Their exit codes control continue_on_failure. Interactive commands cannot be dependencies. Final-step finite commands deliver completion automatically; continue independent work without polling. The runtime keeps the turn active while they run. Use foreground when the stack must return final results, or write_stdin wait_mode=\"completion\" when blocked (empty chars, no yield_time_ms). Empty timed reads back off; completed output remains readable via session_id in a bounded session-local cache."
+    } else {
+        ""
+    };
     let (patch_rule, patch_rules) = match patch_tool {
         CommandStackPatchTool::ApplyPatch => {
-            let environment = include_environment_id
-                .then_some("environment_id? ")
-                .unwrap_or("");
+            let environment = if include_environment_id {
+                "environment_id? "
+            } else {
+                ""
+            };
             (
                 format!(
                     "patch_operation: \"apply_patch\" stack_step? STACK_NL stack_apply_patch_input \"end\"\nstack_apply_patch_input: begin_patch {environment}hunk+ stack_end_patch\nstack_end_patch: \"*** End Patch\" STACK_NL"
@@ -43,9 +54,11 @@ pub(crate) fn create_command_stack_tool(
             )
         }
         CommandStackPatchTool::Hpatch => {
-            let environment = include_environment_id
-                .then_some("environment_id? ")
-                .unwrap_or("");
+            let environment = if include_environment_id {
+                "environment_id? "
+            } else {
+                ""
+            };
             (
                 format!(
                     "patch_operation: \"hpatch\" stack_step? STACK_NL stack_hpatch_input STACK_NL stack_blank_line* \"end\"\nstack_hpatch_input: {environment}working_directory? blank_line* script"
@@ -79,7 +92,7 @@ pub(crate) fn create_command_stack_tool(
     ToolSpec::Freeform(FreeformTool {
         name: "command_stack".to_string(),
         description: format!(
-            "Runs 1-8 operations across up to 4 dependency steps. Tool calls are expensive: include every currently known useful operation in one call. Independent operations must share the same step. Use later steps only for predetermined dependencies, and make another call only when the next operation depends on unseen output. Use one operation only when no other useful operation is currently known. For example, omit `step` on independent blocks so they share step 1; use `step=2` for a known follow-up after step 1. Every operation is a block: write `exec_command`, `write_stdin`, or `{patch_tool}` followed by optional ` step=N`; `exec_command` and `write_stdin` may also add ` continue_on_failure`. Put the body on following lines and terminate it with `end`. Step defaults to 1. Exec and stdin bodies are JSON argument objects. {exec_arguments} {write_stdin_arguments} {workdir_body} Patch operations run serially and always stop on failure. {patch_body}",
+            "Runs 1-8 operations across up to 4 dependency steps. Tool calls are expensive: include every currently known useful operation in one call. Independent operations must share the same step. Use later steps only for predetermined dependencies, and make another call only when the next operation depends on unseen output. Use one operation only when no other useful operation is currently known. For example, omit `step` on independent blocks so they share step 1; use `step=2` for a known follow-up after step 1. Every operation is a block: write `exec_command`, `write_stdin`, or `{patch_tool}` followed by optional ` step=N`; `exec_command` and `write_stdin` may also add ` continue_on_failure`. Put the body on following lines and terminate it with `end`. Step defaults to 1. Exec and stdin bodies are JSON argument objects. {exec_arguments} {write_stdin_arguments} {workdir_body} Patch operations run serially and always stop on failure. {patch_body}{managed_guidance}",
             patch_tool = patch_tool.name(),
         ),
         defer_loading: None,

@@ -128,6 +128,8 @@ pub enum Feature {
     CodeModeOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
+    /// Deliver finite command results automatically while keeping the owning turn active.
+    BackgroundCommandDelivery,
     /// Allow unified exec commands to allocate an interactive terminal.
     UnifiedExecTty,
     /// Expose a single tool that stacks exec_command and apply_patch calls.
@@ -966,6 +968,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::CommandStack,
         key: "command_stack",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::BackgroundCommandDelivery,
+        key: "background_command_delivery",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

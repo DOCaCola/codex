@@ -406,6 +406,7 @@ fn exec_command_tool_output_formats_truncated_response() {
         arguments: "{}".to_string(),
     };
     let output = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "call-42".to_string(),
         chunk_id: "abc123".to_string(),
         wall_time: std::time::Duration::from_millis(1250),
@@ -463,6 +464,7 @@ fn exec_command_tool_output_reserves_metadata_budget_and_preserves_policy_units(
         (TruncationPolicy::Tokens(50), "tokens truncated"),
     ] {
         let response = ExecCommandToolOutput {
+            completion_delivery: None,
             event_call_id: "call-42".to_string(),
             chunk_id: "abc123".to_string(),
             wall_time: std::time::Duration::from_millis(/*millis*/ 1250),
@@ -507,6 +509,7 @@ fn exec_command_tool_output_preserves_omission_metadata_when_truncated() {
     )
     .into_bytes();
     let mut output = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "call-omitted".to_string(),
         chunk_id: "abc123".to_string(),
         wall_time: std::time::Duration::from_millis(/*millis*/ 1250),

@@ -77,11 +77,13 @@ enum ExecCommandLifetime {
 pub struct ExecCommandHandler {
     options: ExecCommandHandlerOptions,
     lifetime: ExecCommandLifetime,
+    background_delivery: bool,
 }
 
 impl Default for ExecCommandHandler {
     fn default() -> Self {
         Self {
+            background_delivery: false,
             lifetime: ExecCommandLifetime::Interactive,
             options: ExecCommandHandlerOptions {
                 allow_login_shell: false,
@@ -101,6 +103,7 @@ impl ExecCommandHandler {
         Self {
             options,
             lifetime: ExecCommandLifetime::Interactive,
+            background_delivery: false,
         }
     }
 
@@ -108,7 +111,13 @@ impl ExecCommandHandler {
         Self {
             options,
             lifetime: ExecCommandLifetime::OneShot,
+            background_delivery: false,
         }
+    }
+
+    pub(crate) fn with_background_delivery(mut self, enabled: bool) -> Self {
+        self.background_delivery = enabled;
+        self
     }
 
     pub(super) fn maybe_persist_local_shell(
@@ -177,6 +186,9 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
             ExecCommandLifetime::Interactive => spec,
             ExecCommandLifetime::OneShot => one_shot_exec_command_spec(spec),
         };
+        if self.background_delivery {
+            super::managed_spec::configure_exec(&mut spec);
+        }
         if !self.options.allow_tty
             && let ToolSpec::Function(spec) = &mut spec
         {
@@ -352,6 +364,7 @@ impl ExecCommandHandler {
             mut tty,
             yield_time_ms,
             timeout_ms,
+            execution_mode,
             max_output_tokens,
             sandbox_permissions: _,
             additional_permissions,
@@ -359,7 +372,7 @@ impl ExecCommandHandler {
             prefix_rule,
             ..
         } = args;
-        let completion_timeout = match self.lifetime {
+        let mut completion_timeout = match self.lifetime {
             ExecCommandLifetime::Interactive => None,
             ExecCommandLifetime::OneShot => {
                 tty = false;
@@ -367,6 +380,56 @@ impl ExecCommandHandler {
                     timeout_ms.unwrap_or(DEFAULT_EXEC_COMMAND_TIMEOUT_MS),
                 ))
             }
+        };
+        let managed = if self.background_delivery {
+            use crate::unified_exec::managed::Execution;
+            use crate::unified_exec::managed::ExecutionMode;
+            let mode = execution_mode.unwrap_or(if tty {
+                ExecutionMode::Interactive
+            } else {
+                ExecutionMode::Auto
+            });
+            if tty && mode != ExecutionMode::Interactive {
+                manager.release_process_id(process_id).await;
+                return Err(FunctionCallError::RespondToModel(
+                    "tty=true requires execution_mode=\"interactive\"".into(),
+                ));
+            }
+            if timeout_ms == Some(0) || (mode == ExecutionMode::Interactive && timeout_ms.is_some())
+            {
+                manager.release_process_id(process_id).await;
+                return Err(FunctionCallError::RespondToModel(
+                    "timeout_ms must be positive and is only supported for finite commands".into(),
+                ));
+            }
+            let timeout = timeout_ms.map(Duration::from_millis);
+            if timeout
+                .is_some_and(|timeout| std::time::Instant::now().checked_add(timeout).is_none())
+            {
+                manager.release_process_id(process_id).await;
+                return Err(FunctionCallError::RespondToModel(
+                    "timeout_ms is too large".into(),
+                ));
+            }
+            if mode == ExecutionMode::Foreground {
+                completion_timeout = Some(timeout.unwrap_or(Duration::from_secs(300)));
+            }
+            Some(Execution {
+                mode,
+                timeout: if mode == ExecutionMode::Foreground {
+                    None
+                } else {
+                    timeout
+                },
+            })
+        } else {
+            if execution_mode.is_some() {
+                manager.release_process_id(process_id).await;
+                return Err(FunctionCallError::RespondToModel(
+                    "execution_mode requires background_command_delivery".into(),
+                ));
+            }
+            None
         };
 
         let exec_permission_approvals_enabled =
@@ -455,6 +518,7 @@ impl ExecCommandHandler {
         if let Some(output) = intercepted_patch? {
             manager.release_process_id(process_id).await;
             return Ok(boxed_tool_output(ExecCommandToolOutput {
+                completion_delivery: None,
                 event_call_id: String::new(),
                 chunk_id: String::new(),
                 wall_time: std::time::Duration::ZERO,
@@ -471,6 +535,7 @@ impl ExecCommandHandler {
 
         emit_unified_exec_tty_metric(&step_context.session_telemetry, tty);
         let request = ExecCommandRequest {
+            managed,
             command,
             shell_type,
             hook_command: hook_command.clone(),
@@ -509,6 +574,7 @@ impl ExecCommandHandler {
                 let original_token_count =
                     original_token_count.unwrap_or_else(|| approx_token_count(&output_text));
                 Ok(boxed_tool_output(ExecCommandToolOutput {
+                    completion_delivery: managed.map(|_| false),
                     event_call_id: context.call_id.clone(),
                     chunk_id: generate_chunk_id(),
                     wall_time: output.duration,

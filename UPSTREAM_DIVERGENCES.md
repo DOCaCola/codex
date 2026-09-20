@@ -9,6 +9,30 @@ maintaining parallel logic or compatibility fallbacks.
 - Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
 - Remove when: upstream provides an official MCP notification or session-ingress surface.
 
+## Optional finite command completion delivery
+
+- Added: 2026-09-20; baseline `4ba07ce918856766bd8b36dd46a12bf580ba11be`.
+- Local behavior: `features.background_command_delivery` defaults to `false`.
+  When enabled, finite unified-exec commands automatically deliver bounded
+  completion context; the existing logical turn waits in runtime code, without
+  sampling the model merely to check status. Foreground and explicit completion
+  waits remain synchronous; interactive commands remain manually supervised.
+- `command_stack` waits for finite dependencies before advancing and observes
+  their exit status. Final-step managed jobs can deliver asynchronously.
+  Empty timed reads back off; accepted completions are retained in a bounded,
+  session-local cache accessible via `write_stdin`, including remote executors.
+- Lifecycle: reuse the active turn and existing cleanup/interrupt behavior.
+  No desktop changes or new app-server wire events; no restart-durable jobs.
+  A live turn waiting for a command is intentionally still shown as active.
+- Remove when: upstream provides equivalent completion consumption, runtime
+  waiting, and stack dependency semantics.
+- Review stages: gated execution contract; coordinator/context/turn waiting;
+  stack and hook integration; lifecycle/request-count regression tests.
+- Local code: `codex-rs/core/src/unified_exec/managed.rs`,
+  `codex-rs/core/src/context/command_completion.rs`,
+  `codex-rs/core/src/tools/handlers/command_stack_managed.rs`,
+  unified-exec handlers, feature registry, and `core/src/session/turn.rs`.
+
 ## Migration line endings matching the Windows release
 
 - Added: 2026-09-11.

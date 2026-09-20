@@ -23,9 +23,12 @@ mod write_stdin;
 pub use exec_command::ExecCommandHandler;
 pub(crate) use exec_command::ExecCommandHandlerOptions;
 pub use write_stdin::WriteStdinHandler;
+mod managed_spec;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ExecCommandArgs {
+    #[serde(default)]
+    execution_mode: Option<crate::unified_exec::managed::ExecutionMode>,
     pub(crate) cmd: String,
     #[serde(default)]
     shell: Option<String>,

@@ -1023,7 +1023,7 @@ fn add_core_tool_sources(context: &CoreToolPlanContext<'_>, registry: &mut ToolR
                         context.environments,
                     ),
                 }));
-                registry.add(WriteStdinHandler);
+                registry.add(WriteStdinHandler::default());
             }
             if turn_context.config.features.enabled(Feature::ViewImage) {
                 registry.add(ViewImageHandler::new(ViewImageToolOptions {
@@ -1130,13 +1130,22 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
         include_windows_shell_guidance: should_include_windows_shell_guidance(context.environments),
     };
     if features.enabled(Feature::UnifiedExec) {
-        let exec_handler = ExecCommandHandler::new(options);
+        let background_delivery = features.enabled(Feature::BackgroundCommandDelivery);
+        let exec_handler =
+            ExecCommandHandler::new(options).with_background_delivery(background_delivery);
         if command_stack_available {
             registry.add_with_exposure(exec_handler, ToolExposure::Hidden);
-            registry.add_with_exposure(WriteStdinHandler, ToolExposure::Hidden);
+            registry.add_with_exposure(
+                WriteStdinHandler {
+                    background_delivery,
+                },
+                ToolExposure::Hidden,
+            );
         } else {
             registry.add(exec_handler);
-            registry.add(WriteStdinHandler);
+            registry.add(WriteStdinHandler {
+                background_delivery,
+            });
         }
     } else {
         // Managed requirements are the only configuration path that can keep

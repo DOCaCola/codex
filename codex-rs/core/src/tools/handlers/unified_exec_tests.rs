@@ -490,7 +490,7 @@ async fn exec_command_pre_tool_use_payload_skips_write_stdin() {
     };
     let (session, turn) = make_session_and_context().await;
     let turn = Arc::new(turn);
-    let handler = WriteStdinHandler;
+    let handler = WriteStdinHandler::default();
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
@@ -514,6 +514,7 @@ async fn exec_command_post_tool_use_payload_uses_output_for_noninteractive_one_s
         arguments: serde_json::json!({ "cmd": "echo three", "tty": false }).to_string(),
     };
     let output = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "call-43".to_string(),
         chunk_id: "chunk-1".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -545,6 +546,7 @@ async fn exec_command_post_tool_use_payload_uses_output_for_interactive_completi
         arguments: serde_json::json!({ "cmd": "echo three", "tty": true }).to_string(),
     };
     let output = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "call-44".to_string(),
         chunk_id: "chunk-1".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -577,6 +579,7 @@ async fn exec_command_post_tool_use_payload_skips_running_sessions() {
         arguments: serde_json::json!({ "cmd": "echo three", "tty": false }).to_string(),
     };
     let output = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "event-45".to_string(),
         chunk_id: "chunk-1".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -604,6 +607,7 @@ async fn write_stdin_post_tool_use_payload_uses_original_exec_call_id_and_comman
         .to_string(),
     };
     let output = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "exec-call-45".to_string(),
         chunk_id: "chunk-2".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -617,7 +621,7 @@ async fn write_stdin_post_tool_use_payload_uses_original_exec_call_id_and_comman
         hook_command: Some("sleep 1; echo finished".to_string()),
     };
     let invocation = invocation_for_payload("write_stdin", "write-stdin-call", payload).await;
-    let handler = WriteStdinHandler;
+    let handler = WriteStdinHandler::default();
 
     assert_eq!(
         handler.post_tool_use_payload(&invocation, &output),
@@ -636,6 +640,7 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
         arguments: serde_json::json!({ "session_id": 45, "chars": "" }).to_string(),
     };
     let output_a = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "exec-call-a".to_string(),
         chunk_id: "chunk-a".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -649,6 +654,7 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
         hook_command: Some("sleep 2; echo alpha".to_string()),
     };
     let output_b = ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: "exec-call-b".to_string(),
         chunk_id: "chunk-b".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -663,7 +669,7 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
     };
     let invocation_b = invocation_for_payload("write_stdin", "write-call-b", payload.clone()).await;
     let invocation_a = invocation_for_payload("write_stdin", "write-call-a", payload).await;
-    let handler = WriteStdinHandler;
+    let handler = WriteStdinHandler::default();
 
     let payloads = [
         handler.post_tool_use_payload(&invocation_b, &output_b),
