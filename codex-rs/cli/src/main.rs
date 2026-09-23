@@ -2569,13 +2569,19 @@ async fn run_debug_models_command(
 
 async fn fetch_remote_models_catalog(config: &Config) -> anyhow::Result<ModelsResponse> {
     let (api_provider, api_auth) = models_api_provider_and_auth(config).await?;
+    let request_url =
+        ModelsClient::<ReqwestTransport>::request_url(&api_provider, &client_version_to_whole());
     let client = ModelsClient::new(
         ReqwestTransport::from_http_client(codex_login::default_client::create_client()),
         api_provider,
         api_auth,
     );
     let (models, _) = client
-        .list_models(client_version_to_whole(), Default::default())
+        .list_models(
+            request_url,
+            Default::default(),
+            /*response_body_limit_bytes*/ None,
+        )
         .await?;
 
     Ok(ModelsResponse { models })
@@ -2583,14 +2589,10 @@ async fn fetch_remote_models_catalog(config: &Config) -> anyhow::Result<ModelsRe
 
 async fn models_endpoint_url(config: &Config) -> anyhow::Result<String> {
     let (api_provider, _) = models_api_provider_and_auth(config).await?;
-    let mut url = api_provider.url_for_path("models");
-    let separator = if url.contains('?') { '&' } else { '?' };
-    url.push_str(&format!(
-        "{separator}client_version={}",
-        client_version_to_whole()
-    ));
-
-    Ok(url)
+    Ok(ModelsClient::<ReqwestTransport>::request_url(
+        &api_provider,
+        &client_version_to_whole(),
+    ))
 }
 
 async fn models_api_provider_and_auth(
