@@ -46,14 +46,16 @@ pub(super) fn configure_wait(tool: &mut ToolSpec) {
 }
 
 fn configure_result(tool: &mut codex_tools::ResponsesApiTool) {
-    if let Some(properties) = tool
-        .output_schema
-        .as_mut()
-        .and_then(|schema| schema.get_mut("properties"))
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        properties.insert("completion_delivery".into(), json!({
-            "type": "boolean", "description": "Whether a running command will deliver its completion automatically."
-        }));
+    if let Some(schema) = tool.output_schema.take() {
+        let mut schema = schema.into_value();
+        if let Some(properties) = schema
+            .get_mut("properties")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            properties.insert("completion_delivery".into(), json!({
+                "type": "boolean", "description": "Whether a running command will deliver its completion automatically."
+            }));
+        }
+        tool.output_schema = Some(schema.into());
     }
 }

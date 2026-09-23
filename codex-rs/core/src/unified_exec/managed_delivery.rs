@@ -39,7 +39,7 @@ impl UnifiedExecProcessManager {
                 continue;
             }
             let result = self
-                .write_stdin_inner(
+                .write_stdin(
                     context,
                     WriteStdinRequest {
                         process_id: id,
@@ -113,7 +113,7 @@ impl UnifiedExecProcessManager {
             let name = crate::tools::hook_names::HookToolName::bash();
             let outcome = crate::hook_runtime::run_post_tool_use_hooks(
                 &context.session,
-                &context.step_context.turn,
+                context.step_context.as_ref(),
                 output.event_call_id.clone(),
                 name.name().to_string(),
                 name.matcher_aliases().to_vec(),

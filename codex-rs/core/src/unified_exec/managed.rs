@@ -222,7 +222,7 @@ impl UnifiedExecProcessManager {
                     "completion waits require a finite command with automatic delivery".into(),
                 ));
             }
-            return self.write_stdin_inner(context, request).await;
+            return self.write_stdin(context, request).await;
         };
         if !job.initial_response_done.is_cancelled() {
             tokio::select! {
@@ -268,13 +268,10 @@ impl UnifiedExecProcessManager {
         } else if request.input.is_empty() {
             request.yield_time_ms = state.next_poll_wait(request.yield_time_ms);
         }
-        let result = self
-            .write_stdin_inner(context, request)
-            .await
-            .map(|mut output| {
-                output.completion_delivery = Some(true);
-                output
-            });
+        let result = self.write_stdin(context, request).await.map(|mut output| {
+            output.completion_delivery = Some(true);
+            output
+        });
         let result = match result {
             Ok(output) if output.process_id.is_none() => {
                 self.accept_managed_output(context, output).await

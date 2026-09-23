@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolCallState;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
@@ -227,9 +228,11 @@ impl CommandStackHandler {
                 command_type,
                 tool_runtime
                     .handle_tool_call_with_source(
+                        Arc::clone(&parent.step_context),
                         child,
                         parent.source.clone(),
                         parent.cancellation_token.clone(),
+                        Arc::new(ToolCallState::default()),
                     )
                     .await,
             ),

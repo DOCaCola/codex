@@ -94,7 +94,7 @@ fn exec_command_tool_matches_expected_spec() {
                 Some(vec!["cmd".to_string()]),
                 Some(false.into())
             ),
-            output_schema: Some(unified_exec_output_schema()),
+            output_schema: Some(unified_exec_output_schema().into()),
         })
     );
 }
@@ -184,7 +184,7 @@ fn write_stdin_tool_matches_expected_spec() {
                 Some(vec!["session_id".to_string()]),
                 Some(false.into())
             ),
-            output_schema: Some(unified_exec_output_schema()),
+            output_schema: Some(unified_exec_output_schema().into()),
         })
     );
 }
