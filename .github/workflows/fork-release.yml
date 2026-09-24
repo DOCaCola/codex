@@ -1,0 +1,98 @@
+name: Fork Windows release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "doca-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'DOCaCola/codex'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: "4"
+      LIBSQLITE3_FLAGS: SQLITE_DISABLE_INTRINSIC
+      CODEX_REPO_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Read source pins and validate release tag
+        shell: python
+        run: |
+          import json, os, pathlib, re, tomllib
+          root = pathlib.Path(".")
+          pin = json.loads((root / "third_party/hpatch/source.json").read_text())
+          cargo = tomllib.loads((root / "codex-rs/Cargo.toml").read_text())
+          version = cargo["workspace"]["package"]["version"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+-doca(?:\.\d+)?", version):
+              raise SystemExit("Expected a -doca or -doca.N workspace version")
+          if os.environ["GITHUB_REF_TYPE"] == "tag":
+              if os.environ["GITHUB_REF_NAME"] != "doca-v" + version:
+                  raise SystemExit("Release tag must match workspace version")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("HPATCH_GO_VERSION=" + pin["goVersion"] + "\n")
+              env.write("STABLE_GIT_COMMIT=" + os.environ["GITHUB_SHA"] + "\n")
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ env.HPATCH_GO_VERSION }}
+          cache: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: ./.github/actions/setup-msvc-env
+        with:
+          target: x86_64-pc-windows-msvc
+      - name: Build complete unsigned package
+        shell: pwsh
+        run: |
+          python scripts/build_fork_release.py --cache-dir "$env:RUNNER_TEMP/fork-build" --output-dir dist
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke test packaged executables
+        shell: pwsh
+        run: |
+          & ./dist/package/bin/codex.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./dist/package/bin/hpatch.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: codex-windows-x64
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/doca-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: codex-windows-x64
+          path: dist
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --draft \
+            --title "$RELEASE_TAG" \
+            --notes "Unsigned Windows x64 fork build. Extract the complete archive and run bin/codex.exe. Includes the pinned hpatch companion and redistribution notices. Voice components are not included."

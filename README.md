@@ -1,81 +1,73 @@
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
-<p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
-</p>
-</br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
-</br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
+# Codex — DOCaCola fork
 
----
+A personal fork of [OpenAI Codex](https://github.com/openai/codex), based on
+`rust-v0.156.1`. This is an independent build, not an official OpenAI release.
+Upstream copyright, Apache-2.0 licensing, and history are preserved.
 
-## Quickstart
+## Install
 
-### Installing and running Codex CLI
+Download a Windows x64 ZIP from [this fork's releases](https://github.com/DOCaCola/codex/releases)
+when one is available. Extract the **whole archive**, then run `bin/codex.exe`.
+Keep `bin`, `codex-resources`, `codex-path`, and the license files together.
+Packages include the code-mode host, Windows sandbox helpers, ripgrep, and hpatch.
+Go is not required. Initial builds are unsigned and omit the optional voice runtime.
 
-Run the following on Mac or Linux to install Codex CLI:
+This fork currently targets Windows x64. The inherited npm/Python publishing and
+installer scripts target official OpenAI packages; use the fork release archives.
+Linux and macOS release/signing support has not been validated for this fork.
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | sh
+## Fork features
+
+- Windows Git Bash shell integration.
+- Experimental compact hpatch edits translated into Codex's native patch flow.
+- Command stacks and optional automatic background command completion delivery.
+- Optional inbound MCP notifications and account/provider behavior adjustments.
+
+Feature defaults and configuration live in the source. Review
+[UPSTREAM_DIVERGENCES.md](UPSTREAM_DIVERGENCES.md) when updating from upstream.
+
+## Build a complete package
+
+On Windows x64, install Git, Python 3.12+, Rust from
+`codex-rs/rust-toolchain.toml`, Visual Studio C++ build tools with the Windows SDK,
+and Go from [the hpatch source pin](third_party/hpatch/source.json).
+Run in a Visual Studio developer environment:
+
+```sh
+python scripts/build_fork_release.py --cache-dir C:/build-cache/codex --output-dir dist
 ```
 
-Run the following on Windows to install Codex CLI:
+Choose your own cache location. The builder places its temporary files and V8
+artifacts on that drive to avoid cross-drive symlink problems. Cargo and Go must be on PATH;
+`--cargo` and `--go` accept explicit executables. The build fetches the pinned
+hpatch source and matching checksum-verified V8/ripgrep artifacts. It builds all
+required Rust companions, produces a ZIP and SHA256SUMS, and bundles licenses
+and hpatch source/binary provenance. It never relies on a sibling checkout.
 
-```shell
-powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"
-```
+The default `fast-release` profile avoids the cost of ThinLTO; use
+`--profile release` for the full optimized build. Local clean builds of the CLI
+and code-mode host measured about 7.0 GiB and 9.5 GiB peak target space respectively.
+Caches, package assembly, and the rest of the toolchain require additional space.
 
-The standalone installers download from `https://releases.openai.com/codex` by default and fall back to GitHub Releases if a metadata or asset download is unavailable. To force GitHub Releases, set `CODEX_INSTALLER_USE_RELEASES_OPENAI_COM` to `false` (`0` and `no` are also accepted):
+## GitHub workflow
 
-```shell
-curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh
-```
+[Fork Windows release](.github/workflows/fork-release.yml) runs manually or on
+`doca-v<workspace-version>` tags, for example `doca-v0.156.1-doca`.
+A manual run produces a seven-day artifact. A matching tag also creates a
+**draft** GitHub release for review. Later fork versions should use an increasing
+`-doca.N` suffix, updating Cargo manifests/lockfiles together.
 
-```powershell
-$env:CODEX_INSTALLER_USE_RELEASES_OPENAI_COM='false'; irm https://chatgpt.com/codex/install.ps1 | iex
-```
+The workflow uses one standard Windows runner, four Cargo jobs, no retained build
+cache, and no OpenAI signing credentials or registry publishing. The inherited
+OpenAI workflows have been removed from this branch; their source remains in the
+upstream history. Do not re-enable them wholesale when merging upstream.
 
-Codex CLI can also be installed via the following package managers:
+## Maintenance and attribution
 
-```shell
-# Install using npm
-npm install -g @openai/codex
-```
+Use `origin` for this fork and `upstream` for `https://github.com/openai/codex.git`.
+Merge reviewed upstream releases into the maintained fork branch. Preserve
+upstream authors; author fork changes as your GitHub identity. The hpatch companion
+is maintained separately in [DOCaCola/hpatch](https://github.com/DOCaCola/hpatch);
+see [its integration/build contract](third_party/hpatch/README.md).
 
-```shell
-# Install using Homebrew
-brew install --cask codex
-```
-
-Then simply run `codex` to get started.
-
-<details>
-<summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
-
-Each GitHub Release contains many executables, but in practice, you likely want one of these:
-
-- macOS
-  - Apple Silicon/arm64: `codex-aarch64-apple-darwin.tar.gz`
-  - x86_64 (older Mac hardware): `codex-x86_64-apple-darwin.tar.gz`
-- Linux
-  - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
-  - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
-
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
-
-</details>
-
-### Using Codex with your ChatGPT plan
-
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Business, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
-
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
-
-## Docs
-
-- [**Codex Documentation**](https://developers.openai.com/codex)
-- [**Contributing**](./docs/contributing.md)
-- [**Installing & building**](./docs/install.md)
-- [**Open source fund**](./docs/open-source-fund.md)
-
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+Codex: [Apache-2.0](LICENSE), [NOTICE](NOTICE). hpatch: [MIT](third_party/hpatch/LICENSE).
