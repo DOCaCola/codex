@@ -5,6 +5,7 @@ import shutil
 import stat
 from pathlib import Path
 
+from .hpatch import stage_hpatch_notices
 from .targets import PackageInputs
 from .targets import PackageVariant
 from .targets import TargetSpec
@@ -38,6 +39,7 @@ def build_package_dir(
     spec: TargetSpec,
     inputs: PackageInputs,
 ) -> None:
+    stage_hpatch_notices(inputs.hpatch_bin, package_dir, spec.target)
     bin_dir = package_dir / "bin"
     resources_dir = package_dir / "codex-resources"
     path_dir = package_dir / "codex-path"
@@ -54,6 +56,11 @@ def build_package_dir(
     copy_executable(
         inputs.code_mode_host_bin,
         bin_dir / f"codex-code-mode-host{spec.exe_suffix}",
+        is_windows=spec.is_windows,
+    )
+    copy_executable(
+        inputs.hpatch_bin,
+        bin_dir / f"hpatch{spec.exe_suffix}",
         is_windows=spec.is_windows,
     )
     copy_executable(inputs.rg_bin, path_dir / spec.rg_name, is_windows=spec.is_windows)
@@ -136,6 +143,7 @@ def validate_package_dir(
     required_files = [
         Path("bin") / variant.entrypoint_name(spec),
         Path("bin") / f"codex-code-mode-host{spec.exe_suffix}",
+        Path("bin") / f"hpatch{spec.exe_suffix}",
         Path("codex-path") / spec.rg_name,
     ]
     executable_files = list(required_files)

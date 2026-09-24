@@ -19,7 +19,8 @@ The builder creates a canonical Codex package directory:
 ├── codex-package.json
 ├── bin
 │   ├── <entrypoint>[.exe]
-│   └── codex-code-mode-host[.exe]
+│   ├── codex-code-mode-host[.exe]
+│   └── hpatch[.exe]
 ├── codex-resources
 │   ├── bwrap                             # Linux only
 │   ├── zsh/bin/zsh                       # supported Unix targets only
@@ -63,6 +64,18 @@ binary instead of rebuilding it.
 
 Release jobs should likewise pass `--code-mode-host-bin` so the package contains
 the signed host executable beside the signed entrypoint.
+
+`hpatch` is built from `third_party/hpatch/source.json` by
+`scripts/hpatch_companion.py`. The package CLI requires `--hpatch-bin` and its
+adjacent `<binary>.metadata` directory; `HPATCH_SOURCE_DIR` is not an input.
+The builder verifies the pinned revision, target, and binary checksum before
+copying the hpatch, Go, and linked dependency licenses into `licenses/hpatch`.
+Codex LICENSE and NOTICE are included at the package root. Build metadata must
+be regenerated if the executable is modified (including signing).
+
+For the maintained Windows fork release path, use `scripts/build_fork_release.py`.
+The inherited Linux/macOS and registry publishing scripts are not active release
+paths for this fork.
 
 Release jobs that already built package resource binaries should also pass the
 corresponding resource flags: `--bwrap-bin` for Linux packages, and

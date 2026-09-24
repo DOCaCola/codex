@@ -122,6 +122,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--hpatch-bin",
+        type=Path,
+        required=True,
+        help="Prebuilt hpatch companion executable for the selected target.",
+    )
+    parser.add_argument(
         "--bwrap-bin",
         type=Path,
         help=(
@@ -217,6 +223,9 @@ def main() -> int:
     inputs = PackageInputs(
         entrypoint_bin=source_outputs.entrypoint_bin,
         code_mode_host_bin=source_outputs.code_mode_host_bin,
+        hpatch_bin=resolve_input_path(
+            args.hpatch_bin, "prebuilt hpatch companion", "--hpatch-bin"
+        ),
         rg_bin=resolve_rg_bin(spec, args.rg_bin),
         zsh_bin=resolve_zsh_bin(spec, args.zsh_manifest, zsh_bin=args.zsh_bin),
         bwrap_bin=source_outputs.bwrap_bin,

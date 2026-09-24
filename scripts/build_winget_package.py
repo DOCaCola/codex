@@ -22,6 +22,7 @@ def prepare_winget_package(package: Path) -> None:
     (package / "bin/codex-code-mode-host.exe").rename(
         package / "codex-code-mode-host.exe"
     )
+    shutil.copy2(package / "bin/hpatch.exe", package / "hpatch.exe")
     # Keep resources in place for package-aware discovery and provide the root
     # filenames declared by the existing WinGet portable installer manifest.
     for helper in ("codex-command-runner.exe", "codex-windows-sandbox-setup.exe"):

@@ -10,6 +10,7 @@ Usage: build-codex-package-archive.sh \
   --archive-dir <dir> \
   [--bwrap-bin <path>] \
   [--code-mode-host-bin <path>] \
+  [--hpatch-bin <path>] \
   [--rg-bin <path>] \
   [--zsh-bin <path>] \
   [--zsh-manifest <path>] \
@@ -28,6 +29,7 @@ target_suffixed_entrypoint="false"
 resource_args=()
 bwrap_bin_provided="false"
 code_mode_host_bin_provided="false"
+hpatch_bin_provided="false"
 command_runner_bin_provided="false"
 sandbox_setup_bin_provided="false"
 voice_release_dir=""
@@ -59,6 +61,11 @@ while [[ $# -gt 0 ]]; do
     --code-mode-host-bin)
       resource_args+=(--code-mode-host-bin "${2:?--code-mode-host-bin requires a value}")
       code_mode_host_bin_provided="true"
+      shift 2
+      ;;
+    --hpatch-bin)
+      resource_args+=(--hpatch-bin "${2:?--hpatch-bin requires a value}")
+      hpatch_bin_provided="true"
       shift 2
       ;;
     --rg-bin)
@@ -149,6 +156,11 @@ esac
 code_mode_host_bin="${entrypoint_dir%/}/codex-code-mode-host${exe_suffix}"
 if [[ "$code_mode_host_bin_provided" == "false" && -f "$code_mode_host_bin" ]]; then
   resource_args+=(--code-mode-host-bin "$code_mode_host_bin")
+fi
+
+hpatch_bin="${entrypoint_dir%/}/hpatch${exe_suffix}"
+if [[ "$hpatch_bin_provided" == "false" ]]; then
+  resource_args+=(--hpatch-bin "$hpatch_bin")
 fi
 
 entrypoint_name="$entrypoint"
