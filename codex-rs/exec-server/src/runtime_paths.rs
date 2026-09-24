@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use codex_utils_absolute_path::AbsolutePathBuf;
 
+pub const CODEX_HPATCH_COMPANION_ARGV0: &str = "__codex_hpatch_companion__";
+
 /// Paths and sandbox settings initialized when creating an executor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecServerRuntimePaths {
@@ -16,6 +18,22 @@ pub struct ExecServerRuntimePaths {
 }
 
 impl ExecServerRuntimePaths {
+    pub fn hpatch_exe(&self) -> std::io::Result<AbsolutePathBuf> {
+        let parent = self.codex_self_exe.parent().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Codex executable path has no parent directory",
+            )
+        })?;
+        let file_name = if cfg!(windows) {
+            "hpatch.exe"
+        } else {
+            "hpatch"
+        };
+        AbsolutePathBuf::from_absolute_path(parent.join(file_name))
+            .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+    }
+
     pub fn from_optional_paths(
         codex_self_exe: Option<PathBuf>,
         codex_linux_sandbox_exe: Option<PathBuf>,
@@ -55,4 +73,31 @@ impl ExecServerRuntimePaths {
 fn absolute_path(path: PathBuf) -> std::io::Result<AbsolutePathBuf> {
     AbsolutePathBuf::from_absolute_path(path.as_path())
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hpatch_is_resolved_beside_codex() {
+        let codex_name = if cfg!(windows) { "codex.exe" } else { "codex" };
+        let expected_name = if cfg!(windows) {
+            "hpatch.exe"
+        } else {
+            "hpatch"
+        };
+        let codex = std::env::temp_dir()
+            .join("codex-runtime-path-test")
+            .join(codex_name);
+        let paths = ExecServerRuntimePaths::new(codex, None).expect("runtime paths");
+        assert_eq!(
+            paths
+                .hpatch_exe()
+                .expect("hpatch path")
+                .file_name()
+                .and_then(|name| name.to_str()),
+            Some(expected_name)
+        );
+    }
 }

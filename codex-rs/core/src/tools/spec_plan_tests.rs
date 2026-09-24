@@ -1138,6 +1138,65 @@ async fn disabling_shell_tools_disables_command_tools_for_all_environments() {
 }
 
 #[tokio::test]
+async fn command_stack_replaces_direct_shell_tools_for_custom_tool_models() {
+    let plan = probe(|turn| {
+        set_features(
+            turn,
+            &[
+                Feature::ShellTool,
+                Feature::UnifiedExec,
+                Feature::CommandStack,
+            ],
+        );
+        update_turn_settings_for_test(turn, |settings| {
+            let model_info = Arc::make_mut(&mut settings.model_info);
+            model_info.shell_type = ConfigShellToolType::UnifiedExec;
+            model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+        });
+    })
+    .await;
+
+    plan.assert_visible_contains(&["command_stack"]);
+    plan.assert_visible_lacks(&["exec_command", "write_stdin", "apply_patch"]);
+    plan.assert_registered_contains(&[
+        "command_stack",
+        "exec_command",
+        "write_stdin",
+        "apply_patch",
+    ]);
+    for hidden_child in ["exec_command", "write_stdin", "apply_patch"] {
+        assert_eq!(plan.exposure(hidden_child), ToolExposure::Hidden);
+    }
+}
+
+#[tokio::test]
+async fn command_stack_falls_back_to_direct_tools_without_custom_tool_support() {
+    let plan = probe(|turn| {
+        set_features(
+            turn,
+            &[
+                Feature::ShellTool,
+                Feature::UnifiedExec,
+                Feature::CommandStack,
+                Feature::Hpatch,
+            ],
+        );
+        update_turn_settings_for_test(turn, |settings| {
+            let model_info = Arc::make_mut(&mut settings.model_info);
+            model_info.shell_type = ConfigShellToolType::UnifiedExec;
+            model_info.apply_patch_tool_type = None;
+        });
+    })
+    .await;
+
+    plan.assert_visible_contains(&["exec_command", "write_stdin", "hpatch"]);
+    plan.assert_visible_lacks(&["command_stack", "apply_patch"]);
+    plan.assert_registered_contains(&["exec_command", "write_stdin", "hpatch", "apply_patch"]);
+    plan.assert_registered_lacks(&["command_stack"]);
+    assert_eq!(plan.exposure("apply_patch"), ToolExposure::Hidden);
+}
+
+#[tokio::test]
 async fn dynamic_tools_cannot_reclaim_the_reserved_exec_command_name() {
     let plan = probe_with(
         duplicate_primary_environment,
@@ -3205,6 +3264,38 @@ async fn hosted_web_search_fallback_follows_winning_browser_runtime() {
     };
     assert_eq!(namespace.description, "Tools from browser_collision.");
     plan.assert_visible_contains(&["web_search"]);
+}
+
+#[tokio::test]
+async fn image_generation_with_provider_env_key_ignores_local_free_plan() {
+    let plan = probe_with(
+        |turn| {
+            turn.auth_manager = Some(AuthManager::from_auth_for_testing(
+                CodexAuth::from_external_chatgpt_tokens(
+                    "header.e30.signature",
+                    "local-account",
+                    Some("free"),
+                )
+                .unwrap(),
+            ));
+            let mut provider = turn.config.model_provider.clone();
+            provider.env_key = Some("GATEWAY_IMAGE_API_KEY".to_string());
+            turn.provider = create_model_provider(provider, turn.auth_manager.clone());
+            update_turn_settings_for_test(turn, |settings| {
+                Arc::make_mut(&mut settings.model_info).input_modalities =
+                    vec![InputModality::Image];
+            });
+        },
+        ToolPlanInputs {
+            extension_tool_executors: vec![Arc::new(TestNamespaceExtensionTool {
+                namespace: "image_gen",
+                tool_name: "imagegen",
+            })],
+            ..Default::default()
+        },
+    )
+    .await;
+    plan.assert_visible_contains(&["image_gen"]);
 }
 
 #[tokio::test]

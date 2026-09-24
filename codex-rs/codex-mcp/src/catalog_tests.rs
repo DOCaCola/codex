@@ -43,6 +43,8 @@ fn server(url: &str) -> McpServerConfig {
         required: true,
         supports_parallel_tool_calls: true,
         omit_tools_from: None,
+        surface_notifications: false,
+
         disabled_reason: None,
         startup_timeout_sec: Some(Duration::from_secs(7)),
         tool_timeout_sec: Some(Duration::from_secs(11)),

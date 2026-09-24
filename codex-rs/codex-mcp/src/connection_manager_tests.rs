@@ -432,6 +432,7 @@ async fn legacy_tool_catalog_does_not_follow_pagination_cursor() -> anyhow::Resu
             .with_protocol_version(ProtocolVersion::V_2025_06_18),
             Some(Duration::from_secs(5)),
             Box::new(|_, _| async { Err(anyhow!("unexpected elicitation")) }.boxed()),
+            None,
         )
         .await?;
 
@@ -759,6 +760,7 @@ pub(crate) async fn create_test_manager_with_ready_apps_client(
             .with_protocol_version(ProtocolVersion::V_2025_06_18),
             Some(Duration::from_secs(5)),
             Box::new(|_, _| async { Err(anyhow!("unexpected elicitation")) }.boxed()),
+            None,
         )
         .await?;
 
@@ -2131,6 +2133,8 @@ async fn hosted_apps_protocol_mode_is_independent_of_generic_mode() -> anyhow::R
                 auth_manager: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
+                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
+                ),
             },
             ElicitationRequestRouter::default(),
         )
@@ -2229,6 +2233,8 @@ async fn codex_apps_extension_does_not_share_host_owned_tools_cache() -> anyhow:
                 auth_manager: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
+                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
+                ),
             },
             ElicitationRequestRouter::default(),
         )
@@ -4622,6 +4628,8 @@ async fn executor_owned_chatgpt_mcp_accepts_only_safe_explicit_authorization() -
                 auth_manager: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
+                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
+                ),
             },
             ElicitationRequestRouter::default(),
         )
@@ -4670,6 +4678,8 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
                 required: false,
                 supports_parallel_tool_calls: false,
                 omit_tools_from: None,
+                surface_notifications: false,
+
                 disabled_reason: None,
                 startup_timeout_sec: None,
                 tool_timeout_sec: None,
@@ -4698,6 +4708,8 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
                 required: false,
                 supports_parallel_tool_calls: false,
                 omit_tools_from: None,
+                surface_notifications: false,
+
                 disabled_reason: None,
                 startup_timeout_sec: None,
                 tool_timeout_sec: None,
@@ -4741,6 +4753,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
+            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -4809,6 +4822,8 @@ fn mcp_init_error_display_prompts_for_github_pat() {
         required: false,
         supports_parallel_tool_calls: false,
         omit_tools_from: None,
+        surface_notifications: false,
+
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -4969,6 +4984,8 @@ fn mcp_init_error_display_reports_generic_errors() {
         required: false,
         supports_parallel_tool_calls: false,
         omit_tools_from: None,
+        surface_notifications: false,
+
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -5048,6 +5065,8 @@ fn reusable_server_config(url: &str) -> McpServerConfig {
         required: false,
         supports_parallel_tool_calls: false,
         omit_tools_from: None,
+        surface_notifications: false,
+
         disabled_reason: None,
         startup_timeout_sec: None,
         tool_timeout_sec: None,
@@ -5178,6 +5197,7 @@ async fn reconcile_reusable_server_with_mcp_config(
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
+            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -5499,6 +5519,7 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
                 }
                 .boxed()
             }),
+            None,
         )
         .await?;
     let initial_tools = list_tools_for_client_uncached(
@@ -5929,6 +5950,7 @@ async fn reconciliation_replaces_connection_when_protocol_mode_changes() {
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
+            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -5987,6 +6009,7 @@ async fn reconciliation_reuses_legacy_stdio_server_when_modern_protocol_is_enabl
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
+            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -6150,6 +6173,7 @@ async fn reconciliation_replaces_closed_connections() -> anyhow::Result<()> {
             .with_protocol_version(ProtocolVersion::V_2025_06_18),
             /*timeout*/ None,
             Box::new(|_, _| async { Err(anyhow!("unexpected elicitation")) }.boxed()),
+            None,
         )
         .await?;
     let view = previous

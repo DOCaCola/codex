@@ -50,6 +50,7 @@ use codex_core_plugins::PluginMetricsSidecar;
 mod async_watcher;
 mod errors;
 mod head_tail_buffer;
+pub(crate) mod managed;
 mod oneshot;
 mod process;
 mod process_manager;
@@ -112,6 +113,7 @@ impl UnifiedExecContext {
 
 #[derive(Debug)]
 pub(crate) struct ExecCommandRequest {
+    pub managed: Option<managed::Execution>,
     pub command: Vec<String>,
     pub shell_type: ShellType,
     pub hook_command: String,
@@ -169,6 +171,7 @@ impl ProcessStore {
 
 pub(crate) struct UnifiedExecProcessManager {
     process_store: Mutex<ProcessStore>,
+    managed: managed::ManagedCommands,
     max_write_stdin_yield_time_ms: u64,
 }
 
@@ -176,6 +179,7 @@ impl UnifiedExecProcessManager {
     pub(crate) fn new(max_write_stdin_yield_time_ms: u64) -> Self {
         Self {
             process_store: Mutex::new(ProcessStore::default()),
+            managed: managed::ManagedCommands::default(),
             max_write_stdin_yield_time_ms: max_write_stdin_yield_time_ms
                 .max(MIN_EMPTY_YIELD_TIME_MS),
         }
@@ -189,6 +193,9 @@ impl Default for UnifiedExecProcessManager {
 }
 
 struct ProcessEntry {
+    // Protection expires if startup is cancelled before the coordinator takes
+    // ownership, so a half-started command cannot bypass admission limits.
+    managed_completion: Option<Weak<tokio::sync::OwnedSemaphorePermit>>,
     process: Arc<UnifiedExecProcess>,
     plugin_metrics_sidecar: Option<SharedPluginMetricsSidecar>,
     call_id: String,

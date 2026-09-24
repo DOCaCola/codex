@@ -56,7 +56,27 @@ pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig)
         *instructions_template = strip_personality_section(std::mem::take(instructions_template));
     }
 
+    apply_local_compatibility_overrides(model)
+}
+
+fn apply_local_compatibility_overrides(mut model: ModelInfo) -> ModelInfo {
+    if is_gpt_56_model(&model.slug) {
+        // TODO: Remove once upstream /models serves direct, non-lite tool metadata for GPT-5.6.
+        model.tool_mode = None;
+        model.use_responses_lite = false;
+    }
     model
+}
+
+fn is_gpt_56_model(slug: &str) -> bool {
+    ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+        .iter()
+        .any(|base| {
+            slug == *base
+                || slug
+                    .strip_prefix(base)
+                    .is_some_and(|suffix| suffix.starts_with('-'))
+        })
 }
 
 fn strip_personality_section(mut instructions: String) -> String {

@@ -20,6 +20,9 @@ use rmcp::model::JsonObject;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::ListToolsResult;
+use rmcp::model::LoggingLevel;
+use rmcp::model::LoggingMessageNotificationParam;
+
 use rmcp::model::MetaObject;
 use rmcp::model::PaginatedRequestParams;
 use rmcp::model::ReadResourceRequestParams;
@@ -1042,6 +1045,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // bubble up the error so the process exits.
     let service = TestToolServer::new();
     let running = service.serve(stdio()).await?;
+
+    if let Ok(notification_data) = std::env::var("MCP_TEST_LOGGING_NOTIFICATION") {
+        #[allow(deprecated)]
+        running
+            .peer()
+            .notify_logging_message(
+                LoggingMessageNotificationParam::new(
+                    LoggingLevel::Info,
+                    serde_json::from_str(&notification_data)?,
+                )
+                .with_logger("codex.test"),
+            )
+            .await?;
+    }
 
     // A test can close an initialized transport without killing an arbitrary PID.
     let exit_file = std::env::var_os("MCP_TEST_EXIT_FILE");

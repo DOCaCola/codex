@@ -21,6 +21,7 @@ use crate::shell_snapshot::ShellSnapshot;
 use crate::shell_snapshot::SnapshotCredentialBrokerState;
 use crate::state::ActiveTurn;
 use crate::turn_metadata::ExecutionMetadata;
+use arc_swap::ArcSwap;
 use codex_attachment_store::AttachmentStore;
 use codex_extension_api::ExtensionDataInit;
 use codex_http_client::ClientRouteClass;
@@ -85,6 +86,8 @@ pub(crate) struct Session {
     pub(super) mcp_prewarm_tx: async_channel::Sender<()>,
     pub(super) mcp_prewarm_shutdown: CancellationToken,
     pub(super) mcp_prewarm_task: std::sync::Mutex<Option<JoinHandle<()>>>,
+    pub(super) mcp_notification_state: Mutex<super::mcp_notifications::McpNotificationState>,
+    pub(super) mcp_notification_sender: OnceLock<codex_mcp::SendMcpServerNotification>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) realtime_history: Option<Mutex<crate::realtime_history::RealtimeHistoryState>>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
@@ -1333,6 +1336,7 @@ impl Session {
                     shell::Shell {
                         shell_type: shell::ShellType::Zsh,
                         shell_path: zsh_path.clone(),
+                        shell_snapshot: shell::empty_shell_snapshot_receiver(),
                     }
                 } else {
                     shell::get_shell(shell::ShellType::Zsh).ok_or_else(|| {
@@ -1648,7 +1652,7 @@ impl Session {
                 analytics_events_client,
                 hooks: arc_swap::ArcSwap::from_pointee(hooks),
                 rollout_thread_trace,
-                user_shell: Arc::new(default_shell),
+                user_shell: ArcSwap::from(Arc::new(default_shell)),
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
                 exec_policy,
                 auth_manager: Arc::clone(&auth_manager),
@@ -1753,6 +1757,8 @@ impl Session {
                 mcp_prewarm_tx,
                 mcp_prewarm_shutdown: CancellationToken::new(),
                 mcp_prewarm_task: std::sync::Mutex::new(None),
+                mcp_notification_state: Mutex::new(Default::default()),
+                mcp_notification_sender: OnceLock::new(),
                 conversation: Arc::new(RealtimeConversationManager::new()),
                 realtime_history: (session_configuration.history_mode == ThreadHistoryMode::Paginated
                     && services.live_thread.is_some())
@@ -1766,6 +1772,12 @@ impl Session {
                 forked_from_ordinal_exclusive,
                 next_internal_sub_id: AtomicU64::new(0),
             });
+            assert!(
+                sess.mcp_notification_sender
+                    .set(sess.new_mcp_server_notification_sender())
+                    .is_ok(),
+                "MCP notification sender should be initialized once"
+            );
             if let Some(startup) = &startup {
                 let _ = startup.session.set(Arc::clone(&sess));
             }
@@ -1885,6 +1897,7 @@ impl Session {
                 let mut state = sess.state.lock().await;
                 state.queue_pending_session_start_source(session_start_source);
             }
+            sess.enable_mcp_server_notification_delivery().await;
             Ok(sess)
         }
         .await;

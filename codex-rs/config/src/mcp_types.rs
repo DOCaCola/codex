@@ -238,6 +238,11 @@ pub struct McpServerConfig {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supports_parallel_tool_calls: bool,
 
+    /// When `true`, selected standard inbound notifications from this server may be surfaced to
+    /// the active Codex session as externally attributed model-visible context.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub surface_notifications: bool,
+
     /// Model-facing surfaces from which this server's tools must be omitted.
     /// `None` leaves lower-priority configuration unchanged; an empty list clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -382,6 +387,8 @@ pub struct RawMcpServerConfig {
     #[serde(default)]
     pub supports_parallel_tool_calls: Option<bool>,
     #[serde(default)]
+    pub surface_notifications: Option<bool>,
+    #[serde(default)]
     pub omit_tools_from: Option<Vec<ToolExposureSurface>>,
     #[serde(default)]
     pub default_tools_approval_mode: Option<AppToolApproval>,
@@ -426,6 +433,8 @@ impl TryFrom<RawMcpServerConfig> for McpServerConfig {
             enabled,
             required,
             supports_parallel_tool_calls,
+
+            surface_notifications,
             omit_tools_from,
             default_tools_approval_mode,
             enabled_tools,
@@ -531,6 +540,8 @@ impl TryFrom<RawMcpServerConfig> for McpServerConfig {
             enabled: enabled.unwrap_or_else(default_enabled),
             required: required.unwrap_or_default(),
             supports_parallel_tool_calls: supports_parallel_tool_calls.unwrap_or_default(),
+
+            surface_notifications: surface_notifications.unwrap_or_default(),
             omit_tools_from,
             disabled_reason: None,
             default_tools_approval_mode,

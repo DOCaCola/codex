@@ -6,6 +6,7 @@ use crate::exec::DEFAULT_EXEC_COMMAND_TIMEOUT_MS;
 use crate::exec_policy::prompt_is_rejected_by_policy;
 use crate::function_tool::FunctionCallError;
 use crate::maybe_emit_implicit_skill_invocation;
+use crate::shell::resolve_requested_shell;
 use crate::tools::context::ExecCommandToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -63,6 +64,7 @@ pub(crate) struct ExecCommandHandlerOptions {
     pub(crate) exec_permission_approvals_enabled: bool,
     pub(crate) include_environment_id: bool,
     pub(crate) include_shell_parameter: bool,
+    pub(crate) persist_shell_selection: bool,
     pub(crate) include_windows_shell_guidance: bool,
 }
 
@@ -75,11 +77,13 @@ enum ExecCommandLifetime {
 pub struct ExecCommandHandler {
     options: ExecCommandHandlerOptions,
     lifetime: ExecCommandLifetime,
+    background_delivery: bool,
 }
 
 impl Default for ExecCommandHandler {
     fn default() -> Self {
         Self {
+            background_delivery: false,
             lifetime: ExecCommandLifetime::Interactive,
             options: ExecCommandHandlerOptions {
                 allow_login_shell: false,
@@ -87,6 +91,7 @@ impl Default for ExecCommandHandler {
                 exec_permission_approvals_enabled: false,
                 include_environment_id: false,
                 include_shell_parameter: true,
+                persist_shell_selection: false,
                 include_windows_shell_guidance: cfg!(windows),
             },
         }
@@ -98,6 +103,7 @@ impl ExecCommandHandler {
         Self {
             options,
             lifetime: ExecCommandLifetime::Interactive,
+            background_delivery: false,
         }
     }
 
@@ -105,6 +111,56 @@ impl ExecCommandHandler {
         Self {
             options,
             lifetime: ExecCommandLifetime::OneShot,
+            background_delivery: false,
+        }
+    }
+
+    pub(crate) fn with_background_delivery(mut self, enabled: bool) -> Self {
+        self.background_delivery = enabled;
+        self
+    }
+
+    pub(super) fn maybe_persist_local_shell(
+        &self,
+        args: &mut ExecCommandArgs,
+        session: &crate::session::session::Session,
+        environment: &codex_exec_server::Environment,
+        shell_mode: &codex_tools::UnifiedExecShellMode,
+    ) -> Result<Option<Arc<crate::shell::Shell>>, FunctionCallError> {
+        if !self.options.persist_shell_selection
+            || environment.is_remote()
+            || !matches!(shell_mode, codex_tools::UnifiedExecShellMode::Direct)
+        {
+            return Ok(None);
+        }
+
+        let Some(requested_shell) = args.shell.as_deref() else {
+            return Ok(None);
+        };
+        let shell =
+            resolve_requested_shell(requested_shell).map_err(FunctionCallError::RespondToModel)?;
+        session.set_user_shell(shell.clone());
+        session
+            .services
+            .turn_environments
+            .update_local_shell(shell.clone());
+        args.shell = None;
+        Ok(Some(Arc::new(shell)))
+    }
+
+    pub(super) fn shell_for_environment(
+        &self,
+        session: &crate::session::session::Session,
+        turn_environment: &crate::session::turn_context::TurnEnvironment,
+    ) -> Arc<crate::shell::Shell> {
+        if self.options.persist_shell_selection && !turn_environment.environment.is_remote() {
+            session.user_shell()
+        } else {
+            turn_environment
+                .shell
+                .clone()
+                .map(Arc::new)
+                .unwrap_or_else(|| session.user_shell())
         }
     }
 }
@@ -119,15 +175,20 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
             CommandToolOptions {
                 allow_login_shell: self.options.allow_login_shell,
                 exec_permission_approvals_enabled: self.options.exec_permission_approvals_enabled,
+                active_shell_name: None,
             },
             self.options.include_environment_id,
             self.options.include_shell_parameter,
+            self.options.persist_shell_selection,
             self.options.include_windows_shell_guidance,
         );
         let mut spec = match self.lifetime {
             ExecCommandLifetime::Interactive => spec,
             ExecCommandLifetime::OneShot => one_shot_exec_command_spec(spec),
         };
+        if self.background_delivery {
+            super::managed_spec::configure_exec(&mut spec);
+        }
         if !self.options.allow_tty
             && let ToolSpec::Function(spec) = &mut spec
         {
@@ -263,13 +324,16 @@ impl ExecCommandHandler {
         .await;
         let shell_mode =
             shell_mode_for_environment(&turn.unified_exec_shell_mode, environment.as_ref());
+        let persistent_shell = self.maybe_persist_local_shell(
+            &mut args,
+            session.as_ref(),
+            environment.as_ref(),
+            &shell_mode,
+        )?;
         // Remote environments may use a different OS and must build commands with their native
         // shell; fall back to the session shell when the environment did not report one.
-        let shell = turn_environment
-            .shell
-            .clone()
-            .map(Arc::new)
-            .unwrap_or_else(|| session.user_shell());
+        let shell = persistent_shell
+            .unwrap_or_else(|| self.shell_for_environment(session.as_ref(), turn_environment));
         // TODO(anp): Resolve requested shells in remote environments instead of restricting
         // commands to the reported default shell.
         if environment.is_remote()
@@ -302,6 +366,7 @@ impl ExecCommandHandler {
             mut tty,
             yield_time_ms,
             timeout_ms,
+            execution_mode,
             max_output_tokens,
             sandbox_permissions: _,
             additional_permissions,
@@ -309,7 +374,7 @@ impl ExecCommandHandler {
             prefix_rule,
             ..
         } = args;
-        let completion_timeout = match self.lifetime {
+        let mut completion_timeout = match self.lifetime {
             ExecCommandLifetime::Interactive => None,
             ExecCommandLifetime::OneShot => {
                 tty = false;
@@ -317,6 +382,52 @@ impl ExecCommandHandler {
                     timeout_ms.unwrap_or(DEFAULT_EXEC_COMMAND_TIMEOUT_MS),
                 ))
             }
+        };
+        let managed = if self.background_delivery {
+            use crate::unified_exec::managed::Execution;
+            use crate::unified_exec::managed::ExecutionMode;
+            let mode = execution_mode.unwrap_or(if tty {
+                ExecutionMode::Interactive
+            } else {
+                ExecutionMode::Auto
+            });
+            if tty && mode != ExecutionMode::Interactive {
+                return Err(FunctionCallError::RespondToModel(
+                    "tty=true requires execution_mode=\"interactive\"".into(),
+                ));
+            }
+            if timeout_ms == Some(0) || (mode == ExecutionMode::Interactive && timeout_ms.is_some())
+            {
+                return Err(FunctionCallError::RespondToModel(
+                    "timeout_ms must be positive and is only supported for finite commands".into(),
+                ));
+            }
+            let timeout = timeout_ms.map(Duration::from_millis);
+            if timeout
+                .is_some_and(|timeout| std::time::Instant::now().checked_add(timeout).is_none())
+            {
+                return Err(FunctionCallError::RespondToModel(
+                    "timeout_ms is too large".into(),
+                ));
+            }
+            if mode == ExecutionMode::Foreground {
+                completion_timeout = Some(timeout.unwrap_or(Duration::from_secs(300)));
+            }
+            Some(Execution {
+                mode,
+                timeout: if mode == ExecutionMode::Foreground {
+                    None
+                } else {
+                    timeout
+                },
+            })
+        } else {
+            if execution_mode.is_some() {
+                return Err(FunctionCallError::RespondToModel(
+                    "execution_mode requires background_command_delivery".into(),
+                ));
+            }
+            None
         };
 
         let exec_permission_approvals_enabled =
@@ -390,6 +501,7 @@ impl ExecCommandHandler {
         .await;
         if let Some(output) = intercepted_patch? {
             return Ok(boxed_tool_output(ExecCommandToolOutput {
+                completion_delivery: None,
                 event_call_id: String::new(),
                 chunk_id: String::new(),
                 wall_time: std::time::Duration::ZERO,
@@ -417,6 +529,7 @@ impl ExecCommandHandler {
         // Preparation can be cancelled. Reserve a process only once it is done.
         let process_id = manager.allocate_process_id().await;
         let request = ExecCommandRequest {
+            managed,
             command,
             shell_type,
             hook_command: hook_command.clone(),
@@ -455,6 +568,7 @@ impl ExecCommandHandler {
                 let original_token_count =
                     original_token_count.unwrap_or_else(|| approx_token_count(&output_text));
                 Ok(boxed_tool_output(ExecCommandToolOutput {
+                    completion_delivery: managed.map(|_| false),
                     event_call_id: context.call_id.clone(),
                     chunk_id: generate_chunk_id(),
                     wall_time: output.duration,

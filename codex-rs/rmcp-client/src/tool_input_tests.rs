@@ -47,6 +47,7 @@ async fn connection_closure_releases_pending_inputs_and_timeout_pause() -> anyho
                     route_tx.send(tx).unwrap();
                     Box::pin(async move { Ok(rx.await?) })
                 }),
+                None,
                 pause_state,
             );
             let (client_transport, server_transport) =

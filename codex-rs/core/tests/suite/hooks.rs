@@ -5734,8 +5734,12 @@ async fn post_tool_use_spills_large_feedback_message() -> Result<()> {
     Ok(())
 }
 
+#[test_case::test_case(false; "legacy_completion")]
+#[test_case::test_case(true; "managed_completion")]
 #[tokio::test]
-async fn post_tool_use_blocks_when_exec_session_completes_via_write_stdin() -> Result<()> {
+async fn post_tool_use_blocks_when_exec_session_completes_via_write_stdin(
+    managed_completion: bool,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_host_windows!(Ok(()));
 
@@ -5791,8 +5795,14 @@ async fn post_tool_use_blocks_when_exec_session_completes_via_write_stdin() -> R
             write_logging_pre_and_blocking_post_tool_use_hooks(home, feedback)
                 .expect("failed to write tool use hook test fixture");
         })
-        .with_config(|config| {
+        .with_config(move |config| {
             trust_discovered_hooks(config);
+            if managed_completion {
+                config
+                    .features
+                    .enable(Feature::BackgroundCommandDelivery)
+                    .unwrap();
+            }
         });
     let test = builder.build(&server).await?;
 
@@ -5806,7 +5816,11 @@ async fn post_tool_use_blocks_when_exec_session_completes_via_write_stdin() -> R
         .get("output")
         .and_then(Value::as_str)
         .expect("write_stdin output string");
-    assert_eq!(output, feedback);
+    if managed_completion {
+        assert!(output.contains(feedback));
+    } else {
+        assert_eq!(output, feedback);
+    }
 
     let pre_hook_inputs = read_pre_tool_use_hook_inputs(test.codex_home_path())?;
     assert_eq!(pre_hook_inputs.len(), 1);

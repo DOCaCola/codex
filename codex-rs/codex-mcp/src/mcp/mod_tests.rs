@@ -594,6 +594,8 @@ async fn effective_mcp_servers_preserve_runtime_servers() {
             required: false,
             supports_parallel_tool_calls: false,
             omit_tools_from: None,
+            surface_notifications: false,
+
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,
@@ -622,6 +624,8 @@ async fn effective_mcp_servers_preserve_runtime_servers() {
             required: false,
             supports_parallel_tool_calls: false,
             omit_tools_from: None,
+            surface_notifications: false,
+
             disabled_reason: None,
             startup_timeout_sec: None,
             tool_timeout_sec: None,

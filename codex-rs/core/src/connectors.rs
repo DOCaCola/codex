@@ -271,6 +271,7 @@ pub async fn list_accessible_connectors_from_mcp_tools_with_mcp_manager(
         auth_manager: codex_apps_auth_manager,
         elicitation_reviewer: None,
         elicitation_lifecycle: None,
+        mcp_server_notification_sender: codex_mcp::ignore_mcp_server_notifications(),
     })
     .await;
 

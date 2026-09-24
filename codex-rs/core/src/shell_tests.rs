@@ -1,4 +1,5 @@
 use super::*;
+use codex_shell_command::shell_detect::detect_shell_type;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -28,7 +29,7 @@ fn detects_bash() {
     let shell_path = bash_shell.shell_path;
 
     assert!(
-        shell_path.file_name().and_then(|name| name.to_str()) == Some("bash"),
+        shell_path.file_stem().and_then(|name| name.to_str()) == Some("bash"),
         "shell path: {shell_path:?}",
     );
 }
@@ -38,7 +39,7 @@ fn detects_sh() {
     let sh_shell = get_shell(ShellType::Sh).unwrap();
     let shell_path = sh_shell.shell_path;
     assert!(
-        shell_path.file_name().and_then(|name| name.to_str()) == Some("sh"),
+        shell_path.file_stem().and_then(|name| name.to_str()) == Some("sh"),
         "shell path: {shell_path:?}",
     );
 }
@@ -106,6 +107,7 @@ fn derive_exec_args() {
     let test_bash_shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: empty_shell_snapshot_receiver(),
     };
     assert_eq!(
         test_bash_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
@@ -119,6 +121,7 @@ fn derive_exec_args() {
     let test_zsh_shell = Shell {
         shell_type: ShellType::Zsh,
         shell_path: PathBuf::from("/bin/zsh"),
+        shell_snapshot: empty_shell_snapshot_receiver(),
     };
     assert_eq!(
         test_zsh_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
@@ -132,6 +135,7 @@ fn derive_exec_args() {
     let test_powershell_shell = Shell {
         shell_type: ShellType::PowerShell,
         shell_path: PathBuf::from("pwsh.exe"),
+        shell_snapshot: empty_shell_snapshot_receiver(),
     };
     assert_eq!(
         test_powershell_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
@@ -158,6 +162,7 @@ async fn test_current_shell_detects_zsh() {
             Shell {
                 shell_type: ShellType::Zsh,
                 shell_path: PathBuf::from(shell_path),
+                shell_snapshot: empty_shell_snapshot_receiver(),
             }
         );
     }
@@ -173,6 +178,27 @@ async fn detects_powershell_as_default() {
     let shell_path = powershell_shell.shell_path;
 
     assert!(shell_path.ends_with("pwsh.exe") || shell_path.ends_with("powershell.exe"));
+}
+
+#[test]
+fn explicit_bash_user_shell_path_resolves_to_bash_shell() {
+    if !cfg!(windows) {
+        return;
+    }
+
+    let bash_path = std::env::var_os("SHELL")
+        .map(PathBuf::from)
+        .filter(|path| detect_shell_type(path) == Some(ShellType::Bash))
+        .filter(|path| std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file()))
+        .or_else(|| which::which("bash.exe").ok());
+
+    let Some(bash_path) = bash_path else {
+        return;
+    };
+
+    let shell = default_user_shell_from_path(Some(bash_path.clone()));
+    assert_eq!(shell.shell_type, ShellType::Bash);
+    assert_eq!(shell.shell_path, bash_path);
 }
 
 #[test]

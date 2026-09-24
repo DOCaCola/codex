@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 pub struct CommandToolOptions {
     pub allow_login_shell: bool,
     pub exec_permission_approvals_enabled: bool,
+    pub active_shell_name: Option<&'static str>,
 }
 
 #[cfg(test)]
@@ -17,6 +18,7 @@ pub fn create_exec_command_tool(options: CommandToolOptions) -> ToolSpec {
         options,
         /*include_environment_id*/ false,
         /*include_shell_parameter*/ true,
+        /*persist_shell_selection*/ false,
         /*include_windows_shell_guidance*/ cfg!(windows),
     )
 }
@@ -25,6 +27,7 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
     options: CommandToolOptions,
     include_environment_id: bool,
     include_shell_parameter: bool,
+    persist_shell_selection: bool,
     include_windows_shell_guidance: bool,
 ) -> ToolSpec {
     let yield_time_ms_description = if cfg!(windows) {
@@ -65,9 +68,12 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
     if include_shell_parameter {
         properties.insert(
             "shell".to_string(),
-            JsonSchema::string(Some(
-                "Shell binary to launch. Defaults to the user's default shell.".to_string(),
-            )),
+            JsonSchema::string(Some(if persist_shell_selection {
+                "Shell binary to launch. For local commands, selecting a shell also makes it active for later commands in this session; put this command alone in its step. Defaults to the active session shell."
+                    .to_string()
+            } else {
+                "Shell binary to launch. Defaults to the user's default shell.".to_string()
+            })),
         );
     }
     if options.allow_login_shell {

@@ -1,0 +1,32 @@
+start: environment_id? working_directory? blank_line* script blank_line*
+environment_id: "*** Environment ID: " PATH NL
+working_directory: "*** Working Directory: " PATH NL
+script: command (separator command)*
+
+?command: path_command
+        | bare_command
+        | tsel_command
+        | rsel_command
+        | type_command
+        | heredoc_command
+
+path_command: PATH_OP SP PATH
+bare_command: "rm" | "del" | "copy" | "cut" | "paste" | "commit"
+tsel_command: "tsel" SP POSINT SP TSEL_QUOTED (SP POSINT)?
+rsel_command: "rsel" SP POSINT ":" POSINT
+type_command: "type" SP QUOTED
+heredoc_command: "type" SP "<<PATCH" NL patch_body "PATCH"
+
+separator: NL blank_line*
+blank_line: HSPACE? NL
+patch_body: (PATCH_BODY_LINE | NL)*
+
+PATH_OP: "in" | "new" | "mv"
+POSINT: /[1-9][0-9]*/
+SP: " "
+HSPACE: /[ \t]+/
+PATH: /[^\r\n]+/
+NL: /\r?\n/
+QUOTED: /"(?:\\(?:["\\\/bfnrt]|u[0-9A-Fa-f]{4})|[^\x00-\x1F"\\]|\t)*"/
+TSEL_QUOTED: /"(?:\\(?:["\\\/t]|u(?:0009|00[2-9A-Fa-f][0-9A-Fa-f]|0[1-9A-Fa-f][0-9A-Fa-f]{2}|[1-9A-Fa-f][0-9A-Fa-f]{3}))|[^\x00-\x1F"\\]|\t)+"/
+PATCH_BODY_LINE: /(?:PATCH[^\r\n]+|PATC[^H\r\n][^\r\n]*|PAT[^C\r\n][^\r\n]*|PA[^T\r\n][^\r\n]*|P[^A\r\n][^\r\n]*|PATC|PAT|PA|P|[^P\r\n][^\r\n]*)(?:\r\n|\n)/

@@ -214,6 +214,7 @@ pub use remote::run_remote_environment_forward_until_shutdown;
 pub use remote::run_remote_environment_until_shutdown;
 pub use resolved_capability::ResolvedSelectedCapabilityRoot;
 pub use resolved_capability::SelectedCapabilityRootsStatus;
+pub use runtime_paths::CODEX_HPATCH_COMPANION_ARGV0;
 pub use runtime_paths::ExecServerRuntimePaths;
 pub use server::ConcurrentRequestLimit;
 pub use server::DEFAULT_LISTEN_URL;

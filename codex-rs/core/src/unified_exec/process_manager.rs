@@ -450,27 +450,38 @@ fn terminate_process_on_network_denial(
 impl UnifiedExecProcessManager {
     pub(crate) async fn allocate_process_id(&self) -> i32 {
         loop {
-            let mut store = self.process_store.lock().await;
+            let process_id = {
+                let mut store = self.process_store.lock().await;
+                let process_id = if should_use_deterministic_process_ids() {
+                    // test or deterministic mode
+                    store
+                        .reserved_process_ids
+                        .iter()
+                        .copied()
+                        .max()
+                        .map(|m| std::cmp::max(m, 999) + 1)
+                        .unwrap_or(1000)
+                } else {
+                    // production mode → random
+                    rand::rng().random_range(1_000..100_000)
+                };
 
-            let process_id = if should_use_deterministic_process_ids() {
-                // test or deterministic mode
-                store
-                    .reserved_process_ids
-                    .iter()
-                    .copied()
-                    .max()
-                    .map(|m| std::cmp::max(m, 999) + 1)
-                    .unwrap_or(1000)
-            } else {
-                // production mode → random
-                rand::rng().random_range(1_000..100_000)
+                if store.reserved_process_ids.contains(&process_id) {
+                    continue;
+                }
+                store.reserved_process_ids.insert(process_id);
+                process_id
             };
-
-            if store.reserved_process_ids.contains(&process_id) {
+            // Reserve before checking the result cache, without holding the
+            // process store across another asynchronous lock acquisition.
+            if self.managed_id_reserved(process_id).await {
+                self.process_store
+                    .lock()
+                    .await
+                    .reserved_process_ids
+                    .remove(&process_id);
                 continue;
             }
-
-            store.reserved_process_ids.insert(process_id);
             return process_id;
         }
     }
@@ -526,6 +537,22 @@ impl UnifiedExecProcessManager {
         context: &UnifiedExecContext,
         mut completion: Option<&mut Completion<'_>>,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
+        let managed_slot = if request.managed.is_some_and(|execution| {
+            matches!(
+                execution.mode,
+                super::managed::ExecutionMode::Auto | super::managed::ExecutionMode::Background
+            )
+        }) {
+            match self.reserve_managed_command().await {
+                Ok(slot) => Some(slot),
+                Err(error) => {
+                    self.release_process_id(request.process_id).await;
+                    return Err(error);
+                }
+            }
+        } else {
+            None
+        };
         let cwd = request.cwd.clone();
         let process = self
             .open_session_with_sandbox(&request, cwd.clone(), context)
@@ -544,6 +571,22 @@ impl UnifiedExecProcessManager {
             permissions,
         } = attempt;
         let process = Arc::new(process);
+        if let Some(timeout) = request.managed.and_then(|execution| execution.timeout) {
+            let process = Arc::clone(&process);
+            tokio::spawn(async move {
+                let exited = process.cancellation_token();
+                tokio::select! {
+                    biased;
+                    _ = exited.cancelled() => {}
+                    _ = tokio::time::sleep(timeout) => {
+                        process.mark_timed_out();
+                        if let Err(error) = process.terminate_confirmed().await {
+                            process.fail_and_terminate(error.to_string());
+                        }
+                    }
+                }
+            });
+        }
         if let Some(completion) = completion.as_ref() {
             let _ = completion.process.set(Arc::clone(&process));
         }
@@ -617,6 +660,7 @@ impl UnifiedExecProcessManager {
                 metrics_sidecar,
                 Arc::clone(&transcript),
                 Arc::clone(&initial_exec_command_active),
+                managed_slot.as_ref().map(Arc::downgrade),
             )
             .await;
             InitialExecCommandGuard {
@@ -630,150 +674,66 @@ impl UnifiedExecProcessManager {
             }
         };
 
-        let yield_time_ms = clamp_yield_time(request.yield_time_ms);
-        // For the initial exec_command call, we both stream output to events
-        // (via start_streaming_output above) and collect a snapshot here for
-        // the tool response body.
-        let wait = completion.as_ref().map_or_else(
-            || Duration::from_millis(yield_time_ms),
-            |completion| completion.timeout,
-        );
-        let deadline = start
-            .checked_add(wait)
-            .ok_or_else(|| UnifiedExecError::process_failed("timeout_ms is too large".into()))?;
-        let collected_output = Self::collect_output_until_deadline(
-            process.output_handles(),
-            Some(context.session.subscribe_elicitation_pause_state()),
-            deadline,
-        )
-        .await;
-        if let Some(completion) = completion.as_mut()
-            && !process.has_exited()
-        {
-            completion.timed_out = true;
-            process.mark_timed_out();
-            if let Err(err) = process.terminate_confirmed().await {
-                process.fail_and_terminate(err.to_string());
-            }
-        }
-        let wall_time = Instant::now().saturating_duration_since(start);
-
-        let original_token_count = usize::try_from(approx_tokens_from_byte_count(
-            collected_output.total_bytes(),
-        ))
-        .unwrap_or(usize::MAX);
-        let output_omitted_bytes = NonZeroUsize::new(collected_output.omitted_bytes());
-        let collected = collected_output.to_bytes_with_omission_marker();
-        let text = String::from_utf8_lossy(&collected).to_string();
-        let chunk_id = generate_chunk_id();
-        if deferred_network_approval
-            .as_ref()
-            .is_some_and(DeferredNetworkApproval::is_cancelled)
-        {
-            let message = network_denial_message_for_session(
-                Some(&context.session),
-                deferred_network_approval.take(),
+        let managed_launch = if process_started_alive && let Some(slot) = managed_slot {
+            Some(
+                self.track_managed_command(request.process_id, Arc::clone(&process), slot)
+                    .await,
             )
-            .await;
-            emit_failed_initial_exec_end_if_unstored(
-                process_started_alive,
-                context,
-                &request,
-                cwd.clone(),
-                plugin_attribution.clone(),
-                Arc::clone(&transcript),
-                text.clone(),
-                message.clone(),
-                wall_time,
-            )
-            .await;
-            self.release_process_id(request.process_id).await;
-            return Err(fail_process_with_message(process.as_ref(), message));
-        }
-        if let Some(message) = process.failure_message() {
-            let finish_result = finish_deferred_network_approval_for_session(
-                Some(&context.session),
-                deferred_network_approval.take(),
-            )
-            .await;
-            emit_failed_initial_exec_end_if_unstored(
-                process_started_alive,
-                context,
-                &request,
-                cwd.clone(),
-                plugin_attribution.clone(),
-                Arc::clone(&transcript),
-                text.clone(),
-                message.clone(),
-                wall_time,
-            )
-            .await;
-            self.release_process_id(request.process_id).await;
-            if let Err(message) = finish_result {
-                return Err(fail_process_with_message(process.as_ref(), message));
-            }
-            return Err(UnifiedExecError::process_failed(message));
-        }
-        let process_id = request.process_id;
-        let (response_process_id, exit_code) = if process_started_alive {
-            match self.refresh_process_state(process_id).await {
-                ProcessStatus::Alive {
-                    exit_code,
-                    process_id,
-                    ..
-                } => (Some(process_id), exit_code),
-                ProcessStatus::Exited { exit_code, entry } => {
-                    if let Err(message) =
-                        finish_deferred_network_approval_after_process_exit_for_session(
-                            Some(&context.session),
-                            deferred_network_approval.take(),
-                        )
-                        .await
-                    {
-                        return Err(fail_process_with_message(entry.process.as_ref(), message));
-                    }
-                    if !completion
-                        .as_ref()
-                        .is_some_and(|completion| completion.timed_out)
-                    {
-                        process
-                            .check_for_sandbox_denial_with_text(&text)
-                            .await
-                            .map_err(|err| {
-                                err.with_output_collection_metadata(
-                                    original_token_count,
-                                    output_omitted_bytes,
-                                )
-                            })?;
-                    }
-                    let metrics_sidecar = entry
-                        .plugin_metrics_sidecar
-                        .as_ref()
-                        .and_then(take_plugin_metrics_sidecar);
-                    finish_and_track_measurements(
-                        metrics_sidecar,
-                        exit_code.unwrap_or(-1),
-                        &context.session,
-                        &context.step_context.turn,
-                        &model_context,
-                        &context.call_id,
-                    )
-                    .await;
-                    (None, exit_code)
-                }
-                ProcessStatus::Unknown => {
-                    return Err(UnifiedExecError::UnknownProcessId { process_id });
-                }
-            }
         } else {
-            // Short-lived command: emit the completed command item immediately
-            // using the same helper as the background watcher.
-            let finish_result = finish_deferred_network_approval_after_process_exit_for_session(
-                Some(&context.session),
-                deferred_network_approval.take(),
+            None
+        };
+        let response = async {
+            let yield_time_ms = if request.managed.is_some_and(|execution| {
+                execution.mode == super::managed::ExecutionMode::Background
+            }) {
+                0
+            } else {
+                clamp_yield_time(request.yield_time_ms)
+            };
+            // For the initial exec_command call, we both stream output to events
+            // (via start_streaming_output above) and collect a snapshot here for
+            // the tool response body.
+            let wait = completion.as_ref().map_or_else(
+                || Duration::from_millis(yield_time_ms),
+                |completion| completion.timeout,
+            );
+            let deadline = start.checked_add(wait).ok_or_else(|| {
+                UnifiedExecError::process_failed("timeout_ms is too large".into())
+            })?;
+            let collected_output = Self::collect_output_until_deadline(
+                process.output_handles(),
+                Some(context.session.subscribe_elicitation_pause_state()),
+                deadline,
             )
             .await;
-            if let Err(message) = finish_result {
+            if let Some(completion) = completion.as_mut()
+                && !process.has_exited()
+            {
+                completion.timed_out = true;
+                process.mark_timed_out();
+                if let Err(err) = process.terminate_confirmed().await {
+                    process.fail_and_terminate(err.to_string());
+                }
+            }
+            let wall_time = Instant::now().saturating_duration_since(start);
+
+            let original_token_count = usize::try_from(approx_tokens_from_byte_count(
+                collected_output.total_bytes(),
+            ))
+            .unwrap_or(usize::MAX);
+            let output_omitted_bytes = NonZeroUsize::new(collected_output.omitted_bytes());
+            let collected = collected_output.to_bytes_with_omission_marker();
+            let text = String::from_utf8_lossy(&collected).to_string();
+            let chunk_id = generate_chunk_id();
+            if deferred_network_approval
+                .as_ref()
+                .is_some_and(DeferredNetworkApproval::is_cancelled)
+            {
+                let message = network_denial_message_for_session(
+                    Some(&context.session),
+                    deferred_network_approval.take(),
+                )
+                .await;
                 emit_failed_initial_exec_end_if_unstored(
                     process_started_alive,
                     context,
@@ -789,58 +749,180 @@ impl UnifiedExecProcessManager {
                 self.release_process_id(request.process_id).await;
                 return Err(fail_process_with_message(process.as_ref(), message));
             }
-            let exit_code = process.exit_code();
-            let exit = exit_code.unwrap_or(-1);
-            initial_exec_command_guard
-                .finish_plugin_metrics(context, exit)
+            if let Some(message) = process.failure_message() {
+                let finish_result = finish_deferred_network_approval_for_session(
+                    Some(&context.session),
+                    deferred_network_approval.take(),
+                )
                 .await;
-            emit_exec_end_for_unified_exec(
-                Arc::clone(&context.session),
-                Arc::clone(&context.step_context.turn),
-                Arc::clone(&context.step_context.settings.model_info),
-                context.call_id.clone(),
-                request.command.clone(),
-                cwd.clone(),
-                Some(process_id.to_string()),
-                plugin_attribution.clone(),
-                Arc::clone(&transcript),
-                text.clone(),
-                exit,
+                emit_failed_initial_exec_end_if_unstored(
+                    process_started_alive,
+                    context,
+                    &request,
+                    cwd.clone(),
+                    plugin_attribution.clone(),
+                    Arc::clone(&transcript),
+                    text.clone(),
+                    message.clone(),
+                    wall_time,
+                )
+                .await;
+                self.release_process_id(request.process_id).await;
+                if let Err(message) = finish_result {
+                    return Err(fail_process_with_message(process.as_ref(), message));
+                }
+                return Err(UnifiedExecError::process_failed(message));
+            }
+            let process_id = request.process_id;
+            let (response_process_id, exit_code) = if process_started_alive {
+                match self.refresh_process_state(process_id).await {
+                    ProcessStatus::Alive {
+                        exit_code,
+                        process_id,
+                        ..
+                    } => (Some(process_id), exit_code),
+                    ProcessStatus::Exited { exit_code, entry } => {
+                        if let Err(message) =
+                            finish_deferred_network_approval_after_process_exit_for_session(
+                                Some(&context.session),
+                                deferred_network_approval.take(),
+                            )
+                            .await
+                        {
+                            return Err(fail_process_with_message(entry.process.as_ref(), message));
+                        }
+                        if !completion
+                            .as_ref()
+                            .is_some_and(|completion| completion.timed_out)
+                        {
+                            process
+                                .check_for_sandbox_denial_with_text(&text)
+                                .await
+                                .map_err(|err| {
+                                    err.with_output_collection_metadata(
+                                        original_token_count,
+                                        output_omitted_bytes,
+                                    )
+                                })?;
+                        }
+                        let metrics_sidecar = entry
+                            .plugin_metrics_sidecar
+                            .as_ref()
+                            .and_then(take_plugin_metrics_sidecar);
+                        finish_and_track_measurements(
+                            metrics_sidecar,
+                            exit_code.unwrap_or(-1),
+                            &context.session,
+                            &context.step_context.turn,
+                            &model_context,
+                            &context.call_id,
+                        )
+                        .await;
+                        (None, exit_code)
+                    }
+                    ProcessStatus::Unknown => {
+                        return Err(UnifiedExecError::UnknownProcessId { process_id });
+                    }
+                }
+            } else {
+                // Short-lived command: emit the completed command item immediately
+                // using the same helper as the background watcher.
+                let finish_result =
+                    finish_deferred_network_approval_after_process_exit_for_session(
+                        Some(&context.session),
+                        deferred_network_approval.take(),
+                    )
+                    .await;
+                if let Err(message) = finish_result {
+                    emit_failed_initial_exec_end_if_unstored(
+                        process_started_alive,
+                        context,
+                        &request,
+                        cwd.clone(),
+                        plugin_attribution.clone(),
+                        Arc::clone(&transcript),
+                        text.clone(),
+                        message.clone(),
+                        wall_time,
+                    )
+                    .await;
+                    self.release_process_id(request.process_id).await;
+                    return Err(fail_process_with_message(process.as_ref(), message));
+                }
+                let exit_code = process.exit_code();
+                let exit = exit_code.unwrap_or(-1);
+                initial_exec_command_guard
+                    .finish_plugin_metrics(context, exit)
+                    .await;
+                emit_exec_end_for_unified_exec(
+                    Arc::clone(&context.session),
+                    Arc::clone(&context.step_context.turn),
+                    Arc::clone(&context.step_context.settings.model_info),
+                    context.call_id.clone(),
+                    request.command.clone(),
+                    cwd.clone(),
+                    Some(process_id.to_string()),
+                    plugin_attribution.clone(),
+                    Arc::clone(&transcript),
+                    text.clone(),
+                    exit,
+                    wall_time,
+                    process.timed_out(),
+                )
+                .await;
+
+                self.release_process_id(request.process_id).await;
+                process
+                    .check_for_sandbox_denial_with_text(&text)
+                    .await
+                    .map_err(|err| {
+                        err.with_output_collection_metadata(
+                            original_token_count,
+                            output_omitted_bytes,
+                        )
+                    })?;
+                (None, exit_code)
+            };
+
+            let response = ExecCommandToolOutput {
+                completion_delivery: request.managed.map(|execution| {
+                    matches!(
+                        execution.mode,
+                        super::managed::ExecutionMode::Auto
+                            | super::managed::ExecutionMode::Background
+                    )
+                }),
+                event_call_id: context.call_id.clone(),
+                chunk_id,
                 wall_time,
-                process.timed_out(),
-            )
-            .await;
+                raw_output: collected,
+                truncation_policy: context
+                    .step_context
+                    .settings
+                    .model_info
+                    .truncation_policy
+                    .into(),
+                max_output_tokens: request.max_output_tokens,
+                process_id: response_process_id,
+                exit_code,
+                original_token_count: Some(original_token_count),
+                output_omitted_bytes,
+                hook_command: Some(request.hook_command.clone()),
+            };
 
-            self.release_process_id(request.process_id).await;
-            process
-                .check_for_sandbox_denial_with_text(&text)
-                .await
-                .map_err(|err| {
-                    err.with_output_collection_metadata(original_token_count, output_omitted_bytes)
-                })?;
-            (None, exit_code)
-        };
-
-        let response = ExecCommandToolOutput {
-            event_call_id: context.call_id.clone(),
-            chunk_id,
-            wall_time,
-            raw_output: collected,
-            truncation_policy: context
-                .step_context
-                .settings
-                .model_info
-                .truncation_policy
-                .into(),
-            max_output_tokens: request.max_output_tokens,
-            process_id: response_process_id,
-            exit_code,
-            original_token_count: Some(original_token_count),
-            output_omitted_bytes,
-            hook_command: Some(request.hook_command.clone()),
-        };
-
-        Ok(response)
+            Ok(response)
+        }
+        .await;
+        // A completed initial call owns both success and failure. A cancelled
+        // initial call leaves its live command available for explicit resumption.
+        if !response
+            .as_ref()
+            .is_ok_and(|output| output.process_id.is_some())
+            && let Some(launch) = &managed_launch
+        {
+            launch.acknowledge();
+        }
+        response
     }
 
     #[tracing::instrument(
@@ -1094,6 +1176,7 @@ impl UnifiedExecProcessManager {
         };
 
         let response = ExecCommandToolOutput {
+            completion_delivery: None,
             event_call_id,
             chunk_id,
             wall_time,
@@ -1206,10 +1289,12 @@ impl UnifiedExecProcessManager {
         metrics_sidecar: Option<PluginMetricsSidecar>,
         transcript: Arc<tokio::sync::Mutex<HeadTailBuffer>>,
         initial_exec_command_active: Arc<AtomicBool>,
+        managed_completion: Option<std::sync::Weak<tokio::sync::OwnedSemaphorePermit>>,
     ) {
         let plugin_metrics_sidecar =
             metrics_sidecar.map(|sidecar| Arc::new(std::sync::Mutex::new(Some(sidecar))));
         let entry = ProcessEntry {
+            managed_completion,
             process: Arc::clone(&process),
             plugin_metrics_sidecar: plugin_metrics_sidecar.clone(),
             call_id: context.call_id.clone(),
@@ -1730,6 +1815,14 @@ impl UnifiedExecProcessManager {
         let mut meta: Vec<(i32, Instant, bool)> = store
             .processes
             .iter()
+            // Managed completions have their own bounded admission limit and
+            // must remain readable until the coordinator consumes them.
+            .filter(|(_, entry)| {
+                entry
+                    .managed_completion
+                    .as_ref()
+                    .is_none_or(|slot| slot.strong_count() == 0)
+            })
             .map(|(id, entry)| (*id, entry.last_used, entry.process.has_exited()))
             .collect();
         let mut found_locked_exited_process = false;
@@ -1796,6 +1889,7 @@ impl UnifiedExecProcessManager {
     }
 
     pub(crate) async fn terminate_all_processes(&self) {
+        self.revoke_managed_commands().await;
         let entries: Vec<ProcessEntry> = {
             let mut processes = self.process_store.lock().await;
             let entries: Vec<ProcessEntry> = processes
@@ -1833,6 +1927,7 @@ impl UnifiedExecProcessManager {
     }
 
     pub(crate) async fn terminate_process(&self, process_id: i32) -> bool {
+        self.revoke_managed_command(process_id).await;
         let (process, already_exited) = {
             let store = self.process_store.lock().await;
             let Some(entry) = store.processes.get(&process_id) else {

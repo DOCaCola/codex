@@ -1,0 +1,36 @@
+start: stack_blank_line* stack_workdir? operation (stack_separator operation)* stack_blank_line*
+
+?operation: exec_command_operation
+          | write_stdin_operation
+          | patch_operation
+
+exec_command_operation: "exec_command" stack_step? continue_on_failure? STACK_NL json_object STACK_NL "end"
+write_stdin_operation: "write_stdin" stack_step? continue_on_failure? STACK_NL json_object STACK_NL "end"
+
+stack_workdir: "workdir" STACK_SP STACK_PATH STACK_NL stack_blank_line*
+stack_step: STACK_SP "step=" STEP
+continue_on_failure: STACK_SP "continue_on_failure"
+stack_separator: STACK_NL stack_blank_line*
+stack_blank_line: STACK_HSPACE? STACK_NL
+
+json_object: "{" json_ws? json_members? json_ws? "}"
+json_members: json_member (json_ws? "," json_ws? json_member)*
+json_member: JSON_STRING json_ws? ":" json_ws? json_value
+?json_value: JSON_STRING
+           | JSON_NUMBER
+           | json_object
+           | json_array
+           | "true"
+           | "false"
+           | "null"
+json_array: "[" json_ws? json_values? json_ws? "]"
+json_values: json_value (json_ws? "," json_ws? json_value)*
+json_ws: (STACK_HSPACE | STACK_NL)+
+
+STEP: /[1-4]/
+STACK_SP: " "
+STACK_HSPACE: /[ \t]+/
+STACK_NL: /\r?\n/
+STACK_PATH: /[^\r\n]+/
+JSON_STRING: /"(?:\\(?:["\\\/bfnrt]|u[0-9A-Fa-f]{4})|[^\x00-\x1F"\\])*"/
+JSON_NUMBER: /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/

@@ -75,14 +75,40 @@ fn apply_patch_file_update_mode(turn: &TurnContext) -> ApplyPatchFileUpdateMode 
 
 /// Handles freeform `apply_patch` requests and routes verified patches to the
 /// selected environment filesystem.
-#[derive(Default)]
 pub struct ApplyPatchHandler {
     multi_environment: bool,
+    permission_request_tool_name: HookToolName,
+    permission_request_command: Option<String>,
+    cwd_override: Option<PathUri>,
 }
 
 impl ApplyPatchHandler {
     pub(crate) fn new(multi_environment: bool) -> Self {
-        Self { multi_environment }
+        Self {
+            multi_environment,
+            permission_request_tool_name: HookToolName::apply_patch(),
+            permission_request_command: None,
+            cwd_override: None,
+        }
+    }
+
+    pub(crate) fn for_hpatch(
+        multi_environment: bool,
+        script: String,
+        translator_root: PathUri,
+    ) -> Self {
+        Self {
+            multi_environment,
+            permission_request_tool_name: HookToolName::hpatch(),
+            permission_request_command: Some(script),
+            cwd_override: Some(translator_root),
+        }
+    }
+}
+
+impl Default for ApplyPatchHandler {
+    fn default() -> Self {
+        Self::new(false)
     }
 }
 
@@ -401,9 +427,13 @@ impl ApplyPatchHandler {
         };
         let fs = turn_environment.environment.get_filesystem();
         let sandbox = turn_environment.sandbox_context(/*additional_permissions*/ None);
+        let patch_cwd = self
+            .cwd_override
+            .as_ref()
+            .unwrap_or_else(|| turn_environment.cwd());
         match codex_apply_patch::verify_apply_patch_args_with_mode(
             args,
-            turn_environment.cwd(),
+            patch_cwd,
             apply_patch_file_update_mode(&turn),
             fs.as_ref(),
             Some(&sandbox),
@@ -423,6 +453,10 @@ impl ApplyPatchHandler {
                     turn_environment.clone(),
                     Some(&tracker),
                     tool_ctx,
+                    self.permission_request_tool_name.clone(),
+                    self.permission_request_command
+                        .clone()
+                        .unwrap_or_else(|| patch_input.clone()),
                 )
                 .await?;
                 Ok(boxed_tool_output(ApplyPatchToolOutput::from_text(content)))
@@ -521,6 +555,7 @@ pub(crate) async fn intercept_apply_patch(
     .await
     {
         codex_apply_patch::MaybeApplyPatchVerified::Body(changes) => {
+            let permission_request_command = changes.patch.clone();
             let tool_ctx = ToolCtx {
                 session,
                 step_context,
@@ -528,8 +563,15 @@ pub(crate) async fn intercept_apply_patch(
                 call_id: call_id.to_string(),
                 tool_name: ToolName::plain(tool_name),
             };
-            let content =
-                execute_verified_patch(changes, turn_environment, tracker, tool_ctx).await?;
+            let content = execute_verified_patch(
+                changes,
+                turn_environment,
+                tracker,
+                tool_ctx,
+                HookToolName::apply_patch(),
+                permission_request_command,
+            )
+            .await?;
             Ok(Some(FunctionToolOutput::from_text(content, Some(true))))
         }
         codex_apply_patch::MaybeApplyPatchVerified::CorrectnessError(parse_error) => {
@@ -550,6 +592,8 @@ async fn execute_verified_patch(
     turn_environment: TurnEnvironment,
     tracker: Option<&SharedTurnDiffTracker>,
     tool_ctx: ToolCtx,
+    permission_request_tool_name: HookToolName,
+    permission_request_command: String,
 ) -> Result<String, FunctionCallError> {
     let cwd = action.cwd.clone();
     let sandbox_context = turn_environment.sandbox_context(/*additional_permissions*/ None);
@@ -602,6 +646,8 @@ async fn execute_verified_patch(
         exec_approval_requirement: apply.exec_approval_requirement,
         additional_permissions: effective_additional_permissions.additional_permissions,
         permissions_preapproved: effective_additional_permissions.permissions_preapproved,
+        permission_request_tool_name,
+        permission_request_command,
     };
     let mut orchestrator = ToolOrchestrator::new();
     let mut runtime = ApplyPatchRuntime::new();

@@ -93,6 +93,10 @@ pub(crate) fn effective_tool_mode(turn_context: &TurnContext, model_info: &Model
     }
 }
 
+pub(crate) fn command_stack_available(command_stack_enabled: bool, model_info: &ModelInfo) -> bool {
+    command_stack_enabled && model_info.supports_custom_tools()
+}
+
 /// Format the combined exec output for sending back to the model.
 /// Includes exit code and duration metadata; truncates large bodies safely.
 pub fn format_exec_output_for_model(

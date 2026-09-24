@@ -689,6 +689,9 @@
             "auth_elicitation": {
               "type": "boolean"
             },
+            "background_command_delivery": {
+              "type": "boolean"
+            },
             "background_paginated_rollout_migration": {
               "type": "boolean"
             },
@@ -738,6 +741,9 @@
               "type": "boolean"
             },
             "collaboration_modes": {
+              "type": "boolean"
+            },
+            "command_stack": {
               "type": "boolean"
             },
             "compaction_image_budget": {
@@ -839,6 +845,9 @@
             "hooks": {
               "type": "boolean"
             },
+            "hpatch": {
+              "type": "boolean"
+            },
             "image_detail_original": {
               "type": "boolean"
             },
@@ -879,6 +888,9 @@
               "type": "boolean"
             },
             "local_thread_store_shared_compression": {
+              "type": "boolean"
+            },
+            "luna_reserve_fallback": {
               "type": "boolean"
             },
             "mcp_2026_07_28": {
@@ -3599,6 +3611,10 @@
           "type": "number"
         },
         "supports_parallel_tool_calls": {
+          "default": null,
+          "type": "boolean"
+        },
+        "surface_notifications": {
           "default": null,
           "type": "boolean"
         },
@@ -6566,6 +6582,9 @@
         "auth_elicitation": {
           "type": "boolean"
         },
+        "background_command_delivery": {
+          "type": "boolean"
+        },
         "background_paginated_rollout_migration": {
           "type": "boolean"
         },
@@ -6615,6 +6634,9 @@
           "type": "boolean"
         },
         "collaboration_modes": {
+          "type": "boolean"
+        },
+        "command_stack": {
           "type": "boolean"
         },
         "compaction_image_budget": {
@@ -6716,6 +6738,9 @@
         "hooks": {
           "type": "boolean"
         },
+        "hpatch": {
+          "type": "boolean"
+        },
         "image_detail_original": {
           "type": "boolean"
         },
@@ -6756,6 +6781,9 @@
           "type": "boolean"
         },
         "local_thread_store_shared_compression": {
+          "type": "boolean"
+        },
+        "luna_reserve_fallback": {
           "type": "boolean"
         },
         "mcp_2026_07_28": {

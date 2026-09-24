@@ -552,6 +552,24 @@ pub(crate) async fn run_turn(
                 can_drain_pending_input = true;
                 // Process async hooks only after sampling and its tools have finished.
                 drain_async_hook_results(&sess, &turn_context, /*before_user_prompt*/ false).await;
+                let commands_need_follow_up = if turn_context
+                    .config
+                    .features
+                    .enabled(Feature::BackgroundCommandDelivery)
+                {
+                    let context = crate::unified_exec::UnifiedExecContext::new(
+                        Arc::clone(&sess),
+                        Arc::clone(&step_context),
+                        cancellation_token.clone(),
+                        turn_context.sub_id.clone(),
+                    );
+                    sess.services
+                        .unified_exec_manager
+                        .settle_managed_commands(&context, model_needs_follow_up)
+                        .await
+                } else {
+                    false
+                };
                 let (has_pending_input, token_status) = async {
                     let has_pending_input =
                         sess.input_queue.has_pending_input(&sess.active_turn).await;
@@ -564,7 +582,8 @@ pub(crate) async fn run_turn(
                 }
                 .instrument(trace_span!("run_turn.collect_post_sampling_state"))
                 .await;
-                let needs_follow_up = model_needs_follow_up || has_pending_input;
+                let needs_follow_up =
+                    model_needs_follow_up || has_pending_input || commands_need_follow_up;
                 let token_limit_reached = token_status.token_limit_reached;
 
                 trace!(

@@ -310,6 +310,7 @@ impl<'a> ToolRuntime<UnifiedExecRequest, UnifiedExecAttempt> for UnifiedExecRunt
             base_command.first().map(|path| crate::shell::Shell {
                 shell_type: req.shell_type,
                 shell_path: PathBuf::from(path),
+                shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
             })
         })
         .flatten();

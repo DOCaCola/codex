@@ -147,11 +147,17 @@ pub fn is_first_party_chat_originator(originator_value: &str) -> bool {
     originator_value == "codex_atlas" || originator_value == "codex_chatgpt_desktop"
 }
 
+fn user_agent_build_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+        .split_once('-')
+        .map_or(env!("CARGO_PKG_VERSION"), |(version, _suffix)| version)
+}
+
 pub fn get_codex_user_agent() -> String {
     // OS discovery can spawn subprocesses on Linux. Reuse it across requests,
     // while continuing to read the mutable originator and suffix below.
     static OS_INFO: LazyLock<os_info::Info> = LazyLock::new(os_info::get);
-    let build_version = env!("CARGO_PKG_VERSION");
+    let build_version = user_agent_build_version();
     let os_info = &*OS_INFO;
     let originator = originator();
     let prefix = format!(

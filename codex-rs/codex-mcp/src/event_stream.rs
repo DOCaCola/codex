@@ -102,6 +102,7 @@ impl McpEventStreamOpener {
                             meta: None,
                         })
                     })),
+                    None,
                 ).await?;
                 McpEventStream::open(
                     client,

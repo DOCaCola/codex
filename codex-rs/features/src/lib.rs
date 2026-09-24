@@ -108,6 +108,8 @@ pub enum Feature {
     CodexHooks,
     /// Store CLI auth in the encrypted local secrets backend when keyring storage is selected.
     SecretAuthStorage,
+    /// Allow account usage to switch tasks into Luna reserve and restrict model selection.
+    LunaReserveFallback,
 
     // Experimental
     /// Automatically start the shared local daemon for eligible interactive launches.
@@ -130,8 +132,14 @@ pub enum Feature {
     CodeModeOnly,
     /// Use the single unified PTY-backed exec tool.
     UnifiedExec,
+    /// Deliver finite command results automatically while keeping the owning turn active.
+    BackgroundCommandDelivery,
     /// Allow unified exec commands to allocate an interactive terminal.
     UnifiedExecTty,
+    /// Expose a single tool that stacks exec_command and apply_patch calls.
+    CommandStack,
+    /// Use the bundled hpatch companion as the model-visible patch authoring tool.
+    Hpatch,
     /// Route shell tool execution through the zsh exec bridge.
     ShellZshFork,
     /// Allow unified exec to compose with the zsh exec bridge.
@@ -982,6 +990,12 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: cfg!(windows),
     },
     FeatureSpec {
+        id: Feature::LunaReserveFallback,
+        key: "luna_reserve_fallback",
+        stage: Stage::Stable,
+        default_enabled: false,
+    },
+    FeatureSpec {
         id: Feature::UnifiedExec,
         key: "unified_exec",
         stage: Stage::Stable,
@@ -992,6 +1006,24 @@ pub const FEATURES: &[FeatureSpec] = &[
         key: "unified_exec_tty",
         stage: Stage::Stable,
         default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::CommandStack,
+        key: "command_stack",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::BackgroundCommandDelivery,
+        key: "background_command_delivery",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::Hpatch,
+        key: "hpatch",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
     },
     FeatureSpec {
         id: Feature::ShellZshFork,

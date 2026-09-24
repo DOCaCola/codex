@@ -59,6 +59,7 @@ use crate::event_stream::McpEventStreamOpener;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::resource_client::McpResourceServerCacheKey;
 use crate::resource_origin::ResourceOrigins;
+use crate::rmcp_client::SendMcpServerNotification;
 use crate::server::EffectiveMcpServer;
 use crate::tool_catalog_cache::McpToolCatalogCache;
 use crate::tools::ToolInfo;
@@ -91,6 +92,7 @@ pub struct McpRuntimeInput {
     pub auth_manager: Option<Arc<AuthManager>>,
     pub elicitation_reviewer: Option<ElicitationReviewerHandle>,
     pub elicitation_lifecycle: Option<ElicitationLifecycle>,
+    pub mcp_server_notification_sender: SendMcpServerNotification,
 }
 
 /// Owns all mutable MCP state for one Codex thread.
@@ -949,6 +951,7 @@ mod tests {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             omit_tools_from: None,
             disabled_reason: None,
             startup_timeout_sec: None,

@@ -281,7 +281,7 @@ impl Session {
 
     #[tracing::instrument(name = "mcp.runtime.refresh", skip_all)]
     pub(super) async fn publish_mcp_runtime(
-        &self,
+        self: &Arc<Self>,
         desired: &McpDesiredState,
         mcp_projection: McpRuntimeProjection,
         ready_selected_capability_roots: &[SelectedCapabilityRoot],
@@ -306,7 +306,7 @@ impl Session {
     }
 
     pub(super) fn build_mcp_runtime_input(
-        &self,
+        self: &Arc<Self>,
         desired: &McpDesiredState,
         mcp_projection: McpRuntimeProjection,
         ready_selected_capability_roots: &[SelectedCapabilityRoot],
@@ -376,6 +376,7 @@ impl Session {
             auth_manager: Some(Arc::clone(&self.services.auth_manager)),
             elicitation_reviewer,
             elicitation_lifecycle: Some(self.mcp_elicitation_lifecycle()),
+            mcp_server_notification_sender: self.mcp_server_notification_sender(),
         }
     }
 }

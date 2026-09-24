@@ -1291,6 +1291,56 @@ async fn assert_exec_process_write_then_read_without_tty(use_remote: bool) -> Re
     Ok(())
 }
 
+async fn assert_exec_process_close_stdin(use_remote: bool) -> Result<()> {
+    let context = create_process_context(use_remote).await?;
+    let process_id = "proc-close-stdin".to_string();
+    #[cfg(unix)]
+    let argv = vec!["/bin/cat".to_string()];
+    #[cfg(windows)]
+    let argv = vec![
+        std::path::Path::new(&std::env::var("SystemRoot")?)
+            .join("System32")
+            .join("more.com")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    let session = context
+        .backend
+        .start(ExecParams {
+            process_id: process_id.clone().into(),
+            argv,
+            cwd: PathUri::from_host_native_path(std::env::current_dir()?)?,
+            env_policy: None,
+            shell_snapshot: None,
+            env: Default::default(),
+            tty: false,
+            pipe_stdin: true,
+            arg0: None,
+            sandbox: None,
+            enforce_managed_network: false,
+            managed_network: None,
+            network_proxy: None,
+            metadata: Default::default(),
+        })
+        .await?;
+    assert_eq!(session.process.process_id().as_str(), process_id);
+
+    let write_response = session.process.write(b"closed-at-eof".to_vec()).await?;
+    assert_eq!(write_response.status, WriteStatus::Accepted);
+    session.process.signal(ProcessSignal::CloseStdin).await?;
+    let StartedExecProcess { process, .. } = session;
+    let wake_rx = process.subscribe_wake();
+    let (output, exit_code, closed) = collect_process_output_from_reads(process, wake_rx).await?;
+
+    assert!(
+        output.contains("closed-at-eof"),
+        "unexpected output: {output:?}"
+    );
+    assert_eq!(exit_code, Some(0));
+    assert!(closed);
+    Ok(())
+}
+
 async fn assert_remote_windows_sandbox_process_write(
     expected_sandbox_type: codex_sandboxing::SandboxType,
     tty: bool,
@@ -1771,6 +1821,15 @@ async fn exec_process_write_then_read(use_remote: bool) -> Result<()> {
 #[serial_test::serial(remote_exec_server)]
 async fn exec_process_write_then_read_without_tty(use_remote: bool) -> Result<()> {
     assert_exec_process_write_then_read_without_tty(use_remote).await
+}
+
+#[test_case(false ; "local")]
+#[test_case(true ; "remote")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+// Serialize tests that launch a real exec-server process through the full CLI.
+#[serial_test::serial(remote_exec_server)]
+async fn exec_process_close_stdin(use_remote: bool) -> Result<()> {
+    assert_exec_process_close_stdin(use_remote).await
 }
 
 #[test_case(

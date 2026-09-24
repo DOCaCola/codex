@@ -1145,6 +1145,24 @@ fn guardian_truncate_text_keeps_prefix_suffix_and_xml_marker() {
 }
 
 #[test]
+fn guardian_action_formatters_reject_large_aggregate_payloads() {
+    let file: PathUri = test_path_buf("/tmp/file").abs().into();
+    let action = GuardianApprovalRequest::ApplyPatch {
+        id: "patch-1".to_string(),
+        cwd: test_path_buf("/tmp").abs().into(),
+        files: vec![file; 20_000],
+        patch: String::new(),
+    };
+
+    assert_eq!(
+        format_guardian_action_pretty(&action)
+            .expect_err("aggregate action should exceed the review limit")
+            .to_string(),
+        "Guardian action exceeds the 200000-byte review limit"
+    );
+}
+
+#[test]
 fn guardian_approval_request_to_json_renders_mcp_tool_call_shape() -> serde_json::Result<()> {
     let action = GuardianApprovalRequest::McpToolCall {
         id: "call-1".to_string(),

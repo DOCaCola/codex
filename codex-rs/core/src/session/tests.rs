@@ -58,6 +58,7 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_http_client::RouteAwareClientPool;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
+use codex_mcp::McpServerNotification;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::built_in_model_providers;
@@ -183,6 +184,7 @@ use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_rmcp_client::ElicitationAction;
+use codex_rmcp_client::SurfaceNotification;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
 use core_test_support::context_snapshot;
@@ -6177,7 +6179,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         ),
         hooks: arc_swap::ArcSwap::from_pointee(hooks),
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
-        user_shell: Arc::new(default_user_shell()),
+        user_shell: arc_swap::ArcSwap::from(Arc::new(default_user_shell())),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
         exec_policy,
         auth_manager: auth_manager.clone(),
@@ -6271,6 +6273,8 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         mcp_prewarm_tx: async_channel::bounded(1).0,
         mcp_prewarm_shutdown: CancellationToken::new(),
         mcp_prewarm_task: std::sync::Mutex::new(None),
+        mcp_notification_state: Mutex::new(Default::default()),
+        mcp_notification_sender: OnceLock::new(),
         conversation: Arc::new(RealtimeConversationManager::new()),
         realtime_history: None,
         active_turn: Mutex::new(None),
@@ -6317,7 +6321,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_configuration.provider.clone(),
         &session_configuration,
         config.multi_agent_version_from_features(),
-        session.services.user_shell.as_ref(),
+        session.services.user_shell.load().as_ref(),
         session.services.shell_zsh_path.as_ref(),
         session.services.main_execve_wrapper_exe.as_ref(),
         per_turn_config,
@@ -8435,7 +8439,7 @@ where
         ),
         hooks: arc_swap::ArcSwap::from_pointee(hooks),
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
-        user_shell: Arc::new(default_user_shell()),
+        user_shell: arc_swap::ArcSwap::from(Arc::new(default_user_shell())),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
         exec_policy,
         auth_manager: Arc::clone(&auth_manager),
@@ -8529,6 +8533,8 @@ where
         mcp_prewarm_tx: async_channel::bounded(1).0,
         mcp_prewarm_shutdown: CancellationToken::new(),
         mcp_prewarm_task: std::sync::Mutex::new(None),
+        mcp_notification_state: Mutex::new(Default::default()),
+        mcp_notification_sender: OnceLock::new(),
         conversation: Arc::new(RealtimeConversationManager::new()),
         realtime_history: None,
         active_turn: Mutex::new(None),
@@ -8575,7 +8581,7 @@ where
         session_configuration.provider.clone(),
         &session_configuration,
         config.multi_agent_version_from_features(),
-        session.services.user_shell.as_ref(),
+        session.services.user_shell.load().as_ref(),
         session.services.shell_zsh_path.as_ref(),
         session.services.main_execve_wrapper_exe.as_ref(),
         per_turn_config,
@@ -9250,6 +9256,7 @@ async fn step_context_keeps_its_mcp_runtime_for_tools() -> anyhow::Result<()> {
             enabled: true,
             required: false,
             supports_parallel_tool_calls: false,
+            surface_notifications: false,
             omit_tools_from: None,
             disabled_reason: None,
             startup_timeout_sec: None,
@@ -10840,6 +10847,105 @@ impl SessionTask for NeverEndingTask {
             sleep(Duration::from_secs(60)).await;
         }
     }
+}
+
+fn test_mcp_notification(message_id: &str) -> McpServerNotification {
+    McpServerNotification {
+        server_name: "server".to_string(),
+        notification: SurfaceNotification {
+            method: "notifications/message".to_string(),
+            source: None,
+            message_id: Some(message_id.to_string()),
+            payload: json!({ "value": 1 }),
+        },
+    }
+}
+
+#[tokio::test]
+async fn idle_session_drops_mcp_notifications() {
+    let (session, _turn_context, _rx) = make_session_and_context_with_rx().await;
+    session.enable_mcp_server_notification_delivery().await;
+
+    session.mcp_server_notification_sender()(test_mcp_notification("idle-event"))
+        .await
+        .expect("idle notification callback");
+    sleep(Duration::from_millis(500)).await;
+
+    assert!(session.active_turn.lock().await.is_none());
+}
+
+#[tokio::test]
+async fn running_session_receives_mcp_notifications_in_the_current_turn() {
+    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
+    session
+        .spawn_task(
+            Arc::clone(&turn_context),
+            Vec::new(),
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+    session.enable_mcp_server_notification_delivery().await;
+
+    session.mcp_server_notification_sender()(test_mcp_notification("active-event"))
+        .await
+        .expect("active notification callback");
+    sleep(Duration::from_millis(500)).await;
+
+    assert_eq!(
+        session
+            .input_queue
+            .get_pending_input(&session.active_turn)
+            .await
+            .0
+            .len(),
+        1
+    );
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
+}
+
+#[tokio::test]
+async fn mcp_notification_does_not_cross_from_a_stopped_turn_into_a_later_turn() {
+    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
+    session
+        .spawn_task(
+            Arc::clone(&turn_context),
+            Vec::new(),
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+    session.enable_mcp_server_notification_delivery().await;
+    session.mcp_server_notification_sender()(test_mcp_notification("old-turn-event"))
+        .await
+        .expect("active notification callback");
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
+    session
+        .spawn_task(
+            Arc::clone(&turn_context),
+            Vec::new(),
+            NeverEndingTask {
+                kind: TaskKind::Regular,
+                listen_to_cancellation_token: true,
+            },
+        )
+        .await;
+
+    sleep(Duration::from_millis(500)).await;
+
+    assert!(
+        session
+            .input_queue
+            .get_pending_input(&session.active_turn)
+            .await
+            .0
+            .is_empty()
+    );
+    session.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
 
 #[derive(Clone, Copy)]

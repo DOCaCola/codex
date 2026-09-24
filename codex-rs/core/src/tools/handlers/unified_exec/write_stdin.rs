@@ -21,6 +21,8 @@ use super::post_unified_exec_tool_use_payload;
 
 #[derive(Debug, Deserialize)]
 struct WriteStdinArgs {
+    #[serde(default)]
+    wait_mode: crate::unified_exec::managed::WaitMode,
     // The model is trained on `session_id`.
     session_id: i32,
     #[serde(default)]
@@ -31,7 +33,10 @@ struct WriteStdinArgs {
     max_output_tokens: Option<usize>,
 }
 
-pub struct WriteStdinHandler;
+#[derive(Default)]
+pub struct WriteStdinHandler {
+    pub(crate) background_delivery: bool,
+}
 
 impl ToolExecutor<ToolInvocation> for WriteStdinHandler {
     fn tool_name(&self) -> ToolName {
@@ -39,7 +44,11 @@ impl ToolExecutor<ToolInvocation> for WriteStdinHandler {
     }
 
     fn spec(&self) -> ToolSpec {
-        create_write_stdin_tool()
+        let mut spec = create_write_stdin_tool();
+        if self.background_delivery {
+            super::managed_spec::configure_wait(&mut spec);
+        }
+        spec
     }
 
     fn supports_parallel_tool_calls(&self) -> bool {
@@ -79,12 +88,22 @@ impl WriteStdinHandler {
         };
 
         let args: WriteStdinArgs = parse_arguments(&arguments)?;
+        if args.wait_mode == crate::unified_exec::managed::WaitMode::Completion
+            && (!self.background_delivery
+                || !args.chars.is_empty()
+                || serde_json::from_str::<serde_json::Value>(&arguments)
+                    .is_ok_and(|value| value.get("yield_time_ms").is_some()))
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "completion waits require background_command_delivery, empty chars and no yield_time_ms".into(),
+            ));
+        }
         let context =
             UnifiedExecContext::new(session.clone(), step_context, cancellation_token, call_id);
         let response = session
             .services
             .unified_exec_manager
-            .write_stdin(
+            .read_managed_command(
                 &context,
                 WriteStdinRequest {
                     process_id: args.session_id,
@@ -102,6 +121,7 @@ impl WriteStdinHandler {
                         turn: &turn,
                     }),
                 },
+                args.wait_mode,
             )
             .await
             .map_err(|err| {

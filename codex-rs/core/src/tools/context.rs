@@ -378,6 +378,7 @@ impl ToolOutput for AbortedToolOutput {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecCommandToolOutput {
+    pub completion_delivery: Option<bool>,
     pub event_call_id: String,
     pub chunk_id: String,
     pub wall_time: Duration,
@@ -449,6 +450,8 @@ impl ToolOutput for ExecCommandToolOutput {
         #[derive(Serialize)]
         struct UnifiedExecCodeModeResult {
             #[serde(skip_serializing_if = "Option::is_none")]
+            completion_delivery: Option<bool>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             chunk_id: Option<String>,
             wall_time_seconds: f64,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -461,6 +464,7 @@ impl ToolOutput for ExecCommandToolOutput {
         }
 
         let result = UnifiedExecCodeModeResult {
+            completion_delivery: self.completion_delivery,
             chunk_id: (!self.chunk_id.is_empty()).then(|| self.chunk_id.clone()),
             wall_time_seconds: self.wall_time.as_secs_f64(),
             exit_code: self.exit_code,
@@ -537,6 +541,13 @@ impl ExecCommandToolOutput {
 
         if let Some(process_id) = &self.process_id {
             sections.push(format!("Process running with session ID {process_id}"));
+            if let Some(delivery) = self.completion_delivery {
+                sections.push(if delivery {
+                    "Completion delivery: automatic. Continue other work; do not poll. Use write_stdin with wait_mode=\"completion\" when blocked."
+                } else {
+                    "Completion delivery: manual (interactive command)."
+                }.to_string());
+            }
         }
 
         if let Some(original_token_count) = self.original_token_count {

@@ -308,7 +308,13 @@ async fn backend_banner_fallback_candidates_and_notice_follow_selected_model() {
     let (mut chat, _events, _ops) = make_chatwidget_manual(Some("test-model-a")).await;
     chat.has_chatgpt_account = true;
     let template = chat.model_catalog.try_list_models().unwrap()[0].clone();
-    let models = ["hidden-model", "test-model-b", "test-model-c"].map(|model| ModelPreset {
+    let models = [
+        "hidden-model",
+        "test-model-b",
+        "test-model-c",
+        "gpt-reserve",
+    ]
+    .map(|model| ModelPreset {
         model: model.into(),
         show_in_picker: model != "hidden-model",
         ..template.clone()
@@ -316,8 +322,12 @@ async fn backend_banner_fallback_candidates_and_notice_follow_selected_model() {
     chat.model_catalog = Arc::new(ModelCatalog::new(models.to_vec()));
     let mut response = banner_response(Some("inline"), json!([]));
     response.rate_limit_upsell.as_mut().unwrap()["blocked_model_slug"] = json!("test-model-a");
-    response.rate_limit_upsell.as_mut().unwrap()["fallback_model_slugs"] =
-        json!(["hidden-model", "test-model-c", "test-model-b"]);
+    response.rate_limit_upsell.as_mut().unwrap()["fallback_model_slugs"] = json!([
+        "hidden-model",
+        "gpt-reserve",
+        "test-model-c",
+        "test-model-b"
+    ]);
     chat.update_backend_banner(&response);
     assert_eq!(
         chat.backend_banner_fallback().map(|switch| switch.model),

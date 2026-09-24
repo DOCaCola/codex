@@ -29,7 +29,6 @@ use crate::wrapping::adaptive_wrap_line_with_source;
 use codex_ansi_escape::ansi_escape_line;
 use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
 use codex_protocol::parse_command::ParsedCommand;
-use codex_shell_command::bash::extract_bash_command;
 use itertools::Itertools;
 use ratatui::prelude::*;
 use ratatui::style::Modifier;
@@ -79,11 +78,7 @@ pub(crate) fn new_active_exec_command(
 }
 
 fn format_unified_exec_interaction(command: &[String], input: Option<&str>) -> String {
-    let command_display = if let Some((_, script)) = extract_bash_command(command) {
-        script.to_string()
-    } else {
-        command.join(" ")
-    };
+    let command_display = strip_bash_lc_and_escape(command);
     match input {
         Some(data) if !data.is_empty() => {
             let preview = summarize_interaction_input(data);

@@ -5,9 +5,12 @@
 //! sandboxing enforced by the explicit filesystem sandbox context.
 use crate::exec::is_likely_sandbox_denied;
 use crate::session::turn_context::TurnEnvironment;
+use crate::tools::hook_names::HookToolName;
+
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalAction;
 use crate::tools::sandboxing::ExecApprovalRequirement;
+
 use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::Sandboxable;
 use crate::tools::sandboxing::ToolCtx;
@@ -50,6 +53,8 @@ pub struct ApplyPatchRequest {
     pub exec_approval_requirement: ExecApprovalRequirement,
     pub additional_permissions: Option<AdditionalPermissionProfile>,
     pub permissions_preapproved: bool,
+    pub permission_request_tool_name: HookToolName,
+    pub permission_request_command: String,
 }
 
 #[derive(Default)]
@@ -81,6 +86,8 @@ impl ApplyPatchRuntime {
             patch: req.action.patch.clone(),
             changes: Arc::clone(&req.changes),
             permissions_preapproved: req.permissions_preapproved,
+            permission_request_tool_name: req.permission_request_tool_name.clone(),
+            permission_request_command: req.permission_request_command.clone(),
         }
     }
 
@@ -151,7 +158,6 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         Some(req.exec_approval_requirement.clone())
     }
 }
-
 impl ToolRuntime<ApplyPatchRequest, ApplyPatchRuntimeOutput> for ApplyPatchRuntime {
     fn turn_environment<'a>(&self, req: &'a ApplyPatchRequest) -> &'a TurnEnvironment {
         &req.turn_environment

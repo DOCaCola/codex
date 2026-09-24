@@ -511,6 +511,19 @@ pub struct ModelInfo {
 }
 
 impl ModelInfo {
+    /// Whether this model supports Responses API custom tools with freeform input.
+    ///
+    /// The model catalog currently advertises that capability through the
+    /// freeform `apply_patch` tool type. Keep custom-tool consumers behind this
+    /// capability check instead of assuming every Responses-compatible model
+    /// accepts custom tool definitions.
+    pub fn supports_custom_tools(&self) -> bool {
+        matches!(
+            self.apply_patch_tool_type,
+            Some(ApplyPatchToolType::Freeform)
+        )
+    }
+
     pub fn resolved_context_window(&self) -> Option<i64> {
         self.context_window.or(self.max_context_window)
     }
@@ -1503,6 +1516,89 @@ mod tests {
         let response: ModelsResponse =
             serde_json::from_value(value).expect("deserialize mixed models response");
         assert_eq!(response.models[0].model_messages, Some(canonical_messages));
+    }
+
+    #[test]
+    fn get_personality_message_returns_default_when_personality_is_none() {
+        let personality_template = personality_variables();
+        assert_eq!(
+            personality_template.get_personality_message(/*personality*/ None),
+            Some("default".to_string())
+        );
+    }
+
+    #[test]
+    fn custom_tool_support_follows_freeform_tool_metadata() {
+        let mut model = test_model(/*spec*/ None);
+        assert!(!model.supports_custom_tools());
+
+        model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+        assert!(model.supports_custom_tools());
+    }
+
+    #[test]
+    fn get_personality_message() {
+        let personality_variables = personality_variables();
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::Friendly)),
+            Some("friendly".to_string())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::Pragmatic)),
+            Some("pragmatic".to_string())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::None)),
+            Some(String::new())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(/*personality*/ None),
+            Some("default".to_string())
+        );
+
+        let personality_variables = ModelInstructionsVariables {
+            personality_default: Some("default".to_string()),
+            personality_friendly: None,
+            personality_pragmatic: None,
+        };
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::Friendly)),
+            None
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::Pragmatic)),
+            None
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::None)),
+            Some(String::new())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(/*personality*/ None),
+            Some("default".to_string())
+        );
+
+        let personality_variables = ModelInstructionsVariables {
+            personality_default: None,
+            personality_friendly: Some("friendly".to_string()),
+            personality_pragmatic: Some("pragmatic".to_string()),
+        };
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::Friendly)),
+            Some("friendly".to_string())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::Pragmatic)),
+            Some("pragmatic".to_string())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(Some(Personality::None)),
+            Some(String::new())
+        );
+        assert_eq!(
+            personality_variables.get_personality_message(/*personality*/ None),
+            None
+        );
     }
 
     #[test]

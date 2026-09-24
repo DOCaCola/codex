@@ -38,6 +38,13 @@ impl HookToolName {
         }
     }
 
+    pub(crate) fn hpatch() -> Self {
+        Self {
+            name: "hpatch".to_string(),
+            matcher_aliases: vec!["Write".to_string(), "Edit".to_string()],
+        }
+    }
+
     /// Returns the hook identity for spawning sub-agents.
     ///
     /// The serialized name remains `spawn_agent`, while `Agent` is accepted as

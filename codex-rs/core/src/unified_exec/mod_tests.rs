@@ -137,6 +137,7 @@ async fn exec_command_with_tty(
     let process_started_alive = !process.has_exited() && process.exit_code().is_none();
     if process_started_alive {
         let entry = ProcessEntry {
+            managed_completion: None,
             process: Arc::clone(&process),
             plugin_metrics_sidecar: None,
             call_id: context.call_id.clone(),
@@ -204,6 +205,7 @@ async fn exec_command_with_tty(
     }
 
     Ok(ExecCommandToolOutput {
+        completion_delivery: None,
         event_call_id: context.call_id,
         chunk_id: generate_chunk_id(),
         wall_time,
@@ -327,7 +329,7 @@ async fn write_stdin(
     session
         .services
         .unified_exec_manager
-        .write_stdin(
+        .read_managed_command(
             &UnifiedExecContext::new(
                 Arc::clone(session),
                 crate::session::step_context::StepContext::for_test(Arc::clone(turn)),
@@ -342,6 +344,7 @@ async fn write_stdin(
                 truncation_policy: TruncationPolicy::Tokens(10_000),
                 interaction_event: None,
             },
+            super::managed::WaitMode::Timed,
         )
         .await
 }
@@ -613,6 +616,7 @@ async fn terminating_initial_exec_command_rechecks_initial_response_state() -> a
     manager.process_store.lock().await.processes.insert(
         process_id,
         ProcessEntry {
+            managed_completion: None,
             process,
             plugin_metrics_sidecar: None,
             call_id: "call".to_string(),
@@ -698,6 +702,7 @@ async fn terminating_during_stdin_poll_returns_exited_response() -> anyhow::Resu
     manager.process_store.lock().await.processes.insert(
         process_id,
         ProcessEntry {
+            managed_completion: None,
             process: Arc::clone(&process),
             plugin_metrics_sidecar: None,
             call_id: "call".to_string(),

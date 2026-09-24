@@ -81,6 +81,10 @@ impl OpenAiModelsEndpoint {
     }
 
     async fn uses_codex_backend(&self) -> bool {
+        if self.provider_info.base_url.is_some() {
+            return true;
+        }
+
         self.auth()
             .await
             .as_ref()
@@ -576,6 +580,32 @@ mod tests {
         );
 
         assert!(!endpoint.has_command_auth());
+    }
+
+    #[tokio::test]
+    async fn custom_base_url_reports_codex_backend_for_api_key_refresh() {
+        let endpoint = OpenAiModelsEndpoint::new(
+            ModelProviderInfo::create_openai_provider(Some(
+                "https://model.example/backend-api/codex".to_string(),
+            )),
+            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "test-api-key",
+            ))),
+        );
+
+        assert!(endpoint.uses_codex_backend().await);
+    }
+
+    #[tokio::test]
+    async fn default_openai_api_key_does_not_report_codex_backend() {
+        let endpoint = OpenAiModelsEndpoint::new(
+            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
+            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "test-api-key",
+            ))),
+        );
+
+        assert!(!endpoint.uses_codex_backend().await);
     }
 
     #[tokio::test]

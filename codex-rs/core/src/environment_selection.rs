@@ -235,7 +235,8 @@ impl StartingTurnEnvironment {
 
 pub(crate) struct ThreadEnvironments {
     environment_manager: Arc<EnvironmentManager>,
-    local_shell: Shell,
+    local_shell: ArcSwap<Shell>,
+    thread_environment_config: ArcSwap<EnvironmentConfig>,
     shell_snapshot: ShellSnapshot,
     non_blocking_snapshots: bool,
     environments: ArcSwap<Vec<SelectedTurnEnvironment>>,
@@ -301,7 +302,8 @@ impl ThreadEnvironments {
             .collect();
         Self {
             environment_manager,
-            local_shell,
+            local_shell: ArcSwap::from_pointee(local_shell),
+            thread_environment_config: ArcSwap::from_pointee(thread_environment_config),
             shell_snapshot,
             non_blocking_snapshots,
             environments: ArcSwap::from_pointee(environments),
@@ -344,7 +346,10 @@ impl ThreadEnvironments {
         environments: &[TurnEnvironmentSelection],
         thread_environment_config: &EnvironmentConfig,
     ) {
+        self.thread_environment_config
+            .store(Arc::new(thread_environment_config.clone()));
         let previous = self.environments.load();
+
         let mut seen_environment_ids = HashSet::with_capacity(environments.len());
         let mut next = Vec::with_capacity(environments.len());
         for selected_environment in environments {
@@ -425,7 +430,7 @@ impl ThreadEnvironments {
             let (resolution_task, resolution) = Self::resolve_environment(
                 selected_environment.clone(),
                 Arc::clone(&environment),
-                self.local_shell.clone(),
+                self.local_shell.load_full().as_ref().clone(),
                 self.shell_snapshot.clone(),
                 configuration_ready,
             )
@@ -520,6 +525,8 @@ impl ThreadEnvironments {
 
     /// Refreshes attachments whose configuration is inferred from the thread.
     pub(crate) fn update_thread_config(&self, config: &EnvironmentConfig) {
+        self.thread_environment_config
+            .store(Arc::new(config.clone()));
         let environments = self
             .environments
             .load()
@@ -691,6 +698,17 @@ impl ThreadEnvironments {
             })
             .collect();
         self.environments.store(Arc::new(environments));
+    }
+
+    pub(crate) fn update_local_shell(&self, shell: Shell) {
+        self.local_shell.store(Arc::new(shell));
+        let current = self.environments.load_full();
+        let selections = current
+            .iter()
+            .map(|environment| environment.selection.clone())
+            .collect::<Vec<_>>();
+        let thread_environment_config = self.thread_environment_config.load_full();
+        self.update_selections(&selections, thread_environment_config.as_ref());
     }
 
     #[tracing::instrument(
@@ -1336,6 +1354,7 @@ url = "ws://127.0.0.1:8765"
         let local_shell = Shell {
             shell_type: crate::shell::ShellType::Zsh,
             shell_path: std::path::PathBuf::from("/configured/zsh"),
+            shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
         };
         let expected_config = EnvironmentConfig {
             allow_login_shell: false,
@@ -1566,23 +1585,23 @@ url = "ws://127.0.0.1:8765"
         let logs = String::from_utf8(buffer.lock().expect("buffer lock").clone())
             .expect("UTF-8 tracing output");
         assert!(
-            logs.contains(
-                "environments.snapshot{environment_count=1 non_blocking=false}:environments.wait_until_ready{environment_id=remote}"
-            ),
-            "blocking snapshot should contain its environment wait span: {logs}"
-        );
+                logs.contains(
+                    "environments.snapshot{environment_count=1 non_blocking=false}:environments.wait_until_ready{environment_id=remote}"
+                ),
+                "blocking snapshot should contain its environment wait span: {logs}"
+            );
         assert!(
-            logs.contains(
-                "environments.resolve{environment_id=remote remote=true configuration_pending=false}:exec_server.environment.wait_until_ready{remote=true}"
-            ),
-            "environment resolution should contain the executor connection wait span: {logs}"
-        );
+                logs.contains(
+                    "environments.resolve{environment_id=remote remote=true configuration_pending=false}:exec_server.environment.wait_until_ready{remote=true}"
+                ),
+                "environment resolution should contain the executor connection wait span: {logs}"
+            );
         assert!(
-            logs.contains(
-                "environments.resolve{environment_id=remote remote=true configuration_pending=false}:exec_server.environment.info{remote=true}"
-            ),
-            "environment resolution should contain the remote environment-info span: {logs}"
-        );
+                logs.contains(
+                    "environments.resolve{environment_id=remote remote=true configuration_pending=false}:exec_server.environment.info{remote=true}"
+                ),
+                "environment resolution should contain the remote environment-info span: {logs}"
+            );
     }
 
     #[tokio::test]

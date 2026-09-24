@@ -697,10 +697,15 @@ impl LocalProcess {
                     if process.exit_code.is_some() {
                         return Ok(SignalResponse {});
                     }
-                    process
-                        .session
-                        .signal(pty_process_signal(params.signal))
-                        .map_err(|err| internal_error(format!("failed to signal process: {err}")))?
+                    match params.signal {
+                        ProcessSignal::Interrupt => process
+                            .session
+                            .signal(PtyProcessSignal::Interrupt)
+                            .map_err(|err| {
+                                internal_error(format!("failed to signal process: {err}"))
+                            })?,
+                        ProcessSignal::CloseStdin => process.session.close_stdin(),
+                    }
                 }
                 Some(ProcessEntry::Starting(_)) | None => {}
             }
@@ -948,12 +953,6 @@ impl LocalProcess {
         .await
         .map_err(map_handler_error)?;
         Ok(())
-    }
-}
-
-fn pty_process_signal(signal: ProcessSignal) -> PtyProcessSignal {
-    match signal {
-        ProcessSignal::Interrupt => PtyProcessSignal::Interrupt,
     }
 }
 

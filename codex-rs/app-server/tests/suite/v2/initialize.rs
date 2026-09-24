@@ -46,7 +46,7 @@ async fn initialize_uses_client_info_name_as_originator() -> Result<()> {
         mcp.initialize_with_client_info(ClientInfo {
             name: "codex_vscode".to_string(),
             title: Some("Codex VS Code Extension".to_string()),
-            version: "0.1.0".to_string(),
+            version: "0.1.0-doca".to_string(),
         }),
     )
     .await??;
@@ -62,6 +62,14 @@ async fn initialize_uses_client_info_name_as_originator() -> Result<()> {
     } = to_response::<InitializeResponse>(response)?;
 
     assert!(user_agent.starts_with("codex_vscode/"));
+    assert!(
+        user_agent.contains("(codex_vscode; 0.1.0)"),
+        "expected stock client version in UA suffix, got {user_agent}"
+    );
+    assert!(
+        !user_agent.contains("0.1.0-doca"),
+        "expected UA suffix to omit custom client version suffix, got {user_agent}"
+    );
     assert_eq!(response_codex_home, expected_codex_home);
     assert_eq!(platform_family, std::env::consts::FAMILY);
     assert_eq!(platform_os, std::env::consts::OS);

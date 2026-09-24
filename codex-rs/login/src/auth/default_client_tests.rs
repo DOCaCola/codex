@@ -44,6 +44,16 @@ fn test_get_codex_user_agent() {
     let originator = originator().value;
     let prefix = format!("{originator}/");
     assert!(user_agent.starts_with(&prefix));
+    if let Some((version, _suffix)) = env!("CARGO_PKG_VERSION").split_once('-') {
+        assert!(
+            user_agent.starts_with(&format!("{originator}/{version} ")),
+            "expected UA to use stripped version prefix, got {user_agent}"
+        );
+        assert!(
+            !user_agent.contains(env!("CARGO_PKG_VERSION")),
+            "expected UA to omit full package version suffix, got {user_agent}"
+        );
+    }
 }
 
 #[test]

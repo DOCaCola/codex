@@ -69,6 +69,7 @@ use codex_rmcp_client::RmcpClient;
 use codex_rmcp_client::StdioServerLauncher;
 use codex_rmcp_client::StreamableHttpBearerToken;
 use codex_rmcp_client::StreamableHttpRedirectMode;
+use codex_rmcp_client::SurfaceNotification;
 use codex_rmcp_client::ToolWithConnectorId;
 use codex_rmcp_client::is_authentication_required_error;
 use futures::future::BoxFuture;
@@ -113,6 +114,19 @@ const UNTRUSTED_CONNECTOR_META_KEYS: &[&str] = &[
     "connector_description",
     "connectorDescription",
 ];
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct McpServerNotification {
+    pub server_name: String,
+    pub notification: SurfaceNotification,
+}
+
+pub type SendMcpServerNotification =
+    Arc<dyn Fn(McpServerNotification) -> BoxFuture<'static, Result<()>> + Send + Sync>;
+
+pub fn ignore_mcp_server_notifications() -> SendMcpServerNotification {
+    Arc::new(|_| async { Ok(()) }.boxed())
+}
 
 #[derive(Clone)]
 pub(crate) struct ManagedClient {
@@ -298,6 +312,7 @@ struct ManagedClientStartup {
     runtime_auth_provider: Option<SharedAuthProvider>,
     client_elicitation_capability: ElicitationCapability,
     client_mcp_extensions: ClientMcpExtensions,
+    mcp_server_notification_sender: SendMcpServerNotification,
     auth_changes: Option<watch::Receiver<AuthChangeState>>,
     protocol_mode: McpProtocolMode,
     catalog_item_limit: usize,
@@ -328,6 +343,7 @@ impl ManagedClientStartup {
             runtime_auth_provider,
             client_elicitation_capability,
             client_mcp_extensions,
+            mcp_server_notification_sender,
             auth_changes,
             protocol_mode,
             catalog_item_limit,
@@ -389,6 +405,8 @@ impl ManagedClientStartup {
                         tool_catalog_fetch_ticket,
                         client_elicitation_capability,
                         client_mcp_extensions,
+                        surface_notifications: server.config().surface_notifications,
+                        mcp_server_notification_sender,
                         auth_changes,
                         catalog_item_limit,
                         server_capabilities,
@@ -461,6 +479,7 @@ impl AsyncManagedClient {
         runtime_auth_provider: Option<SharedAuthProvider>,
         client_elicitation_capability: ElicitationCapability,
         client_mcp_extensions: ClientMcpExtensions,
+        mcp_server_notification_sender: SendMcpServerNotification,
         auth_changes: Option<watch::Receiver<AuthChangeState>>,
         protocol_mode: McpProtocolMode,
         catalog_item_limit: usize,
@@ -492,6 +511,7 @@ impl AsyncManagedClient {
             runtime_auth_provider,
             client_elicitation_capability,
             client_mcp_extensions,
+            mcp_server_notification_sender,
             auth_changes,
             protocol_mode,
             catalog_item_limit,
@@ -921,6 +941,8 @@ async fn start_server_task(
         tool_catalog_fetch_ticket,
         client_elicitation_capability,
         client_mcp_extensions,
+        surface_notifications,
+        mcp_server_notification_sender,
         auth_changes,
         catalog_item_limit,
         server_capabilities,
@@ -929,6 +951,22 @@ async fn start_server_task(
         elicitation_requests.make_sender(server_name.clone(), tx_event, &client_mcp_extensions);
     let mut params =
         mcp_initialize_request_params(client_elicitation_capability, client_mcp_extensions);
+    let send_notification = surface_notifications.then(|| {
+        let sender = Arc::clone(&mcp_server_notification_sender);
+        let server_name = server_name.clone();
+        Box::new(move |notification| {
+            let sender = Arc::clone(&sender);
+            let server_name = server_name.clone();
+            async move {
+                sender(McpServerNotification {
+                    server_name,
+                    notification,
+                })
+                .await
+            }
+            .boxed()
+        }) as codex_rmcp_client::SendNotification
+    });
     if auth_changes.is_some() {
         params
             .capabilities
@@ -943,7 +981,7 @@ async fn start_server_task(
     let requested_capabilities = params.capabilities.clone();
     let started_at = Instant::now();
     let initialize_result = client
-        .initialize(params, startup_timeout, send_elicitation)
+        .initialize(params, startup_timeout, send_elicitation, send_notification)
         .await;
     record_protocol_discovery_metrics(
         client.protocol_mode(),
@@ -1149,6 +1187,8 @@ struct StartServerTaskParams {
     tool_catalog_fetch_ticket: Option<McpToolCatalogFetchTicket>,
     client_elicitation_capability: ElicitationCapability,
     client_mcp_extensions: ClientMcpExtensions,
+    surface_notifications: bool,
+    mcp_server_notification_sender: SendMcpServerNotification,
     auth_changes: Option<watch::Receiver<AuthChangeState>>,
     catalog_item_limit: usize,
 }

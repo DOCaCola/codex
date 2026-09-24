@@ -12,7 +12,10 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
 use serde::Serialize;
+use serde::ser::Error as _;
 use serde_json::Value;
+
+use super::GUARDIAN_MAX_ACTION_BYTES;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum GuardianApprovalRequest {
@@ -560,5 +563,14 @@ pub(crate) fn format_guardian_action_pretty(
     let mut value =
         codex_guardian_context::action_for_review(guardian_approval_request_to_json(action)?);
     value.sort_all_objects();
-    serde_json::to_string_pretty(&value)
+    enforce_guardian_action_byte_limit(serde_json::to_string_pretty(&value)?)
+}
+
+fn enforce_guardian_action_byte_limit(text: String) -> serde_json::Result<String> {
+    if text.len() > GUARDIAN_MAX_ACTION_BYTES {
+        return Err(serde_json::Error::custom(format!(
+            "Guardian action exceeds the {GUARDIAN_MAX_ACTION_BYTES}-byte review limit"
+        )));
+    }
+    Ok(text)
 }

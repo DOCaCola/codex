@@ -20,6 +20,7 @@ fn fake_shell_name() -> String {
     let shell = crate::shell::Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
+        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
     shell.name().to_string()
 }
@@ -86,6 +87,7 @@ fn serialize_workspace_write_environment_context() {
         r#"<environment_context>
   <cwd>{cwd}</cwd>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#,
@@ -145,6 +147,7 @@ fn serialize_environment_context_with_network() {
         r#"<environment_context>
   <cwd>{}</cwd>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
   <network enabled="true"><allowed>api.example.com,*.openai.com</allowed><denied>blocked.example.com</denied></network>
@@ -242,6 +245,7 @@ fn serialize_read_only_environment_context() {
     );
 
     let expected = r#"<environment_context>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
 </environment_context>"#;
@@ -267,6 +271,7 @@ fn serialize_environment_context_with_subagents() {
         r#"<environment_context>
   <cwd>{}</cwd>
   <shell>bash</shell>
+  <shell_switching>shell_command may switch the active session shell by setting its shell parameter</shell_switching>
   <current_date>2026-02-26</current_date>
   <timezone>America/Los_Angeles</timezone>
   <subagents>

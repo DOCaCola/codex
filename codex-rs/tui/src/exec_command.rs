@@ -9,11 +9,45 @@ pub(crate) fn escape_command(command: &[String]) -> String {
     try_join(command.iter().map(String::as_str)).unwrap_or_else(|_| command.join(" "))
 }
 
+fn normalize_command_display(command_display: String) -> String {
+    let stripped = strip_msys_export_prefix_for_display(&command_display);
+    if stripped.is_empty() || stripped == command_display {
+        command_display
+    } else {
+        stripped.to_string()
+    }
+}
+
+fn strip_msys_export_prefix_for_display(command_display: &str) -> &str {
+    let trimmed = command_display.trim_start();
+    let Some(rest) = trimmed.strip_prefix("export ") else {
+        return command_display;
+    };
+    let Some((exports, remainder)) = rest.split_once(';') else {
+        return command_display;
+    };
+
+    let mut saw_supported_export = false;
+    for assignment in exports.split_whitespace() {
+        if assignment.starts_with("MSYSTEM=") || assignment.starts_with("CHERE_INVOKING=") {
+            saw_supported_export = true;
+        } else {
+            return command_display;
+        }
+    }
+
+    if !saw_supported_export {
+        return command_display;
+    }
+
+    remainder.trim_start()
+}
+
 pub(crate) fn strip_bash_lc_and_escape(command: &[String]) -> String {
     if let Some((_, script)) = extract_shell_command(command) {
-        return script.to_string();
+        return normalize_command_display(script.to_string());
     }
-    escape_command(command)
+    normalize_command_display(escape_command(command))
 }
 
 pub(crate) fn split_command_string(command: &str) -> Vec<String> {
@@ -82,6 +116,28 @@ mod tests {
         let args = vec!["/bin/bash".into(), "-lc".into(), "echo hello".into()];
         let cmdline = strip_bash_lc_and_escape(&args);
         assert_eq!(cmdline, "echo hello");
+    }
+
+    #[test]
+    fn test_strip_bash_lc_and_escape_hides_msys_export_prefix() {
+        let args = vec![
+            "bash".into(),
+            "-lc".into(),
+            "export MSYSTEM=UCRT64 CHERE_INVOKING=1; sed -n '1,220p' /c/tmp/log.txt".into(),
+        ];
+        let cmdline = strip_bash_lc_and_escape(&args);
+        assert_eq!(cmdline, "sed -n '1,220p' /c/tmp/log.txt");
+    }
+
+    #[test]
+    fn test_strip_bash_lc_and_escape_keeps_other_exports() {
+        let args = vec![
+            "bash".into(),
+            "-lc".into(),
+            "export FOO=bar; sed -n '1,220p' /c/tmp/log.txt".into(),
+        ];
+        let cmdline = strip_bash_lc_and_escape(&args);
+        assert_eq!(cmdline, "export FOO=bar; sed -n '1,220p' /c/tmp/log.txt");
     }
 
     #[test]

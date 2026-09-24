@@ -122,7 +122,7 @@ impl InitializeRequestProcessor {
             client_mcp_extensions = ClientMcpExtensions::new(extensions);
         }
         let originator = name.clone();
-        let user_agent_suffix = format!("{name}; {version}");
+        let user_agent_suffix = format!("{name}; {}", user_agent_suffix_version(&version));
         let mutates_global_identity = !NON_ORIGINATING_CLIENT_NAMES.contains(&name.as_str());
         let codex_home = self.config.codex_home.clone();
         if session
@@ -240,5 +240,22 @@ impl InitializeRequestProcessor {
     ) {
         self.analytics_events_client
             .track_request(connection_id.0, request_id, request);
+    }
+}
+
+fn user_agent_suffix_version(version: &str) -> &str {
+    version
+        .split_once('-')
+        .map_or(version, |(stock_version, _suffix)| stock_version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::user_agent_suffix_version;
+
+    #[test]
+    fn user_agent_suffix_version_strips_custom_build_suffix() {
+        assert_eq!(user_agent_suffix_version("0.142.5-doca"), "0.142.5");
+        assert_eq!(user_agent_suffix_version("0.142.5"), "0.142.5");
     }
 }

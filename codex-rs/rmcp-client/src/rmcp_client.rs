@@ -189,6 +189,7 @@ struct InitializeContext {
     timeout: Option<Duration>,
     client_info: InitializeRequestParams,
     send_elicitation: Arc<SendElicitation>,
+    send_notification: Option<Arc<SendNotification>>,
 }
 
 #[derive(Clone)]
@@ -374,6 +375,20 @@ impl From<ElicitationResponse> for ElicitResult {
 pub type SendElicitation = Box<
     dyn Fn(RequestId, Elicitation) -> BoxFuture<'static, Result<ElicitationResponse>> + Send + Sync,
 >;
+
+/// Standard inbound MCP notification selected for delivery to a Codex session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurfaceNotification {
+    pub method: String,
+    pub source: Option<String>,
+    pub message_id: Option<String>,
+    pub payload: serde_json::Value,
+}
+
+/// Interface for forwarding selected MCP notifications to the owning session.
+pub type SendNotification =
+    Box<dyn Fn(SurfaceNotification) -> BoxFuture<'static, Result<()>> + Send + Sync>;
 
 pub struct ToolWithConnectorId {
     pub tool: Tool,
@@ -632,11 +647,13 @@ impl RmcpClient {
         params: InitializeRequestParams,
         timeout: Option<Duration>,
         send_elicitation: SendElicitation,
+        send_notification: Option<SendNotification>,
     ) -> Result<ServerPeerInfo> {
         let context = InitializeContext {
             timeout,
             client_info: params,
             send_elicitation: Arc::new(send_elicitation),
+            send_notification: send_notification.map(Arc::new),
         };
         let pending_transport = {
             let mut guard = self.state.lock().await;
@@ -1266,9 +1283,14 @@ impl RmcpClient {
         // Request IDs and remembered cancellations belong to this connection, including
         // when a failed initialization or expired HTTP session creates a new transport.
         let send_elicitation = Arc::clone(&initialize_context.send_elicitation);
+        let send_notification = initialize_context.send_notification.as_ref().map(|sender| {
+            let sender = Arc::clone(sender);
+            Box::new(move |notification| sender(notification)) as SendNotification
+        });
         let client_service = ElicitationClientService::new(
             initialize_context.client_info.clone(),
             Box::new(move |id, request| send_elicitation(id, request)),
+            send_notification,
             self.elicitation_pause_state.clone(),
         );
         let _initialize_deadline = match &self.transport_recipe {

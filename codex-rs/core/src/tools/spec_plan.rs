@@ -9,11 +9,16 @@ use crate::tools::effective_tool_mode;
 use crate::tools::handlers::ApplyPatchHandler;
 use crate::tools::handlers::CodeModeExecuteHandler;
 use crate::tools::handlers::CodeModeWaitHandler;
+use crate::tools::handlers::CommandStackHandler;
+use crate::tools::handlers::CommandStackPatchTool;
+
 use crate::tools::handlers::CurrentTimeHandler;
 use crate::tools::handlers::DynamicToolHandler;
 use crate::tools::handlers::ExecCommandHandler;
 use crate::tools::handlers::ExecCommandHandlerOptions;
 use crate::tools::handlers::GetContextRemainingHandler;
+use crate::tools::handlers::HpatchHandler;
+
 use crate::tools::handlers::ListAvailablePluginsToInstallHandler;
 use crate::tools::handlers::ListMcpResourceTemplatesHandler;
 use crate::tools::handlers::ListMcpResourcesHandler;
@@ -701,12 +706,19 @@ fn image_generation_available(turn_context: &TurnContext, model_info: &ModelInfo
         return false;
     }
 
-    if turn_context
-        .auth_manager
-        .as_deref()
-        .and_then(AuthManager::auth_cached)
-        .and_then(|auth| auth.account_plan_type())
-        == Some(PlanType::Free)
+    let provider = turn_context.provider.info();
+    // Provider credentials take precedence over the local ChatGPT login at request time.
+    // Its plan cannot establish entitlement for a gateway's upstream account. Let the
+    // server accept or reject actual image requests without sending eligibility probes.
+    if provider.requires_openai_auth
+        && provider.env_key.is_none()
+        && provider.experimental_bearer_token.is_none()
+        && turn_context
+            .auth_manager
+            .as_deref()
+            .and_then(AuthManager::auth_cached)
+            .and_then(|auth| auth.account_plan_type())
+            == Some(PlanType::Free)
     {
         return false;
     }
@@ -720,7 +732,6 @@ fn image_generation_available(turn_context: &TurnContext, model_info: &ModelInfo
         return false;
     }
 
-    let provider = turn_context.provider.info();
     provider.uses_openai_actor_authorization()
         || (provider.requires_openai_auth
             && turn_context
@@ -985,6 +996,8 @@ fn add_core_tool_sources(context: &CoreToolPlanContext<'_>, registry: &mut ToolR
     add_shell_tools(context, registry);
     add_mcp_resource_tools(context, registry);
     add_core_utility_tools(context, registry);
+    add_command_stack_tool(context, registry);
+
     add_collaboration_tools(context, registry);
 }
 
@@ -1007,6 +1020,18 @@ fn any_environment_allows_login_shell(environments: &TurnEnvironmentSnapshot) ->
     environments
         .turn_environments()
         .any(|environment| environment.config().allow_login_shell)
+}
+
+fn command_stack_available_for_plan(context: &CoreToolPlanContext<'_>) -> bool {
+    let features = context.turn_context.config.features.get();
+    tool_environment_mode(context.environments).has_environment()
+        && features.enabled(Feature::ShellTool)
+        && features.enabled(Feature::UnifiedExec)
+        && !matches!(context.model_info.shell_type, ConfigShellToolType::Disabled)
+        && crate::tools::command_stack_available(
+            features.enabled(Feature::CommandStack),
+            context.model_info,
+        )
 }
 
 fn should_include_windows_shell_guidance(environments: &TurnEnvironmentSnapshot) -> bool {
@@ -1047,6 +1072,7 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
     let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals)
         && context.tool_policy.expose_additional_permissions;
     let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
+    let command_stack_available = command_stack_available_for_plan(context);
     let options = ExecCommandHandlerOptions {
         allow_login_shell,
         allow_tty: features.enabled(Feature::UnifiedExecTty),
@@ -1056,11 +1082,27 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
             turn_context,
             context.environments,
         ),
+        persist_shell_selection: command_stack_available,
         include_windows_shell_guidance: should_include_windows_shell_guidance(context.environments),
     };
     if features.enabled(Feature::UnifiedExec) {
-        registry.add(ExecCommandHandler::new(options));
-        registry.add(WriteStdinHandler);
+        let background_delivery = features.enabled(Feature::BackgroundCommandDelivery);
+        let exec_handler =
+            ExecCommandHandler::new(options).with_background_delivery(background_delivery);
+        if command_stack_available {
+            registry.add_with_exposure(exec_handler, ToolExposure::Hidden);
+            registry.add_with_exposure(
+                WriteStdinHandler {
+                    background_delivery,
+                },
+                ToolExposure::Hidden,
+            );
+        } else {
+            registry.add(exec_handler);
+            registry.add(WriteStdinHandler {
+                background_delivery,
+            });
+        }
     } else {
         // Managed requirements are the only configuration path that can keep
         // unified exec disabled. Preserve command execution without exposing a
@@ -1208,9 +1250,37 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
         ));
     }
 
-    if environment_mode.has_environment() && context.model_info.apply_patch_tool_type.is_some() {
+    let hpatch_enabled = features.enabled(Feature::Hpatch);
+    if command_stack_available_for_plan(context) {
         let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
-        registry.add(ApplyPatchHandler::new(include_environment_id));
+        if hpatch_enabled {
+            registry.add_with_exposure(
+                HpatchHandler::new(include_environment_id),
+                ToolExposure::Hidden,
+            );
+            registry.add_with_exposure(
+                ApplyPatchHandler::new(include_environment_id),
+                ToolExposure::Hidden,
+            );
+        } else {
+            registry.add_with_exposure(
+                ApplyPatchHandler::new(include_environment_id),
+                ToolExposure::Hidden,
+            );
+        }
+    } else if environment_mode.has_environment()
+        && (hpatch_enabled || context.model_info.apply_patch_tool_type.is_some())
+    {
+        let include_environment_id = matches!(environment_mode, ToolEnvironmentMode::Multiple);
+        if hpatch_enabled {
+            registry.add(HpatchHandler::new(include_environment_id));
+            registry.add_with_exposure(
+                ApplyPatchHandler::new(include_environment_id),
+                ToolExposure::Hidden,
+            );
+        } else {
+            registry.add(ApplyPatchHandler::new(include_environment_id));
+        }
     }
 
     if context
@@ -1235,6 +1305,69 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, registry: &mut Tool
             include_environment_id,
         }));
     }
+}
+
+fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistry) {
+    let turn_context = context.turn_context;
+    if !command_stack_available_for_plan(context) {
+        return;
+    }
+
+    let patch_tool = if turn_context.config.features.enabled(Feature::Hpatch) {
+        CommandStackPatchTool::Hpatch
+    } else {
+        CommandStackPatchTool::ApplyPatch
+    };
+    let child_names = [
+        ToolName::plain("exec_command"),
+        ToolName::plain("write_stdin"),
+        ToolName::plain(patch_tool.name()),
+    ];
+    let children = child_names
+        .iter()
+        .filter_map(|name| {
+            registry
+                .entries()
+                .find(|tool| tool.runtime.tool_name() == *name)
+                .map(|tool| Arc::clone(&tool.runtime))
+        })
+        .collect::<Vec<_>>();
+    if children.len() != child_names.len() {
+        return;
+    }
+
+    let ToolSpec::Function(exec_spec) = children[0].spec() else {
+        return;
+    };
+    let ToolSpec::Function(write_stdin_spec) = children[1].spec() else {
+        return;
+    };
+    let mut child_registry = ToolRegistry::default();
+    for child in &children {
+        child_registry.register_trusted(Arc::clone(child));
+    }
+    let child_router = Arc::new(ToolRouter::from_parts(
+        child_registry,
+        Vec::new(),
+        ToolMode::Direct,
+        BTreeMap::new(),
+        /*tool_namespaces_info*/ None,
+        &[],
+    ));
+    let include_environment_id = matches!(
+        tool_environment_mode(context.environments),
+        ToolEnvironmentMode::Multiple
+    );
+    registry.add_with_exposure(
+        CommandStackHandler::new(
+            child_router,
+            exec_spec.parameters,
+            write_stdin_spec.parameters,
+            include_environment_id,
+            patch_tool,
+        ),
+        ToolExposure::DirectModelOnly,
+    );
 }
 
 #[instrument(level = "trace", skip_all)]

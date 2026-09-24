@@ -58,6 +58,15 @@ async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
     }
 }
 
+#[test]
+fn hpatch_apply_handler_uses_translator_root() {
+    let root = PathUri::parse("file:///workspace").expect("valid root");
+    let handler =
+        ApplyPatchHandler::for_hpatch(false, "in file.txt\ncommit".to_string(), root.clone());
+
+    assert_eq!(handler.cwd_override.as_ref(), Some(&root));
+}
+
 #[tokio::test]
 async fn file_update_mode_follows_preserve_line_endings_feature() {
     let (_, mut turn) = make_session_and_context().await;

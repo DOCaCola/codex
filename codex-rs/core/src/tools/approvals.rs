@@ -110,6 +110,9 @@ pub(crate) enum ApprovalAction {
         #[serde(skip_serializing)]
         changes: Arc<HashMap<PathBuf, FileChange>>,
         permissions_preapproved: bool,
+        #[serde(skip_serializing)]
+        permission_request_tool_name: HookToolName,
+        permission_request_command: String,
     },
     McpToolCall {
         id: String,
@@ -199,9 +202,13 @@ impl ApprovalAction {
                 codex_shell_command::parse_command::shlex_join(command),
                 /*description*/ None,
             ),
-            Self::ApplyPatch { patch, .. } => PermissionRequestPayload {
-                tool_name: HookToolName::apply_patch(),
-                tool_input: serde_json::json!({ "command": patch }),
+            Self::ApplyPatch {
+                permission_request_tool_name,
+                permission_request_command,
+                ..
+            } => PermissionRequestPayload {
+                tool_name: permission_request_tool_name.clone(),
+                tool_input: serde_json::json!({ "command": permission_request_command }),
             },
             Self::McpToolCall {
                 hook_tool_name,

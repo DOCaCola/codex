@@ -311,6 +311,35 @@ pub(crate) use helpers::set_chatgpt_auth;
 pub(crate) use helpers::set_fast_mode_test_catalog;
 pub(super) use helpers::*;
 
+#[tokio::test]
+async fn user_shell_command_hides_msys_export_prefix_in_display() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+
+    let begin = begin_exec_with_source(
+        &mut chat,
+        "user-shell-msys-export",
+        "export MSYSTEM=UCRT64 CHERE_INVOKING=1; sed -n '1,220p' /c/tmp/log.txt",
+        ExecCommandSource::UserShell,
+    );
+    end_exec(&mut chat, begin, "line1\nline2\n", "", 0);
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(
+        cells.len(),
+        1,
+        "expected a single history cell for the user command",
+    );
+    let blob = lines_to_single_string(cells.first().unwrap());
+    assert_snapshot!(
+        blob,
+        @r"
+        • You ran sed -n '1,220p' /c/tmp/log.txt
+          └ line1
+            line2
+        "
+    );
+}
+
 #[path = "tests/questions_tests.rs"]
 mod questions_tests;
 

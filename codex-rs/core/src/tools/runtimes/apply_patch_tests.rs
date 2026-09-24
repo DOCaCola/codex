@@ -89,6 +89,8 @@ async fn approval_action_preserves_patch_path_uris() {
         },
         additional_permissions: None,
         permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::apply_patch(),
+        permission_request_command: "patch".to_string(),
     };
 
     let approval_action = ApplyPatchRuntime::build_approval_action(&request, "call-1");
@@ -103,6 +105,8 @@ async fn approval_action_preserves_patch_path_uris() {
             patch: expected_patch,
             changes: Arc::new(HashMap::new()),
             permissions_preapproved: false,
+            permission_request_tool_name: HookToolName::apply_patch(),
+            permission_request_command: "patch".to_string(),
         }
     );
 }
@@ -126,6 +130,8 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
         },
         additional_permissions: None,
         permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::apply_patch(),
+        permission_request_command: expected_patch.clone(),
     };
 
     let payload =
@@ -142,6 +148,34 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
     );
 }
 
+#[tokio::test]
+async fn permission_request_payload_preserves_hpatch_input() {
+    let path = std::env::temp_dir()
+        .join("hpatch-permission-request-payload.txt")
+        .abs();
+    let path_uri = PathUri::from_abs_path(&path);
+    let script = "in hpatch-permission-request-payload.txt\ntype \"hello\"".to_string();
+    let req = ApplyPatchRequest {
+        turn_environment: test_turn_environment(codex_exec_server::LOCAL_ENVIRONMENT_ID),
+        action: ApplyPatchAction::new_add_for_test(&path_uri, "hello".to_string()),
+        file_paths: vec![path_uri],
+        changes: Arc::new(HashMap::new()),
+        exec_approval_requirement: ExecApprovalRequirement::NeedsApproval {
+            reason: None,
+            proposed_execpolicy_amendment: None,
+        },
+        additional_permissions: None,
+        permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::hpatch(),
+        permission_request_command: script.clone(),
+    };
+
+    let payload =
+        ApplyPatchRuntime::build_approval_action(&req, "call-1").permission_request_payload();
+
+    assert_eq!(payload.tool_name.name(), "hpatch");
+    assert_eq!(payload.tool_input, serde_json::json!({ "command": script }));
+}
 #[tokio::test]
 async fn approval_keys_include_environment_id() {
     let runtime = ApplyPatchRuntime::new();
@@ -160,6 +194,8 @@ async fn approval_keys_include_environment_id() {
         },
         additional_permissions: None,
         permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::apply_patch(),
+        permission_request_command: "patch".to_string(),
     };
 
     let keys = runtime
@@ -198,6 +234,8 @@ async fn sandbox_cwd_uses_patch_action_cwd() {
         },
         additional_permissions: None,
         permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::apply_patch(),
+        permission_request_command: "patch".to_string(),
     };
 
     assert_eq!(runtime.sandbox_cwd(&req), Some(&req.action.cwd));
@@ -229,6 +267,8 @@ async fn file_system_sandbox_context_preserves_executor_workspace_permissions() 
         },
         additional_permissions: Some(additional_permissions.clone()),
         permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::apply_patch(),
+        permission_request_command: "patch".to_string(),
     };
     let exec_server_permissions = PermissionProfile::workspace_write();
     let file_system_policy = exec_server_permissions.file_system_sandbox_policy();
@@ -300,6 +340,8 @@ async fn file_system_sandbox_context_respects_sandbox_request() {
         },
         additional_permissions: None,
         permissions_preapproved: false,
+        permission_request_tool_name: HookToolName::apply_patch(),
+        permission_request_command: "patch".to_string(),
     };
     let permissions = PermissionProfile::Disabled;
     let manager = SandboxManager::new();

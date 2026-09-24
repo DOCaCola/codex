@@ -3,6 +3,8 @@ use clap::CommandFactory;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
+use codex_api::ModelsClient;
+use codex_api::ReqwestTransport;
 use codex_app_server_daemon::BootstrapOptions as AppServerBootstrapOptions;
 use codex_app_server_daemon::LifecycleCommand as AppServerLifecycleCommand;
 use codex_app_server_daemon::RemoteControlMode as AppServerRemoteControlMode;
@@ -109,7 +111,9 @@ use codex_login::is_workload_identity_selected;
 use codex_login::read_codex_access_token_from_env;
 use codex_memories_write::clear_memory_roots_contents;
 use codex_models_manager::bundled_models_response;
+use codex_models_manager::client_version_to_whole;
 use codex_models_manager::manager::RefreshStrategy;
+use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
@@ -311,8 +315,20 @@ struct DebugPromptInputCommand {
 #[derive(Debug, Parser)]
 struct DebugModelsCommand {
     /// Skip refresh and dump only the bundled catalog shipped with this binary.
-    #[arg(long = "bundled", default_value_t = false)]
+    #[arg(
+        long = "bundled",
+        default_value_t = false,
+        conflicts_with = "remote_json"
+    )]
     bundled: bool,
+
+    /// Render the active catalog as JSON instead of the default human-readable table.
+    #[arg(long = "json", default_value_t = false, conflicts_with = "remote_json")]
+    json: bool,
+
+    /// Fetch `/models` directly from the configured API server and print JSON.
+    #[arg(long = "remote-json", default_value_t = false)]
+    remote_json: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -2510,30 +2526,141 @@ async fn run_debug_models_command(
     cmd: DebugModelsCommand,
     root_config_overrides: CliConfigOverrides,
 ) -> anyhow::Result<()> {
-    let catalog = if cmd.bundled {
-        bundled_models_response()?
-    } else {
-        let cli_overrides = root_config_overrides
-            .parse_overrides()
-            .map_err(anyhow::Error::msg)?;
-        let config = ConfigBuilder::default()
-            .cli_overrides(cli_overrides)
-            .build()
-            .await?;
-        let auth_manager =
-            AuthManager::shared_from_config(&config, /*enable_codex_api_key_env*/ true).await?;
-        let models_manager = build_models_manager(&config, auth_manager);
-        models_manager
-            .raw_model_catalog(
-                RefreshStrategy::OnlineIfUncached,
-                config.http_client_factory(),
-            )
-            .await
-    };
+    let cli_overrides = root_config_overrides
+        .parse_overrides()
+        .map_err(anyhow::Error::msg)?;
+    let config = ConfigBuilder::default()
+        .cli_overrides(cli_overrides)
+        .build()
+        .await?;
 
-    serde_json::to_writer(std::io::stdout(), &catalog)?;
-    println!();
+    if cmd.bundled {
+        let catalog = bundled_models_response()?;
+        return write_debug_models_output(
+            "bundled (codex-models-manager/models.json)",
+            &catalog,
+            cmd.json,
+        );
+    }
+
+    if cmd.remote_json {
+        let catalog = fetch_remote_models_catalog(&config).await?;
+        serde_json::to_writer(std::io::stdout(), &catalog)?;
+        println!();
+        return Ok(());
+    }
+
+    let auth_manager =
+        AuthManager::shared_from_config(&config, /*enable_codex_api_key_env*/ true).await?;
+    let models_manager = build_models_manager(&config, auth_manager);
+    let catalog = models_manager
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            config.http_client_factory(),
+        )
+        .await;
+    let source = format!(
+        "active (bundled + cache/remote: {})",
+        models_endpoint_url(&config).await?
+    );
+
+    write_debug_models_output(&source, &catalog, cmd.json)
+}
+
+async fn fetch_remote_models_catalog(config: &Config) -> anyhow::Result<ModelsResponse> {
+    let (api_provider, api_auth) = models_api_provider_and_auth(config).await?;
+    let request_url =
+        ModelsClient::<ReqwestTransport>::request_url(&api_provider, &client_version_to_whole());
+    let client = ModelsClient::new(
+        ReqwestTransport::from_http_client(codex_login::default_client::create_client()),
+        api_provider,
+        api_auth,
+    );
+    let (models, _) = client
+        .list_models(
+            request_url,
+            Default::default(),
+            /*response_body_limit_bytes*/ None,
+        )
+        .await?;
+
+    Ok(ModelsResponse { models })
+}
+
+async fn models_endpoint_url(config: &Config) -> anyhow::Result<String> {
+    let (api_provider, _) = models_api_provider_and_auth(config).await?;
+    Ok(ModelsClient::<ReqwestTransport>::request_url(
+        &api_provider,
+        &client_version_to_whole(),
+    ))
+}
+
+async fn models_api_provider_and_auth(
+    config: &Config,
+) -> anyhow::Result<(codex_api::Provider, codex_api::SharedAuthProvider)> {
+    let auth_manager =
+        AuthManager::shared_from_config(config, /*enable_codex_api_key_env*/ true).await?;
+    let provider_info = config.model_provider.clone();
+    let model_provider =
+        codex_model_provider::create_model_provider(provider_info, Some(auth_manager));
+    let api_provider = model_provider.api_provider().await?;
+    let api_auth = model_provider.api_auth().await?;
+
+    Ok((api_provider, api_auth))
+}
+
+fn write_debug_models_output(
+    source: &str,
+    catalog: &ModelsResponse,
+    json: bool,
+) -> anyhow::Result<()> {
+    if json {
+        serde_json::to_writer(std::io::stdout(), catalog)?;
+        println!();
+        return Ok(());
+    }
+
+    print_human_model_catalog(source, catalog);
     Ok(())
+}
+
+fn print_human_model_catalog(source: &str, catalog: &ModelsResponse) {
+    let slug_width = catalog
+        .models
+        .iter()
+        .map(|model| model.slug.len())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    let display_width = catalog
+        .models
+        .iter()
+        .map(|model| model.display_name.len())
+        .max()
+        .unwrap_or(7)
+        .max(7);
+
+    println!("Source: {source}");
+    println!("Models: {}", catalog.models.len());
+    if catalog.models.is_empty() {
+        return;
+    }
+
+    println!(
+        "{:<slug_width$}  {:<display_width$}  {:<10}  {:<3}  {:<13}  {:>4}",
+        "slug", "display", "visibility", "api", "shell", "prio",
+    );
+    for model in &catalog.models {
+        println!(
+            "{:<slug_width$}  {:<display_width$}  {:<10}  {:<3}  {:<13}  {:>4}",
+            model.slug,
+            model.display_name,
+            model.visibility,
+            if model.supported_in_api { "yes" } else { "no" },
+            model.shell_type,
+            model.priority,
+        );
+    }
 }
 
 async fn run_debug_clear_memories_command(

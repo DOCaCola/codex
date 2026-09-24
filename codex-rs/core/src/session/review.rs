@@ -37,7 +37,7 @@ pub(super) async fn spawn_review_thread(
     let review_web_search_mode = WebSearchMode::Disabled;
     let unified_exec_shell_mode = UnifiedExecShellMode::for_session(
         review_features.get(),
-        crate::tools::tool_user_shell_type(sess.services.user_shell.as_ref()),
+        crate::tools::tool_user_shell_type(sess.user_shell().as_ref()),
         sess.services.shell_zsh_path.as_ref(),
         sess.services.main_execve_wrapper_exe.as_ref(),
     );

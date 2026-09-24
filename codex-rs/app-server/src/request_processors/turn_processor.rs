@@ -19,6 +19,22 @@ use codex_skills::system_cache_root_dir;
 use crate::image_url::REMOTE_IMAGE_URL_ERROR;
 use crate::image_url::is_remote_image_url;
 
+#[cfg(test)]
+#[path = "turn_processor_tests.rs"]
+mod tests;
+
+fn same_environment_attachments(
+    current: &[TurnEnvironmentSelection],
+    requested: &[TurnEnvironmentSelection],
+) -> bool {
+    current.len() == requested.len()
+        && current.iter().zip(requested).all(|(current, requested)| {
+            current.environment_id == requested.environment_id
+                && current.cwd == requested.cwd
+                && current.workspace_roots == requested.workspace_roots
+        })
+}
+
 pub(super) fn validate_user_input_image_urls(
     input: &[V2UserInput],
 ) -> Result<(), JSONRPCErrorError> {
@@ -618,14 +634,14 @@ impl TurnRequestProcessor {
             }
         };
         let cwd = resolve_request_cwd(params.cwd)?;
-        let environment_override = self
-            .build_environment_override(
-                thread.as_ref(),
-                cwd,
-                runtime_workspace_roots,
-                environment_selections,
-            )
-            .await;
+        let environment_override = Self::build_environment_override(
+            self.thread_manager.as_ref(),
+            thread.as_ref(),
+            cwd,
+            runtime_workspace_roots,
+            environment_selections,
+        )
+        .await;
         let thread_settings = self
             .build_thread_settings_overrides(
                 thread.as_ref(),
@@ -715,7 +731,7 @@ impl TurnRequestProcessor {
     }
 
     async fn build_environment_override(
-        &self,
+        thread_manager: &ThreadManager,
         thread: &CodexThread,
         cwd: Option<AbsolutePathBuf>,
         workspace_roots: Option<Vec<AbsolutePathBuf>>,
@@ -728,6 +744,8 @@ impl TurnRequestProcessor {
         // Explicit environment selections own their roots and pass through unchanged. Top-level
         // `runtimeWorkspaceRoots` is only a compatibility input for default environments.
         if let Some(environment_selections) = environment_selections {
+            let snapshot = thread.config_snapshot().await;
+            let current_cwd = snapshot.cwd().clone();
             let legacy_fallback_cwd = match cwd {
                 Some(cwd) => cwd,
                 None => match environment_selections
@@ -736,9 +754,17 @@ impl TurnRequestProcessor {
                     .and_then(|selection| selection.cwd.to_abs_path().ok())
                 {
                     Some(cwd) => cwd,
-                    None => thread.config_snapshot().await.cwd().clone(),
+                    None => current_cwd,
                 },
             };
+            if legacy_fallback_cwd == *snapshot.cwd()
+                && same_environment_attachments(
+                    snapshot.environment_selections(),
+                    &environment_selections,
+                )
+            {
+                return ThreadEnvironmentOverride::default();
+            }
             return ThreadEnvironmentOverride {
                 environments: Some(TurnEnvironmentSelections::new(
                     legacy_fallback_cwd,
@@ -760,14 +786,17 @@ impl TurnRequestProcessor {
                 legacy_fallback_cwd.clone(),
             ),
         };
-        let environment_selections = self
-            .thread_manager
-            .default_environment_selections(&legacy_fallback_cwd, &workspace_roots);
+        let environment_selections =
+            thread_manager.default_environment_selections(&legacy_fallback_cwd, &workspace_roots);
+        let current_environments = thread.environment_selections().await;
+        // Attachment configuration belongs to its owner. Repeating the current workspace
+        // must not replace that configuration with a newly inferred FromThread selection.
+        // Persist task roots independently, even when the attachment does not change.
+        let environments = (legacy_fallback_cwd != current_cwd
+            || !same_environment_attachments(&current_environments, &environment_selections))
+        .then(|| TurnEnvironmentSelections::new(legacy_fallback_cwd, environment_selections));
         ThreadEnvironmentOverride {
-            environments: Some(TurnEnvironmentSelections::new(
-                legacy_fallback_cwd,
-                environment_selections,
-            )),
+            environments,
             runtime_workspace_roots: Some(workspace_roots),
         }
     }
@@ -816,6 +845,7 @@ impl TurnRequestProcessor {
         };
 
         let has_any_overrides = has_environment_override
+            || runtime_workspace_roots.is_some()
             || disabled_plugin_ids.is_some()
             || approval_policy.is_some()
             || approvals_reviewer.is_some()
@@ -925,14 +955,14 @@ impl TurnRequestProcessor {
         self.ensure_direct_input_allowed(request_id, thread.as_ref())
             .await?;
         let cwd = resolve_request_cwd(params.cwd)?;
-        let environment_override = self
-            .build_environment_override(
-                thread.as_ref(),
-                cwd,
-                /*workspace_roots*/ None,
-                /*environment_selections*/ None,
-            )
-            .await;
+        let environment_override = Self::build_environment_override(
+            self.thread_manager.as_ref(),
+            thread.as_ref(),
+            cwd,
+            /*workspace_roots*/ None,
+            /*environment_selections*/ None,
+        )
+        .await;
         let thread_settings = self
             .build_thread_settings_overrides(
                 thread.as_ref(),

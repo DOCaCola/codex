@@ -26,6 +26,10 @@ pub(super) fn reserve_response() -> GetAccountRateLimitsResponse {
 }
 
 pub(super) fn configure_reserve_catalog(app: &mut App) {
+    app.config
+        .features
+        .enable(Feature::LunaReserveFallback)
+        .unwrap();
     let mut models = app.model_catalog.try_list_models().unwrap();
     let mut reserve = models
         .iter()
@@ -55,6 +59,48 @@ pub(super) fn configure_reserve_catalog(app: &mut App) {
     app.chat_widget
         .handle_thread_session(app.primary_session_configured.clone().unwrap());
     app.chat_widget.set_model("gpt-5.5");
+}
+
+#[tokio::test]
+async fn luna_reserve_disabled_keeps_queued_turn_on_selected_model() -> Result<()> {
+    let (mut app, mut events, _ops) = make_test_app_with_channels().await;
+    let (mut server, requests, proxy) =
+        backend_banner_fallback_tests::start_fallback_thread(&mut app).await?;
+    configure_reserve_catalog(&mut app);
+    app.chat_widget
+        .set_feature_enabled(Feature::LunaReserveFallback, /*enabled*/ false);
+    app.chat_widget
+        .restore_user_message_to_composer(UserMessage::from("continue"));
+    app.chat_widget
+        .handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let pending = std::iter::from_fn(|| events.try_recv().ok())
+        .find(|event| matches!(event, AppEvent::CodexOp(AppCommand::UserTurn { .. })))
+        .expect("queued turn before the usage response");
+    requests.lock().unwrap().clear();
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let generation = app.rate_limit_hard_stop_generation;
+    app.handle_event(
+        &mut tui,
+        &mut server,
+        AppEvent::RateLimitsLoaded {
+            request_id: 1,
+            origin: RateLimitRefreshOrigin::Periodic,
+            hard_stop_generation: generation,
+            result: Ok(reserve_response()),
+        },
+    )
+    .await?;
+    app.handle_event(&mut tui, &mut server, pending).await?;
+    let sent = requests.lock().unwrap().clone();
+    let methods: Vec<_> = sent.iter().map(|request| request.method.as_str()).collect();
+    assert_eq!(methods, ["turn/start"]);
+    let turn: codex_app_server_protocol::TurnStartParams =
+        serde_json::from_value(sent[0].params.clone().unwrap())?;
+    assert_eq!(turn.model.as_deref(), Some("gpt-5.4"));
+    assert_eq!(app.chat_widget.current_model(), "gpt-5.4");
+    server.shutdown().await?;
+    proxy.await??;
+    Ok(())
 }
 
 #[tokio::test]

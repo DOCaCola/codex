@@ -3871,6 +3871,130 @@ mod tests {
     }
 
     #[test]
+    fn replays_parallel_command_stack_children_as_distinct_command_items() {
+        let cwd: codex_utils_path_uri::PathUri = test_path_buf("/tmp").abs().into();
+        let events = vec![
+            EventMsg::TurnStarted(TurnStartedEvent {
+                turn_id: "turn-stack".into(),
+                trace_id: None,
+                started_at: None,
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            }),
+            EventMsg::UserMessage(UserMessageEvent {
+                client_id: None,
+                message: "run both".into(),
+                images: None,
+                text_elements: Vec::new(),
+                local_images: Vec::new(),
+                ..Default::default()
+            }),
+            EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+                call_id: "call-command-stack:1:0".into(),
+                process_id: Some("pid-0".into()),
+                turn_id: "turn-stack".into(),
+                started_at_ms: 10,
+                command: vec!["echo".into(), "zero".into()],
+                cwd: cwd.clone(),
+                parsed_cmd: Vec::new(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+            }),
+            EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+                call_id: "call-command-stack:1:1".into(),
+                process_id: Some("pid-1".into()),
+                turn_id: "turn-stack".into(),
+                started_at_ms: 11,
+                command: vec!["echo".into(), "one".into()],
+                cwd: cwd.clone(),
+                parsed_cmd: Vec::new(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+            }),
+            EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+                call_id: "call-command-stack:1:1".into(),
+                process_id: Some("pid-1".into()),
+                turn_id: "turn-stack".into(),
+                completed_at_ms: 20,
+                command: vec!["echo".into(), "one".into()],
+                cwd: cwd.clone(),
+                parsed_cmd: Vec::new(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+                stdout: "one\n".into(),
+                stderr: String::new(),
+                aggregated_output: "one\n".into(),
+                exit_code: 0,
+                duration: Duration::from_millis(5),
+                formatted_output: "one\n".into(),
+                status: CoreExecCommandStatus::Completed,
+            }),
+            EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+                call_id: "call-command-stack:1:0".into(),
+                process_id: Some("pid-0".into()),
+                turn_id: "turn-stack".into(),
+                completed_at_ms: 21,
+                command: vec!["echo".into(), "zero".into()],
+                cwd,
+                parsed_cmd: Vec::new(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+                stdout: "zero\n".into(),
+                stderr: String::new(),
+                aggregated_output: "zero\n".into(),
+                exit_code: 0,
+                duration: Duration::from_millis(6),
+                formatted_output: "zero\n".into(),
+                status: CoreExecCommandStatus::Completed,
+            }),
+            EventMsg::TurnComplete(TurnCompleteEvent {
+                turn_id: "turn-stack".into(),
+                last_agent_message: None,
+                completed_at: None,
+                duration_ms: None,
+                time_to_first_token_ms: None,
+            }),
+        ];
+
+        let items = events
+            .into_iter()
+            .map(RolloutItem::EventMsg)
+            .collect::<Vec<_>>();
+        let turns = build_turns_from_rollout_items(&items);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].items.len(), 3);
+
+        let command_items = turns[0]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                ThreadItem::CommandExecution {
+                    id,
+                    status,
+                    aggregated_output,
+                    ..
+                } => Some((id.as_str(), status, aggregated_output.as_deref())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            command_items,
+            vec![
+                (
+                    "call-command-stack:1:0",
+                    &CommandExecutionStatus::Completed,
+                    Some("zero\n"),
+                ),
+                (
+                    "call-command-stack:1:1",
+                    &CommandExecutionStatus::Completed,
+                    Some("one\n"),
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn drops_late_turn_scoped_item_for_unknown_turn_id() {
         let events = vec![
             EventMsg::TurnStarted(TurnStartedEvent {

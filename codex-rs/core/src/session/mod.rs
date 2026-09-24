@@ -237,6 +237,7 @@ mod reasoning_effort;
 pub(crate) use reasoning_effort::RequestEffortUsage;
 mod input_queue;
 mod mcp;
+mod mcp_notifications;
 mod mcp_prewarm;
 mod mcp_refresh;
 mod mcp_runtime;
@@ -748,11 +749,18 @@ impl Session {
         let history_mode = conversation_history.get_history_mode(
             requested_history_mode.unwrap_or_else(|| thread_store.default_history_mode()),
         );
-        let base_instructions = config
-            .base_instructions
-            .clone()
-            .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
-            .unwrap_or_else(|| render_model_instructions(&model_info));
+        let base_instructions = crate::context::configure_tool_surface_instructions(
+            config
+                .base_instructions
+                .clone()
+                .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
+                .unwrap_or_else(|| render_model_instructions(&model_info)),
+            crate::tools::command_stack_available(
+                config.features.enabled(Feature::CommandStack),
+                &model_info,
+            ),
+            config.features.enabled(Feature::Hpatch),
+        );
 
         // Dynamic tools are defined at thread start and persisted in rollout session metadata.
         let dynamic_tools = if dynamic_tools.is_empty() {
@@ -4866,7 +4874,11 @@ impl Session {
     }
 
     pub(crate) fn user_shell(&self) -> Arc<shell::Shell> {
-        Arc::clone(&self.services.user_shell)
+        self.services.user_shell.load_full()
+    }
+
+    pub(crate) fn set_user_shell(&self, user_shell: shell::Shell) {
+        self.services.user_shell.store(Arc::new(user_shell));
     }
 
     pub(crate) async fn current_rollout_path(&self) -> anyhow::Result<Option<PathBuf>> {

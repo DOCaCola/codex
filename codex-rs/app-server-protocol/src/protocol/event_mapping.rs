@@ -472,9 +472,14 @@ mod tests {
     use codex_protocol::ThreadId;
     use codex_protocol::protocol::CollabResumeBeginEvent;
     use codex_protocol::protocol::CollabResumeEndEvent;
+    use codex_protocol::protocol::ExecCommandBeginEvent;
+    use codex_protocol::protocol::ExecCommandEndEvent;
     use codex_protocol::protocol::ExecCommandOutputDeltaEvent;
+    use codex_protocol::protocol::ExecCommandSource;
+    use codex_protocol::protocol::ExecCommandStatus;
     use codex_protocol::protocol::ExecOutputStream;
     use pretty_assertions::assert_eq;
+    use std::time::Duration;
 
     fn assert_item_started_server_notification(
         notification: ServerNotification,
@@ -591,9 +596,10 @@ mod tests {
 
     #[test]
     fn exec_command_output_delta_maps_to_command_execution_output_delta() {
+        let child_id = "call-command-stack:1:0";
         let notification = item_event_to_server_notification(
             EventMsg::ExecCommandOutputDelta(ExecCommandOutputDeltaEvent {
-                call_id: "call-1".to_string(),
+                call_id: child_id.to_string(),
                 stream: ExecOutputStream::Stdout,
                 chunk: b"hello".to_vec(),
             }),
@@ -606,9 +612,79 @@ mod tests {
             CommandExecutionOutputDeltaNotification {
                 thread_id: "thread-1".to_string(),
                 turn_id: "turn-1".to_string(),
-                item_id: "call-1".to_string(),
+                item_id: child_id.to_string(),
                 delta: "hello".to_string(),
             },
         );
+    }
+
+    #[test]
+    fn command_stack_child_id_maps_through_command_lifecycle() {
+        let child_id = "call-command-stack:2:1";
+        let cwd: codex_utils_path_uri::PathUri = "file:///C:/workspace".parse().unwrap();
+        let begin = item_event_to_server_notification(
+            EventMsg::ExecCommandBegin(ExecCommandBeginEvent {
+                call_id: child_id.to_string(),
+                process_id: Some("pid-1".to_string()),
+                turn_id: "turn-1".to_string(),
+                started_at_ms: 10,
+                command: vec!["echo".to_string(), "ok".to_string()],
+                cwd: cwd.clone(),
+                parsed_cmd: Vec::new(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+            }),
+            "thread-1",
+            "turn-1",
+        );
+        match begin {
+            ServerNotification::ItemStarted(ItemStartedNotification {
+                item: ThreadItem::CommandExecution { id, status, .. },
+                ..
+            }) => {
+                assert_eq!(id, child_id);
+                assert_eq!(
+                    status,
+                    crate::protocol::v2::CommandExecutionStatus::InProgress
+                );
+            }
+            other => panic!("expected command execution start, got {other:?}"),
+        }
+
+        let end = item_event_to_server_notification(
+            EventMsg::ExecCommandEnd(ExecCommandEndEvent {
+                call_id: child_id.to_string(),
+                process_id: Some("pid-1".to_string()),
+                turn_id: "turn-1".to_string(),
+                completed_at_ms: 20,
+                command: vec!["echo".to_string(), "ok".to_string()],
+                cwd,
+                parsed_cmd: Vec::new(),
+                source: ExecCommandSource::Agent,
+                interaction_input: None,
+                stdout: "ok\n".to_string(),
+                stderr: String::new(),
+                aggregated_output: "ok\n".to_string(),
+                exit_code: 0,
+                duration: Duration::from_millis(5),
+                formatted_output: "ok\n".to_string(),
+                status: ExecCommandStatus::Completed,
+            }),
+            "thread-1",
+            "turn-1",
+        );
+        match end {
+            ServerNotification::ItemCompleted(ItemCompletedNotification {
+                item: ThreadItem::CommandExecution { id, status, .. },
+                ..
+            }) => {
+                assert_eq!(id, child_id);
+                assert_eq!(
+                    status,
+                    crate::protocol::v2::CommandExecutionStatus::Completed
+                );
+            }
+            other => panic!("expected command execution completion, got {other:?}"),
+        }
     }
 }

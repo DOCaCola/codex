@@ -493,6 +493,7 @@ pub struct WriteResponse {
 #[serde(rename_all = "camelCase")]
 pub enum ProcessSignal {
     Interrupt,
+    CloseStdin,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

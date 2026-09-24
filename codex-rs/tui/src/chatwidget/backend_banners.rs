@@ -19,6 +19,7 @@ use crate::bottom_pane::popup_consts::accept_cancel_hint_line;
 use crate::keymap::ListAction;
 use crate::model_catalog::LUNA_RESERVE_MODEL;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
+use codex_features::Feature;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::openai_models::ModelPreset;
@@ -61,7 +62,8 @@ pub(super) struct BackendBannerState {
 impl ChatWidget {
     pub(super) fn restrict_model_picker_to_luna_reserve(&self) -> bool {
         // A fresh account read can allow manual recovery even without a valid saved return model.
-        self.current_model() == LUNA_RESERVE_MODEL
+        self.config.features.enabled(Feature::LunaReserveFallback)
+            && self.current_model() == LUNA_RESERVE_MODEL
             && !self.backend_banner_state.ordinary_usage_recovered
     }
 
@@ -81,6 +83,11 @@ impl ChatWidget {
 
     pub(crate) fn backend_banner_fallback(&mut self) -> Option<AutomaticModelSwitch> {
         if !self.has_chatgpt_account || !self.requires_openai_auth {
+            return None;
+        }
+        if !self.config.features.enabled(Feature::LunaReserveFallback)
+            && self.current_model() == LUNA_RESERVE_MODEL
+        {
             return None;
         }
         if self.current_model() == LUNA_RESERVE_MODEL
@@ -122,7 +129,16 @@ impl ChatWidget {
         {
             self.clear_reserve_return();
         }
-        let models = self.model_catalog.try_list_models().ok()?;
+        let models: Vec<_> = self
+            .model_catalog
+            .try_list_models()
+            .ok()?
+            .into_iter()
+            .filter(|model| {
+                model.model != LUNA_RESERVE_MODEL
+                    || self.config.features.enabled(Feature::LunaReserveFallback)
+            })
+            .collect();
         if self.current_model() == LUNA_RESERVE_MODEL
             && self.backend_banner_state.ordinary_usage_recovered
         {
@@ -328,10 +344,16 @@ impl ChatWidget {
         if self.backend_banner_state.ordinary_usage_recovered {
             self.luna_reserve_notice_account_id = None;
         }
+        // Reserve banners also hold queued turns and take composer focus. Ignore them at
+        // ingestion when fallback is disabled, rather than only suppressing the model switch.
         let banner = response
             .rate_limit_upsell
             .as_ref()
             .and_then(BackendBanner::parse)
+            .filter(|banner| {
+                banner.banner_type != LUNA_RESERVE_BANNER
+                    || self.config.features.enabled(Feature::LunaReserveFallback)
+            })
             .map(|mut banner| {
                 banner.account_id = response.account_id.clone().unwrap_or_default();
                 banner.plan_type = response.rate_limits.plan_type;

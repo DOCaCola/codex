@@ -35,6 +35,7 @@ use codex_utils_path_uri::PathUri;
 
 #[cfg(unix)]
 use crate::CODEX_ARG0_EXEC_HELPER_ARG1;
+use crate::CODEX_HPATCH_COMPANION_ARGV0;
 use crate::ExecServerRuntimePaths;
 use crate::protocol::ExecParams;
 use crate::rpc::internal_error;
@@ -85,6 +86,24 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
     network_policy_audit_observer: Option<NetworkPolicyAuditObserver>,
     telemetry: &ProcessTelemetry,
 ) -> Result<PreparedExecRequest, JSONRPCErrorError> {
+    let mut command = params.argv.clone();
+    let uses_hpatch_companion = command
+        .first()
+        .is_some_and(|arg| arg == CODEX_HPATCH_COMPANION_ARGV0);
+    let hpatch_exe = if uses_hpatch_companion {
+        let runtime_paths = runtime_paths
+            .ok_or_else(|| invalid_params("hpatch runtime path is not configured".to_string()))?;
+        Some(
+            runtime_paths
+                .hpatch_exe()
+                .map_err(|err| invalid_params(format!("invalid hpatch runtime path: {err}")))?,
+        )
+    } else {
+        None
+    };
+    if let Some(hpatch_exe) = &hpatch_exe {
+        command[0] = hpatch_exe.to_string_lossy().into_owned();
+    }
     if let Some(sandbox) = params.sandbox.as_ref()
         && sandbox.windows_sandbox_selection == WindowsSandboxSelection::Mxc
     {
@@ -134,7 +153,7 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
         .await?;
     let Some(sandbox_context) = params.sandbox.as_ref() else {
         return Ok(PreparedExecRequest {
-            command: params.argv.clone(),
+            command,
             cwd: native_path(&params.cwd, "cwd")?,
             env,
             arg0: params.arg0.clone(),
@@ -180,11 +199,13 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
     #[cfg(unix)]
     let (file_system_policy, network_policy) = permissions.to_runtime_permissions();
     #[cfg(unix)]
-    let sandbox_helper_paths = params
+    let mut sandbox_helper_paths = params
         .arg0
         .iter()
         .map(|_| runtime_paths.codex_self_exe.clone())
         .collect::<Vec<_>>();
+    #[cfg(unix)]
+    sandbox_helper_paths.extend(hpatch_exe.iter().cloned());
     // Bubblewrap launches the configured helper, which may re-enter this executable to apply
     // seccomp, so the outer filesystem sandbox must expose both paths.
     #[cfg(target_os = "linux")]
@@ -220,18 +241,17 @@ pub(crate) async fn prepare_exec_request_with_telemetry(
             "sandbox intent cannot be enforced on this executor".to_string(),
         ));
     }
-    let (program, args) = params
-        .argv
+    let (program, args) = command
         .split_first()
         .ok_or_else(|| invalid_params("argv must not be empty".to_string()))?;
     #[cfg(unix)]
     let (program, args) = params.arg0.as_ref().map_or_else(
         || (program.into(), args.to_vec()),
         |arg0| {
-            let mut helper_args = Vec::with_capacity(params.argv.len() + 2);
+            let mut helper_args = Vec::with_capacity(command.len() + 2);
             helper_args.push(CODEX_ARG0_EXEC_HELPER_ARG1.to_string());
             helper_args.push(arg0.clone());
-            helper_args.extend(params.argv.iter().cloned());
+            helper_args.extend(command.iter().cloned());
             (
                 runtime_paths
                     .codex_self_exe
