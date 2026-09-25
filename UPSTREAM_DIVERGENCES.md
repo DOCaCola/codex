@@ -4,6 +4,14 @@ These fork-only changes should be removed once upstream provides the same or equ
 Review every entry when merging or rebasing from upstream; prefer the upstream implementation over
 maintaining parallel logic or compatibility fallbacks.
 
+## Local Windows release workflow
+
+- Local behavior: `scripts/local-release` builds the fork's Windows executables and
+  hpatch companion, then invokes the upstream package builder to assemble `../output`.
+  The CLI PATH entry is `../output/bin`; complete packages support daemon startup.
+- Remove when: an upstream local build workflow covers the fork companion and local
+  output installation.
+
 ## Command stack and persistent local shell selection
 
 - Local behavior: `features.command_stack` exposes a direct custom tool through upstream's
