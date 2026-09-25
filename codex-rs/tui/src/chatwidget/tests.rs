@@ -343,6 +343,9 @@ async fn user_shell_command_hides_msys_export_prefix_in_display() {
 #[path = "tests/questions_tests.rs"]
 mod questions_tests;
 
+#[path = "tests/question_turn_end_tests.rs"]
+mod question_turn_end_tests;
+
 #[path = "tests/list_spacing_tests.rs"]
 mod list_spacing_tests;
 

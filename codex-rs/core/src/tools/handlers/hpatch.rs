@@ -65,7 +65,7 @@ impl HpatchHandler {
             workdir.as_deref(),
         )?;
         let mut sandbox = turn_environment.sandbox_context(None);
-        sandbox.permissions = PermissionProfile::read_only().into();
+        sandbox.permissions = PermissionProfile::read_only();
 
         let started = turn_environment
             .environment

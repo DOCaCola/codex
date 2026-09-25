@@ -1137,8 +1137,10 @@ async fn disabling_shell_tools_disables_command_tools_for_all_environments() {
     multiple_local_environments.assert_registered_lacks(&["exec_command", "write_stdin"]);
 }
 
+#[test_case::test_case(ToolMode::Direct; "direct")]
+#[test_case::test_case(ToolMode::CodeModeOnly; "code_mode_only")]
 #[tokio::test]
-async fn command_stack_replaces_direct_shell_tools_for_custom_tool_models() {
+async fn command_stack_replaces_direct_shell_tools_for_custom_tool_models(tool_mode: ToolMode) {
     let plan = probe(|turn| {
         set_features(
             turn,
@@ -1152,6 +1154,8 @@ async fn command_stack_replaces_direct_shell_tools_for_custom_tool_models() {
             let model_info = Arc::make_mut(&mut settings.model_info);
             model_info.shell_type = ConfigShellToolType::UnifiedExec;
             model_info.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
+            model_info.tool_mode = Some(tool_mode);
+            model_info.use_responses_lite = tool_mode == ToolMode::CodeModeOnly;
         });
     })
     .await;

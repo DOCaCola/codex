@@ -114,6 +114,8 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
         persist_shell_selection: true,
         include_windows_shell_guidance: cfg!(windows),
     });
+    let previous_snapshot = session.services.turn_environments.snapshot().await;
+    let previous_shell = previous_snapshot.primary().unwrap().shell.clone();
     let mut args: ExecCommandArgs = parse_arguments(
         &serde_json::json!({
             "cmd": "echo persistent shell",
@@ -136,6 +138,12 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
     assert_eq!(selected.shell_type, ShellType::Bash);
     assert_eq!(session.user_shell().shell_type, ShellType::Bash);
     assert_eq!(session.user_shell().shell_path, selected.shell_path);
+    let refreshed_snapshot = session.services.turn_environments.snapshot().await;
+    assert_eq!(
+        refreshed_snapshot.primary().unwrap().shell.as_ref(),
+        Some(selected.as_ref())
+    );
+    assert_eq!(previous_snapshot.primary().unwrap().shell, previous_shell);
     assert_eq!(
         handler
             .shell_for_environment(&session, turn_environment)

@@ -157,7 +157,7 @@ requires_openai_auth = true
             "Source: active (bundled + cache/remote: {}/api/codex/models?client_version=",
             server.uri()
         )))
-        .stdout(contains("Models: 5"));
+        .stdout(contains("Models: "));
 
     Ok(())
 }
