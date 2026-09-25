@@ -50,7 +50,7 @@ fn can_run_on_shell_test() {
     if cfg!(windows) {
         assert!(shell_works(
             get_shell(ShellType::PowerShell),
-            "Out-String 'Works'",
+            "Write-Output 'Works'",
             /*required*/ true,
         ));
         assert!(shell_works(
@@ -181,7 +181,7 @@ async fn detects_powershell_as_default() {
 }
 
 #[test]
-fn explicit_bash_user_shell_path_resolves_to_bash_shell() {
+fn explicit_bash_shell_path_resolves_to_bash_shell() {
     if !cfg!(windows) {
         return;
     }
@@ -196,9 +196,9 @@ fn explicit_bash_user_shell_path_resolves_to_bash_shell() {
         return;
     };
 
-    let shell = default_user_shell_from_path(Some(bash_path.clone()));
+    let shell = get_shell_by_model_provided_path(&bash_path);
     assert_eq!(shell.shell_type, ShellType::Bash);
-    assert_eq!(shell.shell_path, bash_path);
+    assert_eq!(detect_shell_type(&shell.shell_path), Some(ShellType::Bash));
 }
 
 #[test]

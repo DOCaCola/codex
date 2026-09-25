@@ -4,6 +4,28 @@ These fork-only changes should be removed once upstream provides the same or equ
 Review every entry when merging or rebasing from upstream; prefer the upstream implementation over
 maintaining parallel logic or compatibility fallbacks.
 
+## Local Windows release workflow
+
+- Local behavior: `scripts/local-release` builds the fork's Windows executables and
+  hpatch companion, then invokes the upstream package builder to assemble `../output`.
+  The CLI PATH entry is `../output/bin`; complete packages support daemon startup.
+- Remove when: an upstream local build workflow covers the fork companion and local
+  output installation.
+
+## Command stack and persistent local shell selection
+
+- Local behavior: `features.command_stack` exposes a direct custom tool through upstream's
+  tool registry, with a private child router for command execution and edits. It remains
+  available alongside code mode when the model supports custom tools.
+- The v0.157.0 merge removes the GPT-5.6 catalog and runtime overrides that disabled
+  Responses Lite and code mode. Model capabilities now follow upstream metadata.
+- Local shell selection updates upstream's mutex-protected environment state and refreshes
+  shell snapshots for future steps while preserving snapshots already captured by running work.
+- Remove when: upstream provides equivalent command batching and persistent shell selection.
+- Local code: `core/src/tools/spec_plan.rs`, `core/src/tools/parallel.rs`,
+  `core/src/tools/handlers/command_stack.rs`, and `core/src/environment_selection.rs`
+  under `codex-rs`.
+
 ## Inbound MCP notifications
 
 - Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.

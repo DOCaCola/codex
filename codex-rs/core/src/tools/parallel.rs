@@ -157,7 +157,10 @@ impl ToolCallRuntime {
             .services
             .executed_tool_calls
             .record_tool_call(&call, &source, &step_context);
-        let router = &step_context.tool_router;
+        let router = self
+            .tool_router
+            .as_ref()
+            .unwrap_or(&step_context.tool_router);
         let supports_parallel = router.tool_supports_parallel(&call);
         let tool_runtime = router.tool_runtime(&call.tool_name);
         let router = Arc::clone(router);

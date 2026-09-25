@@ -1,7 +1,7 @@
 # Codex — DOCaCola fork
 
 A personal fork of [OpenAI Codex](https://github.com/openai/codex), based on
-`rust-v0.156.1`. This is an independent build, not an official OpenAI release.
+`rust-v0.157.0`. This is an independent build, not an official OpenAI release.
 Upstream copyright, Apache-2.0 licensing, and history are preserved.
 
 ## Install
@@ -52,7 +52,7 @@ Caches, package assembly, and the rest of the toolchain require additional space
 ## GitHub workflow
 
 [Fork Windows release](.github/workflows/fork-release.yml) runs manually or on
-`doca-v<workspace-version>` tags, for example `doca-v0.156.1-doca`.
+`doca-v<workspace-version>` tags, for example `doca-v0.157.0-doca`.
 A manual run produces a seven-day artifact. A matching tag also creates a
 **draft** GitHub release for review. Later fork versions should use an increasing
 `-doca.N` suffix, updating Cargo manifests/lockfiles together.

@@ -855,29 +855,29 @@ mv tokens.next tokens.txt
 
         #[cfg(windows)]
         let (command, args) = {
-            let script_path = tempdir.path().join("print-token.cmd");
+            let script_path = tempdir.path().join("print-token.ps1");
             std::fs::write(
                 &script_path,
-                r#"@echo off
-setlocal EnableExtensions DisableDelayedExpansion
-if exist fail-until-401 exit /b 1
-
-set "first_line="
-<tokens.txt set /p first_line=
-if not defined first_line exit /b 1
-
-echo(%first_line%
-more +1 tokens.txt > tokens.next
-move /y tokens.next tokens.txt >nul
+                r#"if (Test-Path -LiteralPath 'fail-until-401') { exit 1 }
+$tokens = [System.IO.File]::ReadAllLines('tokens.txt')
+if ($tokens.Length -eq 0) { exit 1 }
+[Console]::Out.WriteLine($tokens[0])
+if ($tokens.Length -gt 1) {
+    [System.IO.File]::WriteAllLines('tokens.txt', $tokens[1..($tokens.Length - 1)])
+} else {
+    [System.IO.File]::WriteAllText('tokens.txt', '')
+}
 "#,
             )?;
             (
-                "cmd.exe".to_string(),
+                "powershell.exe".to_string(),
                 vec![
-                    "/D".to_string(),
-                    "/Q".to_string(),
-                    "/C".to_string(),
-                    ".\\print-token.cmd".to_string(),
+                    "-NoProfile".to_string(),
+                    "-NonInteractive".to_string(),
+                    "-ExecutionPolicy".to_string(),
+                    "Bypass".to_string(),
+                    "-File".to_string(),
+                    ".\\print-token.ps1".to_string(),
                 ],
             )
         };

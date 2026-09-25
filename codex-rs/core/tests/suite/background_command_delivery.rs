@@ -179,12 +179,15 @@ async fn background_delivery_foreground_returns_final_result_directly() -> Resul
     Ok(())
 }
 
+#[test_case::test_case("gpt-5.4"; "direct")]
+#[test_case::test_case("gpt-5.6-sol"; "responses_lite_code_mode")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn background_delivery_stack_waits_for_dependencies_without_duplicate_delivery() -> Result<()>
-{
+async fn background_delivery_stack_waits_for_dependencies_without_duplicate_delivery(
+    model: &str,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = TestCodexHarness::with_auto_env_builder(
-        test_codex().with_model("gpt-5.4").with_config(|config| {
+        test_codex().with_model(model).with_config(|config| {
             config.features.enable(Feature::UnifiedExec).unwrap();
             config
                 .features

@@ -67,6 +67,7 @@ async fn luna_reserve_disabled_keeps_queued_turn_on_selected_model() -> Result<(
     let (mut server, requests, proxy) =
         backend_banner_fallback_tests::start_fallback_thread(&mut app).await?;
     configure_reserve_catalog(&mut app);
+    let selected_model = app.chat_widget.current_model().to_owned();
     app.chat_widget
         .set_feature_enabled(Feature::LunaReserveFallback, /*enabled*/ false);
     app.chat_widget
@@ -96,8 +97,8 @@ async fn luna_reserve_disabled_keeps_queued_turn_on_selected_model() -> Result<(
     assert_eq!(methods, ["turn/start"]);
     let turn: codex_app_server_protocol::TurnStartParams =
         serde_json::from_value(sent[0].params.clone().unwrap())?;
-    assert_eq!(turn.model.as_deref(), Some("gpt-5.4"));
-    assert_eq!(app.chat_widget.current_model(), "gpt-5.4");
+    assert_eq!(turn.model.as_deref(), Some(selected_model.as_str()));
+    assert_eq!(app.chat_widget.current_model(), selected_model);
     server.shutdown().await?;
     proxy.await??;
     Ok(())

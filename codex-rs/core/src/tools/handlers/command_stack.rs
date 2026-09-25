@@ -936,7 +936,7 @@ end"#,
         write_stdin_fails: bool,
         patch_fails: bool,
     ) -> CommandStackHandler {
-        let child_registry = ToolRegistry::from_tools([
+        let children = [
             Arc::new(RecordingHandler::new(
                 "exec_command",
                 Arc::clone(&calls),
@@ -949,7 +949,8 @@ end"#,
             )) as Arc<dyn CoreToolRuntime>,
             Arc::new(RecordingHandler::new("apply_patch", calls, patch_fails))
                 as Arc<dyn CoreToolRuntime>,
-        ]);
+        ];
+        let child_registry = ToolRegistry::from_tools(children);
         let child_router = Arc::new(ToolRouter::from_parts(
             child_registry,
             Vec::new(),

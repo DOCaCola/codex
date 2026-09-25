@@ -1,6 +1,8 @@
 codex-rs/app-server-protocol/schema/** linguist-generated
 codex-rs/hooks/schema/generated/** linguist-generated
 third_party/voice/sources.json text eol=lf
+scripts/local-release/*.sh text eol=lf
+scripts/local-release/*.bat text eol=crlf
 # SQLx hashes the checkout bytes. Match the official Windows release's migrations.
 codex-rs/state/**/*.sql text eol=crlf
 
