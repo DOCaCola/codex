@@ -949,7 +949,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::DaemonAutoStart,
         key: "daemon_auto_start",
         stage: Stage::Stable,
-        default_enabled: false,
+        default_enabled: !cfg!(windows),
     },
     FeatureSpec {
         id: Feature::TranscriptV2,

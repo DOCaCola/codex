@@ -1,20 +1,22 @@
 # Codex — DOCaCola fork
 
 A personal fork of [OpenAI Codex](https://github.com/openai/codex), based on
-`rust-v0.157.0`. This is an independent build, not an official OpenAI release.
+`rust-v0.157.1`. This is an independent build, not an official OpenAI release.
 Upstream copyright, Apache-2.0 licensing, and history are preserved.
 
 ## Install
 
-Download a Windows x64 ZIP from [this fork's releases](https://github.com/DOCaCola/codex/releases)
-when one is available. Extract the **whole archive**, then run `bin/codex.exe`.
+Download a Windows x64 ZIP or macOS Apple Silicon tar.gz from
+[this fork's releases](https://github.com/DOCaCola/codex/releases) when available.
+Extract the **whole archive**, then run `bin/codex.exe` (Windows) or `bin/codex` (macOS).
 Keep `bin`, `codex-resources`, `codex-path`, and the license files together.
 Packages include the code-mode host, Windows sandbox helpers, ripgrep, and hpatch.
 Go is not required. Initial builds are unsigned and omit the optional voice runtime.
 
-This fork currently targets Windows x64. The inherited npm/Python publishing and
+This fork targets Windows x64 and macOS Apple Silicon. The inherited npm/Python publishing and
 installer scripts target official OpenAI packages; use the fork release archives.
-Linux and macOS release/signing support has not been validated for this fork.
+macOS packages have no Developer ID signing or notarization. Desktop integration
+and existing database compatibility require validation on a real Mac.
 
 ## Fork features
 
@@ -37,11 +39,22 @@ Run in a Visual Studio developer environment:
 python scripts/build_fork_release.py --cache-dir C:/build-cache/codex --output-dir dist
 ```
 
+On an Apple Silicon Mac, install Xcode command-line tools and the same Python,
+Rust and pinned Go toolchains, then run:
+
+```sh
+python3 scripts/build_fork_release.py --cache-dir "$HOME/Library/Caches/codex-build" --output-dir dist
+```
+
+The macOS builder normalizes state migration sources to LF before compilation.
+Windows keeps the fork's CRLF migration policy. SQLx hashes these source bytes,
+so use the native package builder for the matching platform.
+
 Choose your own cache location. The builder places its temporary files and V8
 artifacts on that drive to avoid cross-drive symlink problems. Cargo and Go must be on PATH;
 `--cargo` and `--go` accept explicit executables. The build fetches the pinned
 hpatch source and matching checksum-verified V8/ripgrep artifacts. It builds all
-required Rust companions, produces a ZIP and SHA256SUMS, and bundles licenses
+required Rust companions, produces a platform archive and SHA256SUMS, and bundles licenses
 and hpatch source/binary provenance. It never relies on a sibling checkout.
 
 The default `fast-release` profile avoids the cost of ThinLTO; use
@@ -51,14 +64,17 @@ Caches, package assembly, and the rest of the toolchain require additional space
 
 ## GitHub workflow
 
-[Fork Windows release](.github/workflows/fork-release.yml) runs manually or on
-`doca-v<workspace-version>` tags, for example `doca-v0.157.0-doca`.
+[Fork release](.github/workflows/fork-release.yml) runs manually or on
+`doca-v<workspace-version>` tags, for example `doca-v0.157.1-doca`.
 A manual run produces a seven-day artifact. A matching tag also creates a
 **draft** GitHub release for review. Later fork versions should use an increasing
 `-doca.N` suffix, updating Cargo manifests/lockfiles together.
 
-The workflow uses one standard Windows runner, four Cargo jobs, no retained build
-cache, and no OpenAI signing credentials or registry publishing. The inherited
+The workflow uses a Windows runner with four Cargo jobs and a native macOS ARM64
+runner with two Cargo jobs, no retained build cache, and no OpenAI signing credentials
+or registry publishing. Both packages must pass native CLI and app-server startup
+checks before a tag creates a draft containing both archives and combined checksums.
+The inherited
 OpenAI workflows have been removed from this branch; their source remains in the
 upstream history. Do not re-enable them wholesale when merging upstream.
 

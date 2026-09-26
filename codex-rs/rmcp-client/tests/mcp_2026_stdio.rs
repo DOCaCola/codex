@@ -139,6 +139,7 @@ async fn exercise_stdio_server(
                 }
                 .boxed()
             }),
+            /*send_notification*/ None,
         )
         .await?;
 

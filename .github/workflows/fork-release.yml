@@ -1,4 +1,4 @@
-name: Fork Windows release
+name: Fork release
 
 on:
   workflow_dispatch:
@@ -16,10 +16,22 @@ concurrency:
 jobs:
   build:
     if: github.repository == 'DOCaCola/codex'
-    runs-on: windows-2025
-    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            suffix: .exe
+            jobs: 4
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            suffix: ""
+            jobs: 2
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
     env:
-      CARGO_BUILD_JOBS: "4"
+      CARGO_BUILD_JOBS: ${{ matrix.jobs }}
       LIBSQLITE3_FLAGS: SQLITE_DISABLE_INTRINSIC
       CODEX_REPO_ROOT: ${{ github.workspace }}
     steps:
@@ -51,27 +63,25 @@ jobs:
           cache: false
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
       - uses: ./.github/actions/setup-msvc-env
+        if: runner.os == 'Windows'
         with:
           target: x86_64-pc-windows-msvc
       - name: Build complete unsigned package
-        shell: pwsh
+        shell: bash
         run: |
-          python scripts/build_fork_release.py --cache-dir "$env:RUNNER_TEMP/fork-build" --output-dir dist
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/build_fork_release.py --cache-dir "$RUNNER_TEMP/fork-build" --output-dir dist
       - name: Smoke test packaged executables
-        shell: pwsh
+        shell: bash
         run: |
-          & ./dist/package/bin/codex.exe --version
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & ./dist/package/bin/hpatch.exe --help
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/smoke_fork_release.py dist/package
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: codex-windows-x64
+          name: codex-${{ matrix.target }}
           path: |
             dist/*.zip
+            dist/*.tar.gz
             dist/SHA256SUMS
           retention-days: 7
           if-no-files-found: error
@@ -85,14 +95,22 @@ jobs:
     steps:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
-          name: codex-windows-x64
+          pattern: codex-*
           path: dist
+      - name: Combine packages and checksums
+        shell: bash
+        run: |
+          mkdir release
+          cp dist/*/*.zip dist/*/*.tar.gz release/
+          cat dist/*/SHA256SUMS > release/SHA256SUMS
+          cd release
+          sha256sum -c SHA256SUMS
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/* --verify-tag --draft \
+          gh release create "$RELEASE_TAG" release/* --verify-tag --draft \
             --title "$RELEASE_TAG" \
-            --notes "Unsigned Windows x64 fork build. Extract the complete archive and run bin/codex.exe. Includes the pinned hpatch companion and redistribution notices. Voice components are not included."
+            --notes "Windows x64 and macOS Apple Silicon fork builds, without publisher signing or notarization. Extract the complete archive and run bin/codex.exe (Windows) or bin/codex (macOS). Includes the pinned hpatch companion and redistribution notices. Voice components are not included."

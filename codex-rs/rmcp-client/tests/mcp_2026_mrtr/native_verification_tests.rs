@@ -68,6 +68,7 @@ async fn client(
             InitializeRequestParams::new(capabilities, Implementation::new("test", "0.0.0")),
             Some(Duration::from_secs(/*secs*/ 5)),
             handler,
+            /*send_notification*/ None,
         )
         .await?;
     Ok(Arc::new(client))

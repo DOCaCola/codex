@@ -124,6 +124,7 @@ async fn local_stdio_inherits_ca_certificate_variables_child() -> anyhow::Result
                     }
                     .boxed()
                 }),
+                /*send_notification*/ None,
             )
             .await?;
         let result = client
@@ -188,6 +189,7 @@ async fn modern_local_and_executor_stdio_discover_metadata_identity_and_catalogs
                     }
                     .boxed()
                 }),
+                /*send_notification*/ None,
             )
             .await?;
 
@@ -256,6 +258,7 @@ async fn legacy_stdio_preserves_existing_protocol_marker_environment() -> anyhow
                         }
                         .boxed()
                     }),
+                    /*send_notification*/ None,
                 )
                 .await?;
 
