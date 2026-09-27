@@ -49,8 +49,8 @@ jobs:
           pin = json.loads((root / "third_party/hpatch/source.json").read_text())
           cargo = tomllib.loads((root / "codex-rs/Cargo.toml").read_text())
           version = cargo["workspace"]["package"]["version"]
-          if not re.fullmatch(r"\d+\.\d+\.\d+-doca(?:\.\d+)?", version):
-              raise SystemExit("Expected a -doca or -doca.N workspace version")
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:-alpha\.\d+)?-doca(?:\.\d+)?", version):
+              raise SystemExit("Expected a stable or alpha fork workspace version")
           if os.environ["GITHUB_REF_TYPE"] == "tag":
               if os.environ["GITHUB_REF_NAME"] != "doca-v" + version:
                   raise SystemExit("Release tag must match workspace version")

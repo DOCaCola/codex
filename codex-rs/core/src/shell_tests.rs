@@ -107,7 +107,6 @@ fn derive_exec_args() {
     let test_bash_shell = Shell {
         shell_type: ShellType::Bash,
         shell_path: PathBuf::from("/bin/bash"),
-        shell_snapshot: empty_shell_snapshot_receiver(),
     };
     assert_eq!(
         test_bash_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
@@ -121,7 +120,6 @@ fn derive_exec_args() {
     let test_zsh_shell = Shell {
         shell_type: ShellType::Zsh,
         shell_path: PathBuf::from("/bin/zsh"),
-        shell_snapshot: empty_shell_snapshot_receiver(),
     };
     assert_eq!(
         test_zsh_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
@@ -135,7 +133,6 @@ fn derive_exec_args() {
     let test_powershell_shell = Shell {
         shell_type: ShellType::PowerShell,
         shell_path: PathBuf::from("pwsh.exe"),
-        shell_snapshot: empty_shell_snapshot_receiver(),
     };
     assert_eq!(
         test_powershell_shell.derive_exec_args("echo hello", /*use_login_shell*/ false),
@@ -162,7 +159,6 @@ async fn test_current_shell_detects_zsh() {
             Shell {
                 shell_type: ShellType::Zsh,
                 shell_path: PathBuf::from(shell_path),
-                shell_snapshot: empty_shell_snapshot_receiver(),
             }
         );
     }

@@ -30,7 +30,6 @@ fn parent_directory_traversal_is_not_a_trusted_system_shell() {
             ShellType::Sh
         },
         shell_path: configured_executable,
-        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
     let command = vec![
         unfamiliar_executable.to_string_lossy().into_owned(),
@@ -51,7 +50,6 @@ fn windows_shell_identity_is_case_insensitive() {
     let configured_shell = Shell {
         shell_type: ShellType::PowerShell,
         shell_path: configured_executable.clone(),
-        shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
     };
     let system_root = std::env::var_os("SystemRoot").expect("Windows SystemRoot");
     let system_executable = PathBuf::from(system_root.to_string_lossy().to_ascii_uppercase())

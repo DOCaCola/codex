@@ -21,7 +21,7 @@ fn gated_command() -> &'static str {
 }
 
 async fn managed_harness() -> Result<TestCodexHarness> {
-    TestCodexHarness::with_auto_env_builder(test_codex().with_model("gpt-5.4").with_config(
+    TestCodexHarness::with_auto_env_builder(test_codex().with_model("gpt-5.5").with_config(
         |config| {
             config.features.enable(Feature::UnifiedExec).unwrap();
             config
@@ -179,7 +179,7 @@ async fn background_delivery_foreground_returns_final_result_directly() -> Resul
     Ok(())
 }
 
-#[test_case::test_case("gpt-5.4"; "direct")]
+#[test_case::test_case("gpt-5.5"; "direct")]
 #[test_case::test_case("gpt-5.6-sol"; "responses_lite_code_mode")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_delivery_stack_waits_for_dependencies_without_duplicate_delivery(
@@ -280,7 +280,7 @@ async fn background_delivery_deadline_terminates_and_delivers() -> Result<()> {
 async fn background_delivery_manual_modes_do_not_park(enabled: bool) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness =
-        TestCodexHarness::with_auto_env_builder(test_codex().with_model("gpt-5.4").with_config(
+        TestCodexHarness::with_auto_env_builder(test_codex().with_model("gpt-5.5").with_config(
             move |config| {
                 config.features.enable(Feature::UnifiedExec).unwrap();
                 config.features.disable(Feature::CommandStack).unwrap();
@@ -357,7 +357,7 @@ async fn background_delivery_manual_modes_do_not_park(enabled: bool) -> Result<(
 async fn background_delivery_stack_observes_exit_status(continue_on_failure: bool) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = TestCodexHarness::with_auto_env_builder(
-        test_codex().with_model("gpt-5.4").with_config(|config| {
+        test_codex().with_model("gpt-5.5").with_config(|config| {
             config.features.enable(Feature::UnifiedExec).unwrap();
             config
                 .features
@@ -396,7 +396,7 @@ async fn background_delivery_stack_observes_exit_status(continue_on_failure: boo
     })
     .await;
     let output = log.last_request().unwrap().custom_tool_call_output("stack")["output"].to_string();
-    assert!(output.contains("Process exited with code 7"));
+    assert!(output.contains("Process exited with code 7"), "{output}");
     assert_eq!(output.contains("dependent-marker"), continue_on_failure);
     assert_eq!(log.requests().len(), 2);
     Ok(())
@@ -406,7 +406,7 @@ async fn background_delivery_stack_observes_exit_status(continue_on_failure: boo
 async fn background_delivery_code_mode_completion_wait_consumes_once() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = TestCodexHarness::with_auto_env_builder(
-        test_codex().with_model("gpt-5.4").with_config(|config| {
+        test_codex().with_model("gpt-5.5").with_config(|config| {
             config.features.enable(Feature::UnifiedExec).unwrap();
             config
                 .features
