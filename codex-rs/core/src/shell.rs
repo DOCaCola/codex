@@ -1,42 +1,16 @@
-use crate::shell_snapshot::ShellSnapshot;
 use codex_exec_server::ShellInfo;
 use codex_shell_command::shell_detect::DetectedShell;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::watch;
 
 pub use codex_shell_command::shell_detect::ShellType;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Shell {
     pub(crate) shell_type: ShellType,
     pub(crate) shell_path: PathBuf,
-    #[serde(
-        skip_serializing,
-        skip_deserializing,
-        default = "empty_shell_snapshot_receiver"
-    )]
-    pub(crate) shell_snapshot: watch::Receiver<Option<Arc<ShellSnapshot>>>,
 }
-
-impl std::fmt::Debug for Shell {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Shell")
-            .field("shell_type", &self.shell_type)
-            .field("shell_path", &self.shell_path)
-            .finish()
-    }
-}
-
-impl PartialEq for Shell {
-    fn eq(&self, other: &Self) -> bool {
-        self.shell_type == other.shell_type && self.shell_path == other.shell_path
-    }
-}
-
-impl Eq for Shell {}
 
 impl Shell {
     pub fn name(&self) -> &'static str {
@@ -80,14 +54,8 @@ impl From<DetectedShell> for Shell {
         Self {
             shell_type: detected.shell_type,
             shell_path: detected.shell_path,
-            shell_snapshot: empty_shell_snapshot_receiver(),
         }
     }
-}
-
-pub(crate) fn empty_shell_snapshot_receiver() -> watch::Receiver<Option<Arc<ShellSnapshot>>> {
-    let (_tx, rx) = watch::channel(None);
-    rx
 }
 
 impl Shell {
@@ -104,7 +72,6 @@ impl Shell {
         Ok(Self {
             shell_type,
             shell_path: PathBuf::from(shell_info.path),
-            shell_snapshot: empty_shell_snapshot_receiver(),
         })
     }
 }
@@ -135,7 +102,6 @@ pub(crate) fn resolve_requested_shell(shell: &str) -> Result<Shell, String> {
         return Ok(Shell {
             shell_type,
             shell_path: requested_path,
-            shell_snapshot: empty_shell_snapshot_receiver(),
         });
     }
 
