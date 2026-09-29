@@ -21,7 +21,7 @@ maintaining parallel logic or compatibility fallbacks.
   Responses Lite and code mode. Model capabilities now follow upstream metadata.
 - Local shell selection updates upstream's mutex-protected environment state and refreshes
   shell snapshots for future steps while preserving snapshots already captured by running work.
-- The v0.159.0-alpha.9 merge uses upstream's environment configuration for refreshed snapshots
+- The v0.159.0 merge uses upstream's environment configuration for refreshed snapshots
   and removes the obsolete snapshot receiver from the fork's `Shell` type.
 - Remove when: upstream provides equivalent command batching and persistent shell selection.
 - Local code: `core/src/tools/spec_plan.rs`, `core/src/tools/parallel.rs`,
@@ -31,7 +31,7 @@ maintaining parallel logic or compatibility fallbacks.
 ## Inbound MCP notifications
 
 - Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
-- The v0.159.0-alpha.9 merge retains this independently of upstream's per-server
+- The v0.159.0 merge retains this independently of upstream's per-server
   tool input schema size limit; both settings round-trip through config.
 - Remove when: upstream provides an official MCP notification or session-ingress surface.
 
@@ -50,7 +50,7 @@ maintaining parallel logic or compatibility fallbacks.
 - Lifecycle: reuse the active turn and existing cleanup/interrupt behavior.
   No desktop changes or new app-server wire events; no restart-durable jobs.
   A live turn waiting for a command is intentionally still shown as active.
-- The v0.159.0-alpha.9 merge uses upstream's shared output buffers and sandbox
+- The v0.159.0 merge uses upstream's shared output buffers and sandbox
   attribution while retaining the fork's completion ownership and result cache.
 - Remove when: upstream provides equivalent completion consumption, runtime
   waiting, and stack dependency semantics.
