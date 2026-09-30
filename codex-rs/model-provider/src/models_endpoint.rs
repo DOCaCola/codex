@@ -591,6 +591,7 @@ mod tests {
             Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
                 "test-api-key",
             ))),
+            /*gateway_auth_manager*/ None,
         );
 
         assert!(endpoint.uses_codex_backend().await);
@@ -603,6 +604,7 @@ mod tests {
             Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
                 "test-api-key",
             ))),
+            /*gateway_auth_manager*/ None,
         );
 
         assert!(!endpoint.uses_codex_backend().await);

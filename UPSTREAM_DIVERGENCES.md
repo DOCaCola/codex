@@ -135,3 +135,12 @@ session notes or temporary implementation plans:
 Publication history is based on `rust-v0.156.1` plus the reviewed net fork changes.
 Old SDK executables, personal Cargo cache overrides, and temporary integration
 notes are excluded. The original local development branches retain that history.
+
+## Stable v0.159.2 integration
+
+- The v0.159.2 merge adopts upstream's shared background process constructor,
+  Windows job containment console policy, hook launch fixes, and sandbox refresh
+  suppression, alongside the updated Bedrock model catalogs.
+- Fork command batching, completion delivery, and notification behavior continue
+  using the upstream interfaces. The Windows daemon startup default remains
+  disabled pending runtime verification of all affected launch paths.
