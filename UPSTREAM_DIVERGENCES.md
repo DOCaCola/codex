@@ -117,3 +117,12 @@ maintaining parallel logic or compatibility fallbacks.
   with pending, ready, and failed owner configuration; verify task roots still update and changed
   attachments remain subject to ownership validation. The v0.155.0 merge had dropped the
   default-environment check while retaining only the explicit-selection check.
+
+## Stable v0.159.2 integration
+
+- The v0.159.2 merge adopts upstream's shared background process constructor,
+  Windows job containment console policy, hook launch fixes, and sandbox refresh
+  suppression, alongside the updated Bedrock model catalogs.
+- Fork command batching, completion delivery, and notification behavior continue
+  using the upstream interfaces. The Windows daemon startup default remains
+  disabled pending runtime verification of all affected launch paths.
