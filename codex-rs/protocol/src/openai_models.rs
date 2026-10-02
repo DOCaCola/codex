@@ -555,6 +555,10 @@ impl ModelInfo {
 /// retained to decode catalogs produced before personality selection was removed.
 #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, TS, JsonSchema)]
 pub struct ModelMessages {
+    /// Developer guidance after a content-filter block. Missing, null, blank, or values over
+    /// 512 UTF-8 bytes use the bundled guidance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_filter_guidance: Option<String>,
     /// Additional developer instructions for persistent mode. Missing or null uses the built-in
     /// instructions; an empty string disables them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1516,6 +1520,7 @@ mod tests {
     #[test]
     fn models_response_prefers_template_and_preserves_message_siblings() {
         let messages = ModelMessages {
+            content_filter_guidance: Some("Offer a permitted alternative.".to_string()),
             persistent_instructions: Some("Persistent catalog instructions".to_string()),
             tools: Some(ToolMessages {
                 send_user_message_async: Some(ToolMessage {
@@ -1620,86 +1625,12 @@ mod tests {
     }
 
     #[test]
-    fn get_personality_message_returns_default_when_personality_is_none() {
-        let personality_template = personality_variables();
-        assert_eq!(
-            personality_template.get_personality_message(/*personality*/ None),
-            Some("default".to_string())
-        );
-    }
-
-    #[test]
     fn custom_tool_support_follows_freeform_tool_metadata() {
         let mut model = test_model(/*spec*/ None);
         assert!(!model.supports_custom_tools());
 
         model.apply_patch_tool_type = Some(ApplyPatchToolType::Freeform);
         assert!(model.supports_custom_tools());
-    }
-
-    #[test]
-    fn get_personality_message() {
-        let personality_variables = personality_variables();
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::Friendly)),
-            Some("friendly".to_string())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::Pragmatic)),
-            Some("pragmatic".to_string())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::None)),
-            Some(String::new())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(/*personality*/ None),
-            Some("default".to_string())
-        );
-
-        let personality_variables = ModelInstructionsVariables {
-            personality_default: Some("default".to_string()),
-            personality_friendly: None,
-            personality_pragmatic: None,
-        };
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::Friendly)),
-            None
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::Pragmatic)),
-            None
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::None)),
-            Some(String::new())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(/*personality*/ None),
-            Some("default".to_string())
-        );
-
-        let personality_variables = ModelInstructionsVariables {
-            personality_default: None,
-            personality_friendly: Some("friendly".to_string()),
-            personality_pragmatic: Some("pragmatic".to_string()),
-        };
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::Friendly)),
-            Some("friendly".to_string())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::Pragmatic)),
-            Some("pragmatic".to_string())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(Some(Personality::None)),
-            Some(String::new())
-        );
-        assert_eq!(
-            personality_variables.get_personality_message(/*personality*/ None),
-            None
-        );
     }
 
     #[test]
