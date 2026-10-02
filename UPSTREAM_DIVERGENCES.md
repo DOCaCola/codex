@@ -144,3 +144,13 @@ notes are excluded. The original local development branches retain that history.
 - Fork command batching, completion delivery, and notification behavior continue
   using the upstream interfaces. The Windows daemon startup default remains
   disabled pending runtime verification of all affected launch paths.
+
+## Stable v0.160.0 integration
+
+- Persistent shell selection uses upstream's `start_environment` helper and shared
+  pending configuration results, retaining the selected shell in the thread mutex.
+  Child threads inherit upstream's pending owner configuration behavior.
+- Explicit provider model catalogs use upstream's authoritative catalog policy;
+  fork gateway authentication and catalog refresh behavior remain integrated.
+- Windows daemon startup remains disabled by default pending the runtime checks
+  documented in the local maintenance note.
