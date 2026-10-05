@@ -154,3 +154,9 @@ notes are excluded. The original local development branches retain that history.
   fork gateway authentication and catalog refresh behavior remain integrated.
 - Windows daemon startup remains disabled by default pending the runtime checks
   documented in the local maintenance note.
+
+## Stable v0.160.1 integration
+
+- Remote MCP launches adopt upstream preservation of Windows system and temporary
+  directory variables alongside explicit remote environment variables. The fork
+  notification path and temporary Windows daemon default remain unchanged.
