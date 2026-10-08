@@ -9,6 +9,8 @@ maintaining parallel logic or compatibility fallbacks.
 - Local behavior: `scripts/local-release` builds the fork's Windows executables and
   hpatch companion, then invokes the upstream package builder to assemble `../output`.
   The CLI PATH entry is `../output/bin`; complete packages support daemon startup.
+  Successful packaging removes all `output.previous-*` backups, retaining only the
+  latest package; a failed replacement restores the previous output.
 - Remove when: an upstream local build workflow covers the fork companion and local
   output installation.
 

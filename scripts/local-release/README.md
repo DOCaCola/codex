@@ -11,8 +11,9 @@ The hpatch checkout defaults to `../hpatch` relative to the repository.
 
 `copy_codex_release_to_output.sh` packages an existing build using the upstream
 package builder. It stages and validates the complete package before replacing
-`../output`, and preserves the previous output in an `output.previous-*` directory.
-These backups can be removed when no longer needed.
+`../output`. The previous output is kept temporarily for rollback if replacement
+fails. After a successful replacement, all `output.previous-*` backups are removed,
+so only the latest package is retained.
 
 Add `../output/bin` to PATH, not `../output`. Daemon startup requires the complete
 package, including `codex-package.json`, `codex-resources`, and `codex-path`.

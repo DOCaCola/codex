@@ -4,6 +4,7 @@
 import argparse
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -50,10 +51,12 @@ def main() -> int:
             if backup is not None:
                 backup.rename(output)
             raise
+    # Keep only the installed package, including cleanup of backups from older runs.
+    for previous in root.glob("output.previous-*"):
+        if previous.is_dir():
+            shutil.rmtree(previous)
     print(f"Packaged CLI: {output / 'bin/codex.exe'}")
     print(f"PATH directory: {output / 'bin'}")
-    if backup is not None:
-        print(f"Previous output preserved: {backup}")
     return 0
 
 
