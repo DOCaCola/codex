@@ -623,6 +623,8 @@ mod tests {
             .expect("MCP tool spec should build");
         assert_eq!(
             handler.pre_tool_use_payload(&ToolInvocation {
+                command_stack: None,
+                exec_command_is_dependency: false,
                 session: session.into(),
                 step_context: StepContext::for_test(Arc::clone(&turn)),
                 turn,
@@ -657,6 +659,8 @@ mod tests {
 
         assert_eq!(
             handler.pre_tool_use_payload(&ToolInvocation {
+                command_stack: None,
+                exec_command_is_dependency: false,
                 session: session.into(),
                 step_context: StepContext::for_test(Arc::clone(&turn)),
                 turn,
@@ -687,6 +691,8 @@ mod tests {
         let invocation = handler
             .with_updated_hook_input(
                 ToolInvocation {
+                    command_stack: None,
+                    exec_command_is_dependency: false,
                     session: session.into(),
                     step_context: StepContext::for_test(Arc::clone(&turn)),
                     turn,
@@ -748,6 +754,8 @@ mod tests {
         let handler = McpHandler::new(tool_info("filesystem", "filesystem", "read_file"))
             .expect("MCP tool spec should build");
         let invocation = ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: session.into(),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,

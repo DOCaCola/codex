@@ -752,6 +752,18 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadBackgroundTerminalsTerminateResponse,
     },
+    #[experimental("codexdc/capabilities")]
+    CodexdcCapabilities => "codexdc/capabilities" {
+        params: v2::CodexdcCapabilitiesParams,
+        serialization: None,
+        response: v2::CodexdcCapabilitiesResponse,
+    },
+    #[experimental("codexdc/backgroundJobs/list")]
+    CodexdcBackgroundJobsList => "codexdc/backgroundJobs/list" {
+        params: v2::CodexdcBackgroundJobsListParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::CodexdcBackgroundJobsListResponse,
+    },
     ThreadRevert => "thread/revert" {
         params: v2::ThreadRevertParams,
         serialization: thread_id(params.thread_id),

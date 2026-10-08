@@ -4,6 +4,7 @@ use crate::FeatureOverrides;
 use crate::FeatureToml;
 use crate::Features;
 use crate::FeaturesToml;
+
 use crate::Stage;
 use crate::feature_for_key;
 use crate::unstable_features_warning_event;
@@ -878,4 +879,20 @@ code_mode = true
         "Under-development features enabled: code_mode. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in /tmp/config.toml.".to_string(),
         message
     );
+}
+
+#[test]
+fn background_jobs_implies_delivery_after_config_resolution() {
+    let config: FeaturesToml =
+        toml::from_str("background_jobs = true\nbackground_command_delivery = false").unwrap();
+    let features = crate::Features::from_sources(
+        crate::FeatureConfigSource {
+            features: Some(&config),
+            ..Default::default()
+        },
+        crate::FeatureConfigSource::default(),
+        crate::FeatureOverrides::default(),
+    );
+    assert!(features.enabled(crate::Feature::BackgroundJobs));
+    assert!(features.enabled(crate::Feature::BackgroundCommandDelivery));
 }

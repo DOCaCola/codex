@@ -34,6 +34,8 @@ async fn invocation_for_payload(
     let (session, turn) = make_session_and_context().await;
     let turn = Arc::new(turn);
     ToolInvocation {
+        command_stack: None,
+        exec_command_is_dependency: false,
         session: session.into(),
         step_context: StepContext::for_test(Arc::clone(&turn)),
         turn,
@@ -281,6 +283,8 @@ async fn exec_command_rejects_login_when_selected_environment_disallows_it() {
 
     let turn = Arc::new(turn);
     let invocation = ToolInvocation {
+        command_stack: None,
+        exec_command_is_dependency: false,
         session: session.into(),
         step_context: StepContext::for_test(Arc::clone(&turn)),
         turn,
@@ -434,6 +438,8 @@ async fn exec_command_reuses_foreign_windows_grant() {
 
     let response = ExecCommandHandler::default()
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::clone(&session),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,
@@ -474,6 +480,8 @@ async fn exec_command_pre_tool_use_payload_uses_raw_command() {
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: session.into(),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,
@@ -502,6 +510,8 @@ async fn exec_command_pre_tool_use_payload_skips_write_stdin() {
 
     assert_eq!(
         handler.pre_tool_use_payload(&ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: session.into(),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,

@@ -8,6 +8,7 @@ fn completion_context_bounds_multibyte_output_without_breaking_utf8() {
         status: "exit_code=Some(-2147483648)".into(),
         preview: bounded(&"🦀".repeat(10_000)),
         retained_output: true,
+        metadata: None,
     };
     assert_eq!(fragment.preview, "🦀".repeat(125));
     assert!(fragment.body().len() + 64 < 1000);

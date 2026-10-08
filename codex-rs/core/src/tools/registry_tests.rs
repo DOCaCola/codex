@@ -827,6 +827,8 @@ fn test_invocation(
 ) -> ToolInvocation {
     let step_context = StepContext::for_test(Arc::clone(&turn));
     ToolInvocation {
+        command_stack: None,
+        exec_command_is_dependency: false,
         session,
         step_context,
         turn,

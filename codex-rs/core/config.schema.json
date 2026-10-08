@@ -753,6 +753,9 @@
             "background_command_delivery": {
               "type": "boolean"
             },
+            "background_jobs": {
+              "type": "boolean"
+            },
             "background_paginated_rollout_migration": {
               "type": "boolean"
             },
@@ -6803,6 +6806,9 @@
           "type": "boolean"
         },
         "background_command_delivery": {
+          "type": "boolean"
+        },
+        "background_jobs": {
           "type": "boolean"
         },
         "background_paginated_rollout_migration": {

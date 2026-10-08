@@ -52,6 +52,8 @@ maintaining parallel logic or compatibility fallbacks.
 - Lifecycle: reuse the active turn and existing cleanup/interrupt behavior.
   No desktop changes or new app-server wire events; no restart-durable jobs.
   A live turn waiting for a command is intentionally still shown as active.
+- Deferred PostToolUse hooks use the job's captured originating step and turn
+  context, including when completion is consumed in a later turn.
 - The v0.159.0 merge uses upstream's shared output buffers and sandbox
   attribution while retaining the fork's completion ownership and result cache.
 - Remove when: upstream provides equivalent completion consumption, runtime
@@ -144,3 +146,86 @@ maintaining parallel logic or compatibility fallbacks.
 - Remote MCP launches adopt upstream preservation of Windows system and temporary
   directory variables alongside explicit remote environment variables. The fork
   notification path and temporary Windows daemon default remain unchanged.
+
+## CodexDC app-server capability discovery
+
+- Added: 2026-10-07.
+- Local behavior: the experimental `codexdc/*` app-server namespace contains
+  `codexdc/capabilities`, returning the `codexdc` fork identifier, the app-server's
+  crate version, and a feature-to-integer-protocol-version map (initially empty).
+  Clients must opt into `experimentalApi` during initialization.
+- Reason: CodexDC must identify the backend attached to its own connection before
+  enabling fork-specific desktop behavior, independently of backend configuration.
+- Remove when: upstream provides equivalent attached-backend capability discovery
+  and the desktop integration no longer needs the fork namespace.
+- Local code: `codex-rs/app-server-protocol/src/protocol/v2/codexdc.rs`,
+  `codex-rs/app-server/src/request_processors/codexdc_processor.rs`.
+
+## Managed command-stack completion and retention contract
+
+- Added: 2026-10-07.
+- Local behavior: running stack results carry `running: true` and `success: null`;
+  they are neither completed successes nor failures that block later operations.
+  Child execution events keep their normal running/completed lifecycle.
+- Earlier finite stack steps wait for completion without an implicit deadline.
+  Explicit `timeout_ms` still applies; ordinary foreground commands retain the
+  existing 300-second default. Dependency policy is internal call state.
+- At the 64-result retention threshold, reservation and consumption/delivery
+  sweep every eligible retired record. Live and unconsumed jobs remain protected;
+  the existing admission capacity and error remain unchanged.
+- Remove when: upstream provides equivalent stack dependency and managed result
+  retention semantics.
+- Local code: `core/src/tools/handlers/command_stack*`, unified-exec handlers,
+  and `core/src/unified_exec/{managed,managed_delivery,oneshot,process_manager}.rs`.
+
+## Optional background job metadata
+
+- Added: 2026-10-07.
+- `[features] background_jobs = true` enables the under-development feature
+  (default false) and implies `background_command_delivery`, through feature
+  dependency normalization. Setting only `background_jobs` is sufficient.
+- Delivery owns stack correctness, dependency waits, cache eviction, and hook
+  attribution. Running stack reporting applies only with delivery enabled.
+- `background_jobs` gates richer bounded completion fragments and future job
+  listing/continuation/client features. With it off, completion fragment bytes
+  retain the existing delivery contract. Internal job metadata may still exist.
+- Jobs use UUIDs independent of reusable process handles, and capture origin,
+  command/item identity, mode, timestamps, explicit and effective deadlines, and
+  terminal outcome together. The original step context stays with the job.
+- Experimental `codexdc/capabilities.features.backgroundJobs` resolves the
+  effective base configuration on each request; `protocol` remains empty until
+  a fork job-listing API exists.
+- Remove when: upstream provides equivalent configurable job metadata and
+  completion context. Local code: `codex-rs/features`, managed unified exec,
+  `core/src/context/command_completion.rs`, and the `codexdc` request processor.
+
+- Experimental `codexdc/backgroundJobs/list` reads a loaded thread's existing
+  managed-job records, ordered by start time, with UUID/item/terminal IDs, mode,
+  state, start/completion times, explicit timeout, effective deadline, exit code,
+  and delivery state. A disabled thread returns `{ enabled: false, data: [] }`.
+  Unknown or unloaded threads use the upstream background-terminal lookup error.
+- Delivery is independent of execution state: auto/background results are
+  pending until consumed (including while running); acknowledged or initially
+  consumed results are delivered; unconsumed revoked/manual jobs have none.
+  Listing does not consume, finalize, or evict records. The 64-record cache
+  pressure rule and protected unconsumed results remain unchanged.
+- Capabilities advertise the static protocol revision `backgroundJobs: 1`;
+  `features.backgroundJobs` remains the current effective base-config value.
+
+
+## Optional session job completion queue
+
+- Added: 2026-10-07.
+- With `background_jobs`, the session's execution service owns UUID-keyed job
+  records and a FIFO completion queue. Process IDs index explicit reads only;
+  a retired UUID cannot enqueue a replacement process handle's completion.
+- Exit enqueues once. The first sample of every turn and the existing
+  post-sampling boundary drain at most four bounded fragments, carrying the
+  remaining results. Listing and explicit reads share the registry's delivery
+  state; no parallel delivery cache is introduced.
+- Turn parking remains the only lifecycle mode. No idle wake, unload, shutdown,
+  interrupt policy, or new configuration defaults are introduced by this stage.
+  With `background_jobs` off, the prior process-keyed delivery path is retained.
+- Remove when: upstream provides equivalent session job identity and queued
+  completion delivery. Local code: `core/src/unified_exec/managed_registry.rs`,
+  managed delivery, and the first-sample boundary in `core/src/session/turn.rs`.

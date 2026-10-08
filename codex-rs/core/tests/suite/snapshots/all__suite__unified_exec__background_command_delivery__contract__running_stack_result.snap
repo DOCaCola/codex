@@ -1,0 +1,17 @@
+---
+source: core/tests/suite/background_command_contract.rs
+assertion_line: 83
+expression: "serde_json::to_string_pretty(&result)?"
+---
+{
+  "results": [
+    {
+      "command_type": "exec_command",
+      "index": 0,
+      "running": true,
+      "step": 1,
+      "success": null
+    }
+  ],
+  "stopped": false
+}

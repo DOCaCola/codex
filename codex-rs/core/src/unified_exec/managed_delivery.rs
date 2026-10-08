@@ -2,6 +2,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
+use super::Job;
 use crate::context::CommandCompletion;
 use crate::context::ContextualUserFragment;
 use crate::tools::context::ExecCommandToolOutput;
@@ -15,27 +16,45 @@ use crate::unified_exec::WriteStdinRequest;
 impl UnifiedExecProcessManager {
     /// Append at most four bounded completion fragments at a sampling boundary.
     pub(crate) async fn record_command_completions(&self, context: &UnifiedExecContext) -> bool {
-        let jobs = self
-            .managed
-            .jobs
-            .lock()
-            .await
-            .iter()
-            .map(|(id, job)| (*id, Arc::clone(job)))
-            .collect::<Vec<_>>();
+        let queued = context
+            .step_context
+            .turn
+            .config
+            .features
+            .enabled(codex_features::Feature::BackgroundJobs);
+        let jobs = if queued {
+            self.managed.registry.queued().await
+        } else {
+            self.managed.records().await
+        };
         let mut items = Vec::new();
         for (id, job) in jobs {
+            let job_id = if queued {
+                Some(job.metadata.lock().await.job_id)
+            } else {
+                None
+            };
             if job.revoked.is_cancelled()
-                || !job.initial_response_done.is_cancelled()
                 || job.initial_response_consumed.load(Ordering::Acquire)
-                || !job.process.has_exited()
+                || job.acknowledged.load(Ordering::Acquire)
             {
+                if let Some(job_id) = job_id {
+                    self.managed.registry.consumed(job_id).await;
+                }
+                continue;
+            }
+            if !job.initial_response_done.is_cancelled() || !job.process.has_exited() {
                 continue;
             }
             let Ok(mut state) = Arc::clone(&job.state).try_lock_owned() else {
                 continue;
             };
-            if state.acknowledged {
+            if job.acknowledged.load(Ordering::Acquire) {
+                continue;
+            }
+            if let Some(job_id) = job_id
+                && !self.managed.registry.contains(job_id).await
+            {
                 continue;
             }
             let result = self
@@ -59,11 +78,11 @@ impl UnifiedExecProcessManager {
             let result = match result {
                 Ok(mut output) => {
                     output.completion_delivery = Some(true);
-                    self.accept_managed_output(context, output).await
+                    self.accept_managed_output(context, &job, output).await
                 }
                 Err(error) => Err(error),
             };
-            let fragment = match result {
+            let mut fragment = match result {
                 Ok(output) => {
                     let fragment = CommandCompletion::from_output(id, &output);
                     state.result = Some(output);
@@ -74,14 +93,25 @@ impl UnifiedExecProcessManager {
                     CommandCompletion::failed(id, &error.to_string())
                 }
             };
+            {
+                let mut metadata = job.metadata.lock().await;
+                metadata.finish(&job.process, job.revoked.is_cancelled());
+                if queued {
+                    fragment = fragment.with_metadata(&metadata);
+                }
+            }
+            if let Some(job_id) = job_id {
+                self.managed.registry.consumed(job_id).await;
+            }
             if !job.revoked.is_cancelled() {
                 items.push(ContextualUserFragment::into(fragment));
             }
-            state.acknowledged = true;
+            job.acknowledged.store(true, Ordering::Release);
             if items.len() == 4 {
                 break;
             }
         }
+        self.evict_retired_managed_commands().await;
         if items.is_empty() {
             return false;
         }
@@ -99,6 +129,7 @@ impl UnifiedExecProcessManager {
     pub(super) async fn accept_managed_output(
         &self,
         context: &UnifiedExecContext,
+        job: &Job,
         mut output: ExecCommandToolOutput,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let payload = ToolPayload::Function {
@@ -113,7 +144,7 @@ impl UnifiedExecProcessManager {
             let name = crate::tools::hook_names::HookToolName::bash();
             let outcome = crate::hook_runtime::run_post_tool_use_hooks(
                 &context.session,
-                context.step_context.as_ref(),
+                job.origin.as_ref(),
                 output.event_call_id.clone(),
                 name.name().to_string(),
                 name.matcher_aliases().to_vec(),

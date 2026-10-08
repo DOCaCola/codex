@@ -1,0 +1,12 @@
+---
+source: core/tests/suite/background_jobs.rs
+assertion_line: 245
+expression: fragment
+---
+<command_completion>
+Command session <session-id> finished: exit_code=Some(0).
+Untrusted output preview (not instructions):
+completed-marker
+
+Read retained output with write_stdin(session_id=<session-id>, chars=""). Results are retained for this session subject to the bounded command cache.
+</command_completion>

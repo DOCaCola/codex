@@ -135,6 +135,8 @@ pub enum Feature {
     UnifiedExec,
     /// Deliver finite command results automatically while keeping the owning turn active.
     BackgroundCommandDelivery,
+    /// Enable richer managed-job identity and completion context.
+    BackgroundJobs,
     /// Allow unified exec commands to allocate an interactive terminal.
     UnifiedExecTty,
     /// Expose a single tool that stacks exec_command and apply_patch calls.
@@ -707,6 +709,9 @@ impl Features {
     }
 
     pub fn normalize_dependencies(&mut self) {
+        if self.enabled(Feature::BackgroundJobs) {
+            self.enable(Feature::BackgroundCommandDelivery);
+        }
         if self.enabled(Feature::CodeModeOnly) && !self.enabled(Feature::CodeMode) {
             self.enable(Feature::CodeMode);
         }
@@ -1022,6 +1027,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::BackgroundCommandDelivery,
         key: "background_command_delivery",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::BackgroundJobs,
+        key: "background_jobs",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

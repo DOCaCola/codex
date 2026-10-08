@@ -603,6 +603,8 @@ async fn guardian_allows_exec_command_additional_permissions_requests_past_polic
     let step_context = StepContext::for_test(Arc::clone(&turn_context));
     let resp = handler
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::clone(&session),
             turn: Arc::clone(&turn_context),
             step_context,
@@ -732,6 +734,8 @@ async fn strict_auto_review_turn_grant_forces_guardian_for_exec_command_policy_s
     let step_context = StepContext::for_test(Arc::clone(&turn_context));
     let resp = handler
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::clone(&session),
             turn: Arc::clone(&turn_context),
             step_context,
@@ -884,6 +888,8 @@ async fn delayed_exec_command_uses_its_captured_authority_after_next_turn_starts
     let command = "echo captured-action-authority";
     let handler = crate::tools::handlers::ExecCommandHandler::default();
     let invocation = handler.handle(ToolInvocation {
+        command_stack: None,
+        exec_command_is_dependency: false,
         session: Arc::clone(&session),
         turn: Arc::clone(&action_turn),
         step_context,
@@ -1061,6 +1067,8 @@ async fn guardian_allows_unified_exec_additional_permissions_requests_past_polic
     let handler = ExecCommandHandler::default();
     let resp = handler
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::clone(&session),
             turn: Arc::clone(&turn_context),
             step_context,
@@ -1197,6 +1205,8 @@ async fn exec_command_allows_sticky_turn_permissions_without_inline_request_perm
     let step_context = StepContext::for_test(Arc::clone(&turn_context));
     let resp = handler
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::clone(&session),
             turn: Arc::clone(&turn_context),
             step_context,

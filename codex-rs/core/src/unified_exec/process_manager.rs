@@ -538,7 +538,9 @@ impl UnifiedExecProcessManager {
         let managed_slot = if request.managed.is_some_and(|execution| {
             matches!(
                 execution.mode,
-                super::managed::ExecutionMode::Auto | super::managed::ExecutionMode::Background
+                super::managed::ExecutionMode::Auto
+                    | super::managed::ExecutionMode::Background
+                    | super::managed::ExecutionMode::Foreground
             )
         }) {
             match self.reserve_managed_command().await {
@@ -672,10 +674,25 @@ impl UnifiedExecProcessManager {
             }
         };
 
-        let managed_launch = if process_started_alive && let Some(slot) = managed_slot {
+        let managed_launch = if let Some((execution, slot)) = request.managed.zip(managed_slot) {
             Some(
-                self.track_managed_command(request.process_id, Arc::clone(&process), slot)
-                    .await,
+                self.track_managed_command(
+                    request.process_id,
+                    context,
+                    super::managed::metadata::JobMetadata::new(
+                        &request,
+                        context,
+                        execution,
+                        start,
+                        completion
+                            .as_ref()
+                            .and_then(|completion| completion.timeout)
+                            .or(execution.timeout),
+                    ),
+                    Arc::clone(&process),
+                    slot,
+                )
+                .await,
             )
         } else {
             None
@@ -692,12 +709,16 @@ impl UnifiedExecProcessManager {
             // (via start_streaming_output above) and collect a snapshot here for
             // the tool response body.
             let wait = completion.as_ref().map_or_else(
-                || Duration::from_millis(yield_time_ms),
+                || Some(Duration::from_millis(yield_time_ms)),
                 |completion| completion.timeout,
             );
-            let deadline = start.checked_add(wait).ok_or_else(|| {
-                UnifiedExecError::process_failed("timeout_ms is too large".into())
-            })?;
+            let deadline = wait
+                .map(|wait| {
+                    start.checked_add(wait).ok_or_else(|| {
+                        UnifiedExecError::process_failed("timeout_ms is too large".into())
+                    })
+                })
+                .transpose()?;
             let collected_output = Self::collect_output_until_deadline(
                 process.output_handles(),
                 Some(context.session.subscribe_elicitation_pause_state()),
@@ -924,6 +945,8 @@ impl UnifiedExecProcessManager {
         {
             launch.acknowledge();
         }
+        drop(managed_launch);
+        self.evict_retired_managed_commands().await;
         response
     }
 
@@ -1105,7 +1128,7 @@ impl UnifiedExecProcessManager {
         let start = Instant::now();
         let deadline = start + Duration::from_millis(yield_time_ms);
         let collected_output =
-            Self::collect_output_until_deadline(&output, pause_state, deadline).await;
+            Self::collect_output_until_deadline(&output, pause_state, Some(deadline)).await;
         let wall_time = Instant::now().saturating_duration_since(start);
 
         let original_token_count = usize::try_from(approx_tokens_from_byte_count(
@@ -1659,7 +1682,7 @@ impl UnifiedExecProcessManager {
     pub(super) async fn collect_output_until_deadline<const MAX_BYTES: usize>(
         output: &OutputHandles<MAX_BYTES>,
         mut pause_state: Option<watch::Receiver<bool>>,
-        mut deadline: Instant,
+        mut deadline: Option<Instant>,
     ) -> HeadTailBuffer<MAX_BYTES> {
         const POST_EXIT_CLOSE_WAIT_CAP: Duration = Duration::from_millis(50);
 
@@ -1704,15 +1727,19 @@ impl UnifiedExecProcessManager {
                 if exit_signal_received && output_closed.load(Ordering::Acquire) {
                     break StopReason::OutputClosed;
                 }
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                if remaining == Duration::ZERO {
+                let remaining =
+                    deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+                if remaining == Some(Duration::ZERO) {
                     break StopReason::Deadline;
                 }
 
                 if exit_signal_received {
                     let now = Instant::now();
-                    let close_wait_deadline = *post_exit_deadline
-                        .get_or_insert_with(|| now + remaining.min(POST_EXIT_CLOSE_WAIT_CAP));
+                    let close_wait_deadline = *post_exit_deadline.get_or_insert_with(|| {
+                        now + remaining.map_or(POST_EXIT_CLOSE_WAIT_CAP, |remaining| {
+                            remaining.min(POST_EXIT_CLOSE_WAIT_CAP)
+                        })
+                    });
                     let close_wait_remaining = close_wait_deadline.saturating_duration_since(now);
                     if close_wait_remaining == Duration::ZERO {
                         break StopReason::PostExitDeadline;
@@ -1737,7 +1764,12 @@ impl UnifiedExecProcessManager {
                 tokio::select! {
                     _ = &mut notified => {}
                     _ = &mut exit_notified => exit_signal_received = true,
-                    _ = tokio::time::sleep(remaining) => break StopReason::Deadline,
+                    _ = async {
+                        match remaining {
+                            Some(remaining) => tokio::time::sleep(remaining).await,
+                            None => std::future::pending::<()>().await,
+                        }
+                    } => break StopReason::Deadline,
                     _ = Self::wait_for_pause_change(pause_state.as_ref()) => {}
                 }
                 continue;
@@ -1746,7 +1778,7 @@ impl UnifiedExecProcessManager {
             collected.push_buffer(drained_output);
 
             exit_signal_received |= cancellation_token.is_cancelled();
-            if Instant::now() >= deadline {
+            if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 break StopReason::Deadline;
             }
         };
@@ -1771,7 +1803,7 @@ impl UnifiedExecProcessManager {
 
     async fn extend_deadlines_while_paused(
         pause_state: &mut Option<watch::Receiver<bool>>,
-        deadline: &mut Instant,
+        deadline: &mut Option<Instant>,
         post_exit_deadline: &mut Option<Instant>,
     ) {
         let Some(receiver) = pause_state.as_mut() else {
@@ -1789,7 +1821,9 @@ impl UnifiedExecProcessManager {
         }
 
         let paused_for = paused_at.elapsed();
-        *deadline += paused_for;
+        if let Some(deadline) = deadline.as_mut() {
+            *deadline += paused_for;
+        }
         if let Some(post_exit_deadline) = post_exit_deadline.as_mut() {
             *post_exit_deadline += paused_for;
         }

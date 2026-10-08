@@ -7575,6 +7575,8 @@ async fn request_permissions_tool_resolves_legacy_paths_against_selected_environ
         async move {
             handler
                 .handle(ToolInvocation {
+                    command_stack: None,
+                    exec_command_is_dependency: false,
                     session,
                     step_context,
                     turn: turn_context,
@@ -7659,6 +7661,8 @@ async fn request_permissions_tool_rejects_invalid_requests(
     let step_context = StepContext::for_test(Arc::clone(&turn_context));
     let result = RequestPermissionsHandler
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::new(session),
             step_context,
             turn: turn_context,
@@ -13073,6 +13077,8 @@ async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request()
     let handler = ExecCommandHandler::default();
     let resp = handler
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::clone(&session),
             turn: Arc::clone(&turn_context),
             step_context,

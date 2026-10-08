@@ -46,6 +46,8 @@ async fn invocation_for_payload(payload: ToolPayload) -> ToolInvocation {
     let (session, turn) = make_session_and_context().await;
     let turn = Arc::new(turn);
     ToolInvocation {
+        command_stack: None,
+        exec_command_is_dependency: false,
         session: session.into(),
         step_context: StepContext::for_test(Arc::clone(&turn)),
         turn,

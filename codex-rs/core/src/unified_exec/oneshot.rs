@@ -19,7 +19,7 @@ use super::trace_id;
 use crate::tools::context::ExecCommandToolOutput;
 
 pub(super) struct Completion<'a> {
-    pub timeout: Duration,
+    pub timeout: Option<Duration>,
     pub timed_out: bool,
     pub process: &'a OnceLock<Arc<UnifiedExecProcess>>,
 }
@@ -41,7 +41,7 @@ impl UnifiedExecProcessManager {
     pub(crate) async fn exec_command_to_completion(
         request: ExecCommandRequest,
         context: &UnifiedExecContext,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let context = UnifiedExecContext::new(
             Arc::clone(&context.session),
@@ -53,7 +53,7 @@ impl UnifiedExecProcessManager {
         let task = async move {
             let manager = &context.session.services.unified_exec_manager;
             let process_id = request.process_id;
-            if Instant::now().checked_add(timeout).is_none() {
+            if timeout.is_some_and(|timeout| Instant::now().checked_add(timeout).is_none()) {
                 manager.release_process_id(process_id).await;
                 return (
                     Err(UnifiedExecError::process_failed(

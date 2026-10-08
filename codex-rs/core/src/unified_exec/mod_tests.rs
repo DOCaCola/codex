@@ -173,7 +173,7 @@ async fn exec_command_with_tty(
     let collected_output = UnifiedExecProcessManager::collect_output_until_deadline(
         process.output_handles(),
         Some(session.subscribe_elicitation_pause_state()),
-        deadline,
+        Some(deadline),
     )
     .await;
     let wall_time = Instant::now().saturating_duration_since(started_at);
@@ -846,7 +846,7 @@ async fn unified_exec_uses_remote_exec_server_when_configured() -> anyhow::Resul
     let collected = UnifiedExecProcessManager::collect_output_until_deadline(
         process.output_handles(),
         /*pause_state*/ None,
-        Instant::now() + Duration::from_millis(2_500),
+        Some(Instant::now() + Duration::from_millis(2_500)),
     )
     .await
     .to_bytes_with_omission_marker();

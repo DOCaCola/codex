@@ -29,8 +29,12 @@ use crate::tools::context::ExecCommandToolOutput;
 
 #[path = "managed_delivery.rs"]
 mod delivery;
+#[path = "managed_listing.rs"]
+mod listing;
+#[path = "managed_registry.rs"]
+mod registry;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ExecutionMode {
     Auto,
@@ -43,6 +47,7 @@ pub(crate) enum ExecutionMode {
 pub(crate) struct Execution {
     pub mode: ExecutionMode,
     pub timeout: Option<Duration>,
+    pub explicit_timeout: Option<Duration>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -55,6 +60,7 @@ pub(crate) enum WaitMode {
 
 pub(super) struct ManagedCommands {
     jobs: Mutex<BTreeMap<i32, Arc<Job>>>,
+    registry: Arc<registry::SessionJobRegistry>,
     changed: Arc<Notify>,
     slots: Arc<Semaphore>,
 }
@@ -63,6 +69,7 @@ impl Default for ManagedCommands {
     fn default() -> Self {
         Self {
             jobs: Mutex::default(),
+            registry: Arc::default(),
             changed: Arc::default(),
             slots: Arc::new(Semaphore::new(
                 RETAINED_RESULTS + super::MAX_UNIFIED_EXEC_PROCESSES,
@@ -71,18 +78,42 @@ impl Default for ManagedCommands {
     }
 }
 
+impl ManagedCommands {
+    async fn get(&self, process_id: i32) -> Option<Arc<Job>> {
+        if let Some(job) = self.registry.get(process_id).await {
+            return Some(job);
+        }
+        self.jobs.lock().await.get(&process_id).cloned()
+    }
+
+    async fn records(&self) -> Vec<(i32, Arc<Job>)> {
+        let mut jobs = self
+            .jobs
+            .lock()
+            .await
+            .iter()
+            .map(|(id, job)| (*id, Arc::clone(job)))
+            .collect::<Vec<_>>();
+        jobs.extend(self.registry.jobs().await);
+        jobs.sort_by_key(|(id, _)| *id);
+        jobs
+    }
+}
+
 struct Job {
+    origin: Arc<crate::session::step_context::StepContext>,
+    metadata: Mutex<metadata::JobMetadata>,
     _slot: Arc<OwnedSemaphorePermit>,
     process: Arc<UnifiedExecProcess>,
     initial_response_done: CancellationToken,
     initial_response_consumed: AtomicBool,
+    acknowledged: AtomicBool,
     revoked: CancellationToken,
     state: Arc<Mutex<JobState>>,
 }
 
 #[derive(Default)]
 struct JobState {
-    acknowledged: bool,
     result: Option<ExecCommandToolOutput>,
     error: Option<String>,
     last_poll: Option<Instant>,
@@ -126,6 +157,9 @@ impl Drop for LaunchGuard {
 const WAIT_LADDER: [u64; 5] = [5_000, 10_000, 30_000, 60_000, 300_000];
 const RETAINED_RESULTS: usize = 64;
 
+#[path = "managed_metadata.rs"]
+pub(crate) mod metadata;
+
 struct NotifyOnDrop(Arc<Notify>);
 
 impl Drop for NotifyOnDrop {
@@ -138,46 +172,81 @@ impl UnifiedExecProcessManager {
     pub(super) async fn reserve_managed_command(
         &self,
     ) -> Result<Arc<OwnedSemaphorePermit>, UnifiedExecError> {
-        let mut jobs = self.managed.jobs.lock().await;
-        // Retained results are addressable through write_stdin, including on a
-        // remote executor. Never evict an unconsumed completion.
-        if jobs.len() >= RETAINED_RESULTS {
-            let retired = jobs.iter().find_map(|(id, job)| {
-                job.state.try_lock().ok().and_then(|state| {
-                    (state.acknowledged
-                        || job.revoked.is_cancelled()
-                        || job.initial_response_consumed.load(Ordering::Acquire))
-                    .then_some(*id)
-                })
-            });
-            if let Some(id) = retired {
-                jobs.remove(&id);
-            }
-        }
+        self.evict_retired_managed_commands().await;
         Arc::clone(&self.managed.slots).try_acquire_owned().map(Arc::new).map_err(|_| {
             UnifiedExecError::process_failed("managed command capacity reached; consume pending results before starting more commands".into())
         })
     }
 
+    pub(super) async fn evict_retired_managed_commands(&self) {
+        {
+            let mut jobs = self.managed.jobs.lock().await;
+            // Preserve delivery-only retention when background_jobs is disabled.
+            if jobs.len() >= RETAINED_RESULTS {
+                jobs.retain(|_, job| {
+                    !job.process.has_exited()
+                        || !(job.acknowledged.load(Ordering::Acquire)
+                            || job.revoked.is_cancelled()
+                            || job.initial_response_consumed.load(Ordering::Acquire))
+                });
+            }
+        }
+        self.managed.registry.evict_retired().await;
+    }
+
     pub(super) async fn track_managed_command(
         &self,
         process_id: i32,
+        context: &UnifiedExecContext,
+        metadata: metadata::JobMetadata,
         process: Arc<UnifiedExecProcess>,
         slot: Arc<OwnedSemaphorePermit>,
     ) -> LaunchGuard {
+        let job_id = metadata.job_id;
+        let queued = context
+            .step_context
+            .turn
+            .config
+            .features
+            .enabled(codex_features::Feature::BackgroundJobs);
         let job = Arc::new(Job {
+            origin: Arc::clone(&context.step_context),
+            metadata: Mutex::new(metadata),
             _slot: slot,
             process,
             initial_response_done: CancellationToken::new(),
             initial_response_consumed: AtomicBool::new(false),
+            acknowledged: AtomicBool::new(false),
             revoked: CancellationToken::new(),
             state: Arc::new(Mutex::new(JobState::default())),
         });
-        self.managed
-            .jobs
-            .lock()
-            .await
-            .insert(process_id, Arc::clone(&job));
+        if queued {
+            self.managed
+                .registry
+                .insert(process_id, job_id, Arc::clone(&job))
+                .await;
+        } else {
+            self.managed
+                .jobs
+                .lock()
+                .await
+                .insert(process_id, Arc::clone(&job));
+        }
+        let registry = Arc::clone(&self.managed.registry);
+        let changed = Arc::clone(&self.managed.changed);
+        let finishing = Arc::clone(&job);
+        tokio::spawn(async move {
+            finishing.process.cancellation_token().cancelled().await;
+            if queued {
+                registry.enqueue(job_id).await;
+                changed.notify_waiters();
+            }
+            finishing
+                .metadata
+                .lock()
+                .await
+                .finish(&finishing.process, finishing.revoked.is_cancelled());
+        });
         self.managed.changed.notify_waiters();
         LaunchGuard {
             job,
@@ -186,18 +255,46 @@ impl UnifiedExecProcessManager {
     }
 
     pub(super) async fn managed_id_reserved(&self, process_id: i32) -> bool {
-        self.managed.jobs.lock().await.contains_key(&process_id)
+        self.managed.get(process_id).await.is_some()
+    }
+
+    pub(super) async fn finalize_managed_outcome(
+        &self,
+        process_id: i32,
+        process: &Arc<UnifiedExecProcess>,
+    ) {
+        let Some(job) = self.managed.get(process_id).await else {
+            return;
+        };
+        let queued = job
+            .origin
+            .turn
+            .config
+            .features
+            .enabled(codex_features::Feature::BackgroundJobs);
+        if queued && !Arc::ptr_eq(&job.process, process) {
+            return;
+        }
+        if queued {
+            let job_id = job.metadata.lock().await.job_id;
+            self.managed.registry.enqueue(job_id).await;
+            self.managed.changed.notify_waiters();
+        }
+        job.metadata
+            .lock()
+            .await
+            .finish(&job.process, job.revoked.is_cancelled());
     }
 
     pub(super) async fn revoke_managed_commands(&self) {
-        for job in self.managed.jobs.lock().await.values() {
+        for (_, job) in self.managed.records().await {
             job.revoked.cancel();
         }
         self.managed.changed.notify_waiters();
     }
 
     pub(super) async fn revoke_managed_command(&self, process_id: i32) {
-        if let Some(job) = self.managed.jobs.lock().await.get(&process_id) {
+        if let Some(job) = self.managed.get(process_id).await {
             job.revoked.cancel();
         }
         self.managed.changed.notify_waiters();
@@ -209,13 +306,7 @@ impl UnifiedExecProcessManager {
         mut request: WriteStdinRequest<'_>,
         wait: WaitMode,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
-        let job = self
-            .managed
-            .jobs
-            .lock()
-            .await
-            .get(&request.process_id)
-            .cloned();
+        let job = self.managed.get(request.process_id).await;
         let Some(job) = job else {
             if wait == WaitMode::Completion {
                 return Err(UnifiedExecError::process_failed(
@@ -274,7 +365,7 @@ impl UnifiedExecProcessManager {
         });
         let result = match result {
             Ok(output) if output.process_id.is_none() => {
-                self.accept_managed_output(context, output).await
+                self.accept_managed_output(context, &job, output).await
             }
             result => result,
         };
@@ -285,13 +376,16 @@ impl UnifiedExecProcessManager {
                 state.poll_level = 0;
             }
             if output.process_id.is_none() {
-                state.acknowledged = true;
                 state.result = Some(output.clone());
+                job.acknowledged.store(true, Ordering::Release);
             }
         } else if job.process.has_exited() {
-            state.acknowledged = true;
             state.error = result.as_ref().err().map(ToString::to_string);
+            job.acknowledged.store(true, Ordering::Release);
         }
+        drop(state);
+        drop(job);
+        self.evict_retired_managed_commands().await;
         result
     }
 
@@ -301,17 +395,21 @@ impl UnifiedExecProcessManager {
             let changed = self.managed.changed.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
-            let jobs = self
-                .managed
-                .jobs
-                .lock()
-                .await
-                .values()
-                .cloned()
-                .collect::<Vec<_>>();
+            let jobs = self.managed.records().await;
+            let queued_ready = if context
+                .step_context
+                .turn
+                .config
+                .features
+                .enabled(codex_features::Feature::BackgroundJobs)
+            {
+                Some(self.managed.registry.has_ready_completion().await)
+            } else {
+                None
+            };
             let mut exits = FuturesUnordered::new();
             let mut waiting_reader = false;
-            for job in jobs {
+            for (_, job) in jobs {
                 if job.revoked.is_cancelled() {
                     continue;
                 }
@@ -322,16 +420,20 @@ impl UnifiedExecProcessManager {
                     exits.push(job.initial_response_done.clone().cancelled_owned());
                     continue;
                 }
-                let Ok(state) = job.state.try_lock() else {
+                let Ok(_state) = job.state.try_lock() else {
                     waiting_reader = true;
                     continue;
                 };
-                if state.acknowledged {
+                if job.acknowledged.load(Ordering::Acquire) {
                     continue;
                 }
                 let exited = job.process.cancellation_token();
                 if exited.is_cancelled() {
-                    return true;
+                    if queued_ready != Some(false) {
+                        return true;
+                    }
+                    waiting_reader = true;
+                    continue;
                 }
                 exits.push(exited.cancelled_owned());
             }

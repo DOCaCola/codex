@@ -9,6 +9,13 @@ use core_test_support::responses::ev_custom_tool_call;
 use core_test_support::test_target_os;
 use pretty_assertions::assert_eq;
 
+#[path = "background_command_contract.rs"]
+mod contract;
+#[path = "background_jobs.rs"]
+mod jobs;
+#[path = "background_job_queue.rs"]
+mod queue;
+
 fn gated_command() -> &'static str {
     match test_target_os() {
         TestTargetOs::Windows => {

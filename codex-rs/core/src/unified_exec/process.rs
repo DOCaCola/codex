@@ -114,6 +114,7 @@ pub(crate) struct UnifiedExecProcess {
     output_task: Option<JoinHandle<()>>,
     sandbox_type: Option<SandboxType>,
     timed_out: AtomicBool,
+    stopped: AtomicBool,
     _spawn_lifecycle: Option<SpawnLifecycleHandle>,
     // The shell may still need to replay this file after process startup returns.
     pub(crate) _shell_snapshot: Option<Arc<ShellSnapshotFile>>,
@@ -157,6 +158,7 @@ impl UnifiedExecProcess {
             output_task: None,
             sandbox_type,
             timed_out: AtomicBool::new(false),
+            stopped: AtomicBool::new(false),
             _spawn_lifecycle: spawn_lifecycle,
             _shell_snapshot: None,
         }
@@ -236,6 +238,10 @@ impl UnifiedExecProcess {
         self.timed_out.load(Ordering::Acquire)
     }
 
+    pub(super) fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::Acquire)
+    }
+
     fn finish_termination(&self) {
         self.output.cancellation_token.cancel();
         if let Some(output_task) = &self.output_task {
@@ -244,6 +250,7 @@ impl UnifiedExecProcess {
     }
 
     pub(super) fn terminate(&self) {
+        self.stopped.store(true, Ordering::Release);
         match &self.process_handle {
             ProcessHandle::Local(process_handle) => process_handle.terminate(),
             ProcessHandle::ExecServer(process_handle) => {
@@ -257,6 +264,7 @@ impl UnifiedExecProcess {
     }
 
     pub(super) async fn terminate_confirmed(&self) -> Result<(), UnifiedExecError> {
+        self.stopped.store(true, Ordering::Release);
         match &self.process_handle {
             ProcessHandle::Local(process_handle) => process_handle.terminate(),
             ProcessHandle::ExecServer(process_handle) => {
@@ -272,6 +280,7 @@ impl UnifiedExecProcess {
     }
 
     pub(super) async fn interrupt(&self) -> Result<(), UnifiedExecError> {
+        self.stopped.store(true, Ordering::Release);
         match &self.process_handle {
             ProcessHandle::Local(process_handle) => process_handle
                 .signal(PtyProcessSignal::Interrupt)

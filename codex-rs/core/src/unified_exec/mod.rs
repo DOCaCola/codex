@@ -113,6 +113,7 @@ impl UnifiedExecContext {
 
 #[derive(Debug)]
 pub(crate) struct ExecCommandRequest {
+    pub command_stack: Option<crate::tools::context::CommandStackIdentity>,
     pub managed: Option<managed::Execution>,
     pub command: Vec<String>,
     pub shell_type: ShellType,

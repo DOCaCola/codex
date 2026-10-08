@@ -26,6 +26,7 @@ use crate::plugin_config_reload::PluginStartupConfig;
 use crate::request_processors::AccountRequestProcessor;
 use crate::request_processors::AppsRequestProcessor;
 use crate::request_processors::CatalogRequestProcessor;
+use crate::request_processors::CodexdcRequestProcessor;
 use crate::request_processors::CommandExecRequestProcessor;
 use crate::request_processors::ConfigRequestProcessor;
 use crate::request_processors::EnvironmentRequestProcessor;
@@ -147,6 +148,7 @@ pub(crate) struct MessageProcessor {
     account_processor: Arc<AccountRequestProcessor>,
     apps_processor: AppsRequestProcessor,
     catalog_processor: CatalogRequestProcessor,
+    codexdc_processor: CodexdcRequestProcessor,
     command_exec_processor: CommandExecRequestProcessor,
     process_exec_processor: ProcessExecRequestProcessor,
     config_processor: ConfigRequestProcessor,
@@ -433,6 +435,7 @@ impl MessageProcessor {
             config_manager.clone(),
             model_catalog,
         );
+        let codexdc_processor = CodexdcRequestProcessor::new(config_manager.clone());
         let command_exec_processor = CommandExecRequestProcessor::new(
             arg0_paths.clone(),
             Arc::clone(&config),
@@ -591,6 +594,7 @@ impl MessageProcessor {
             account_processor,
             apps_processor,
             catalog_processor,
+            codexdc_processor,
             command_exec_processor,
             process_exec_processor,
             config_processor,
@@ -1452,6 +1456,14 @@ impl MessageProcessor {
             ClientRequest::ThreadBackgroundTerminalsTerminate { params, .. } => {
                 self.thread_processor
                     .thread_background_terminals_terminate(params)
+                    .await
+            }
+            ClientRequest::CodexdcCapabilities { .. } => {
+                self.codexdc_processor.capabilities().await
+            }
+            ClientRequest::CodexdcBackgroundJobsList { params, .. } => {
+                self.codexdc_processor
+                    .background_jobs_list(params, &self.thread_processor)
                     .await
             }
             ClientRequest::ThreadRevert { params, .. } => {

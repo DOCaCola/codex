@@ -388,6 +388,8 @@ mod tests {
         let (session, turn) = crate::session::tests::make_session_and_context().await;
         let turn = Arc::new(turn);
         let invocation = ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: session.into(),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,
@@ -482,6 +484,8 @@ mod tests {
         model_info.node_repl_disabled = !turn.model_info().node_repl_disabled;
         let node_repl_disabled = model_info.node_repl_disabled;
         let invocation = ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session,
             step_context,
             turn,

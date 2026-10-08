@@ -357,7 +357,7 @@ async fn output_collection_stays_bounded_across_repeated_drains() {
     let collect = UnifiedExecProcessManager::collect_output_until_deadline(
         &output,
         /*pause_state*/ None,
-        Instant::now() + Duration::from_secs(5),
+        Some(Instant::now() + Duration::from_secs(5)),
     );
     let produce = async {
         for chunk in chunks {
@@ -415,7 +415,7 @@ async fn output_collection_preserves_omissions_from_drained_buffer() {
     let collected = UnifiedExecProcessManager::collect_output_until_deadline(
         &output,
         /*pause_state*/ None,
-        Instant::now() + Duration::from_secs(1),
+        Some(Instant::now() + Duration::from_secs(1)),
     )
     .await;
 
@@ -454,6 +454,7 @@ async fn failed_initial_end_for_unstored_process_uses_fallback_output() {
         "call-unified-denied".to_string(),
     );
     let request = ExecCommandRequest {
+        command_stack: None,
         managed: None,
         command: vec![
             "sh".to_string(),

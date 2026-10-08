@@ -48,8 +48,18 @@ pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 /// Delivery does not finish the call: post-tool hooks can still be cancelled.
 #[derive(Default)]
 pub(crate) struct ToolCallState {
+    pub(crate) command_stack: Option<CommandStackIdentity>,
+    /// Stack dependencies wait for exit without an implicit execution deadline.
+    pub(crate) exec_command_is_dependency: bool,
     pub(crate) terminal_outcome_reached: AtomicBool,
     pub(crate) delivered_assistant_message: OnceLock<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct CommandStackIdentity {
+    pub parent_call_id: String,
+    pub step: u8,
+    pub index: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,6 +78,8 @@ pub enum ToolCallSource {
 
 #[derive(Clone)]
 pub struct ToolInvocation {
+    pub(crate) command_stack: Option<CommandStackIdentity>,
+    pub(crate) exec_command_is_dependency: bool,
     pub session: Arc<Session>,
     // TODO(sayan): Remove this compatibility field once handlers use `step_context.turn`.
     pub turn: Arc<TurnContext>,

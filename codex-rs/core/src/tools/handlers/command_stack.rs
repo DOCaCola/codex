@@ -121,14 +121,16 @@ impl CommandStackHandler {
         apply_stack_workdir(&mut commands, workdir.as_deref());
 
         validate_commands(&commands, self.patch_tool)?;
-        if invocation
+        let last_step = if invocation
             .turn
             .config
             .features
             .enabled(codex_features::Feature::BackgroundCommandDelivery)
         {
-            managed::prepare_dependencies(&mut commands)?;
-        }
+            managed::prepare_dependencies(&mut commands)?
+        } else {
+            1
+        };
         let tool_runtime = ToolCallRuntime::new_with_router(
             Arc::clone(&invocation.session),
             Arc::clone(&invocation.step_context),
@@ -154,7 +156,13 @@ impl CommandStackHandler {
                 let mut step_executions = Vec::with_capacity(commands.len());
                 for (index, command) in commands {
                     let execution = self
-                        .execute_command(&invocation, tool_runtime.clone(), index, command)
+                        .execute_command(
+                            &invocation,
+                            tool_runtime.clone(),
+                            index,
+                            command,
+                            last_step,
+                        )
                         .await;
                     let stop_current_step = execution.stop_current_step;
                     step_executions.push(execution);
@@ -165,7 +173,13 @@ impl CommandStackHandler {
                 step_executions
             } else {
                 join_all(commands.into_iter().map(|(index, command)| {
-                    self.execute_command(&invocation, tool_runtime.clone(), index, command)
+                    self.execute_command(
+                        &invocation,
+                        tool_runtime.clone(),
+                        index,
+                        command,
+                        last_step,
+                    )
                 }))
                 .await
             };
@@ -184,14 +198,19 @@ impl CommandStackHandler {
         }
         results.sort_by_key(|result| result.index);
 
-        let success = results.iter().all(|result| result.success);
+        let success = if results.iter().any(|result| result.success == Some(false)) {
+            Some(false)
+        } else if results.iter().any(|result| result.running) {
+            None
+        } else {
+            Some(true)
+        };
         let output =
             serde_json::to_string(&CommandStackOutput { results, stopped }).map_err(|err| {
                 FunctionCallError::Fatal(format!("serialize command_stack output: {err}"))
             })?;
         Ok(boxed_tool_output(FunctionToolOutput::from_text(
-            output,
-            Some(success),
+            output, success,
         )))
     }
 
@@ -201,6 +220,7 @@ impl CommandStackHandler {
         tool_runtime: ToolCallRuntime,
         index: usize,
         command: CommandItem,
+        last_step: u8,
     ) -> CommandExecution {
         let command_type = command.command_type;
         let step = command.step;
@@ -213,7 +233,8 @@ impl CommandStackHandler {
                         index,
                         step,
                         command_type,
-                        success: false,
+                        success: Some(false),
+                        running: false,
                         output: error.to_string(),
                     },
                     continue_on_failure,
@@ -226,13 +247,22 @@ impl CommandStackHandler {
                 index,
                 step,
                 command_type,
+                parent.turn.config.features.get(),
                 tool_runtime
                     .handle_tool_call_with_source(
                         Arc::clone(&parent.step_context),
                         child,
                         parent.source.clone(),
                         parent.cancellation_token.clone(),
-                        Arc::new(ToolCallState::default()),
+                        Arc::new(ToolCallState {
+                            command_stack: Some(crate::tools::context::CommandStackIdentity {
+                                parent_call_id: parent.call_id.clone(),
+                                step,
+                                index,
+                            }),
+                            exec_command_is_dependency: step < last_step,
+                            ..Default::default()
+                        }),
                     )
                     .await,
             ),
@@ -295,7 +325,9 @@ struct CommandResult {
     index: usize,
     step: u8,
     command_type: CommandType,
-    success: bool,
+    success: Option<bool>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    running: bool,
     output: String,
 }
 
@@ -307,7 +339,7 @@ struct CommandExecution {
 
 impl CommandExecution {
     fn from_result(result: CommandResult, continue_on_failure: bool) -> Self {
-        let failed = !result.success;
+        let failed = result.success == Some(false);
         let patch_failed = failed && result.command_type.is_patch();
         Self {
             blocks_later_steps: failed && (patch_failed || !continue_on_failure),
@@ -573,28 +605,36 @@ fn normalize_child_result(
     index: usize,
     step: u8,
     command_type: CommandType,
+    features: &codex_features::Features,
     result: Result<AnyToolResult, FunctionCallError>,
 ) -> CommandResult {
     match result {
         Ok(result) => {
             // Shell exit status governs dependency ordering, not whether the
             // tool transport succeeded. Preserve PostToolUse for nonzero exits.
+            let mut running = false;
             let dependency_succeeded = match command_type {
                 CommandType::ExecCommand | CommandType::WriteStdin => {
                     let status = result.result.code_mode_result(&result.payload);
+                    running = features.enabled(codex_features::Feature::BackgroundCommandDelivery)
+                        && status.get("session_id").is_some();
                     status.get("completion_delivery").is_none()
-                        || status.get("session_id").is_some()
                         || status.get("exit_code").and_then(serde_json::Value::as_i64) == Some(0)
                 }
                 CommandType::ApplyPatch | CommandType::Hpatch => true,
             };
-            let success = result.success_for_logging() && dependency_succeeded;
+            let success = if running {
+                None
+            } else {
+                Some(result.success_for_logging() && dependency_succeeded)
+            };
             let output = response_text(result.into_response().item);
             CommandResult {
                 index,
                 step,
                 command_type,
                 success,
+                running,
                 output,
             }
         }
@@ -602,7 +642,8 @@ fn normalize_child_result(
             index,
             step,
             command_type,
-            success: false,
+            success: Some(false),
+            running: false,
             output: error.to_string(),
         },
     }
@@ -1032,6 +1073,8 @@ end"#,
         let (session, turn) = make_session_and_context().await;
         let turn = Arc::new(turn);
         ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: session.into(),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,

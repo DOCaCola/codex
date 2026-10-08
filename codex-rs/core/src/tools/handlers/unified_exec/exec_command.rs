@@ -74,6 +74,11 @@ enum ExecCommandLifetime {
     OneShot,
 }
 
+enum CommandWait {
+    InitialYield,
+    Completion { timeout: Option<Duration> },
+}
+
 pub struct ExecCommandHandler {
     options: ExecCommandHandlerOptions,
     lifetime: ExecCommandLifetime,
@@ -225,6 +230,8 @@ impl ExecCommandHandler {
             tracker,
             call_id,
             payload,
+            exec_command_is_dependency,
+            command_stack,
             ..
         } = invocation;
 
@@ -374,13 +381,15 @@ impl ExecCommandHandler {
             prefix_rule,
             ..
         } = args;
-        let mut completion_timeout = match self.lifetime {
-            ExecCommandLifetime::Interactive => None,
+        let mut wait = match self.lifetime {
+            ExecCommandLifetime::Interactive => CommandWait::InitialYield,
             ExecCommandLifetime::OneShot => {
                 tty = false;
-                Some(Duration::from_millis(
-                    timeout_ms.unwrap_or(DEFAULT_EXEC_COMMAND_TIMEOUT_MS),
-                ))
+                CommandWait::Completion {
+                    timeout: Some(Duration::from_millis(
+                        timeout_ms.unwrap_or(DEFAULT_EXEC_COMMAND_TIMEOUT_MS),
+                    )),
+                }
             }
         };
         let managed = if self.background_delivery {
@@ -411,10 +420,17 @@ impl ExecCommandHandler {
                 ));
             }
             if mode == ExecutionMode::Foreground {
-                completion_timeout = Some(timeout.unwrap_or(Duration::from_secs(300)));
+                wait = CommandWait::Completion {
+                    timeout: if exec_command_is_dependency {
+                        timeout
+                    } else {
+                        Some(timeout.unwrap_or(Duration::from_secs(300)))
+                    },
+                };
             }
             Some(Execution {
                 mode,
+                explicit_timeout: timeout,
                 timeout: if mode == ExecutionMode::Foreground {
                     None
                 } else {
@@ -529,6 +545,7 @@ impl ExecCommandHandler {
         // Preparation can be cancelled. Reserve a process only once it is done.
         let process_id = manager.allocate_process_id().await;
         let request = ExecCommandRequest {
+            command_stack,
             managed,
             command,
             shell_type,
@@ -549,12 +566,12 @@ impl ExecCommandHandler {
             justification,
             prefix_rule,
         };
-        let result = match completion_timeout {
-            Some(timeout) => {
+        let result = match wait {
+            CommandWait::Completion { timeout } => {
                 UnifiedExecProcessManager::exec_command_to_completion(request, &context, timeout)
                     .await
             }
-            None => manager.exec_command(request, &context).await,
+            CommandWait::InitialYield => manager.exec_command(request, &context).await,
         };
         match result {
             Ok(response) => Ok(boxed_tool_output(response)),

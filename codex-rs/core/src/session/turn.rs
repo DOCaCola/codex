@@ -423,6 +423,7 @@ pub(crate) async fn run_turn(
 
     let mut next_step_context = Some(first_step_context);
     let mut guardian_budget_compacted = false;
+    let mut first_sample = true;
     loop {
         // Note that pending_input would be something like a message the user
         // submitted through the UI while the model was running. Though the UI
@@ -511,6 +512,26 @@ pub(crate) async fn run_turn(
             // Keep the override after accepted input so history truncation removes them together.
             sess.record_reasoning_effort_override(step_context.as_ref())
                 .await;
+
+            // Include completions that arrived during turn setup/compaction in its first sample.
+            if first_sample
+                && turn_context
+                    .config
+                    .features
+                    .enabled(Feature::BackgroundJobs)
+            {
+                let context = crate::unified_exec::UnifiedExecContext::new(
+                    Arc::clone(&sess),
+                    Arc::clone(&step_context),
+                    cancellation_token.clone(),
+                    turn_context.sub_id.clone(),
+                );
+                sess.services
+                    .unified_exec_manager
+                    .record_command_completions(&context)
+                    .await;
+            }
+            first_sample = false;
 
             // Construct the input that we will send to the model.
             let sampling_request_input: Vec<ResponseItem> = async {

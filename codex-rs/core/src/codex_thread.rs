@@ -711,6 +711,16 @@ impl CodexThread {
         self.session.list_background_terminals().await
     }
 
+    pub async fn list_background_jobs(
+        &self,
+    ) -> std::io::Result<Vec<crate::background_jobs::BackgroundJob>> {
+        self.session
+            .services
+            .unified_exec_manager
+            .list_background_jobs()
+            .await
+    }
+
     pub async fn terminate_background_terminal(&self, process_id: i32) -> bool {
         self.session.terminate_background_terminal(process_id).await
     }

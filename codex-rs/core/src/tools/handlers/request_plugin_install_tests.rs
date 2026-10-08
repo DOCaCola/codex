@@ -58,6 +58,8 @@ async fn request_plugin_install_rejects_subagent_threads(presentation: ToolSugge
 
     let result = RequestPluginInstallHandler::new(Vec::new(), presentation)
         .handle(ToolInvocation {
+            command_stack: None,
+            exec_command_is_dependency: false,
             session: Arc::new(session),
             step_context: StepContext::for_test(Arc::clone(&turn)),
             turn,

@@ -2,6 +2,32 @@ use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::edit::apply_blocking;
 use crate::context::ContextualUserFragment;
+
+#[tokio::test]
+async fn background_jobs_config_normalizes_the_toggle_matrix() -> std::io::Result<()> {
+    for (settings, expected) in [
+        ("", (false, false)),
+        ("background_command_delivery = true", (true, false)),
+        ("background_jobs = true", (true, true)),
+    ] {
+        let codex_home = tempfile::tempdir()?;
+        let cfg: ConfigToml = toml::from_str(&format!("[features]\n{settings}")).unwrap();
+        let config = Config::load_from_base_config_with_overrides(
+            cfg,
+            ConfigOverrides::default(),
+            codex_home.abs(),
+        )
+        .await?;
+        assert_eq!(
+            (
+                config.features.enabled(Feature::BackgroundCommandDelivery),
+                config.features.enabled(Feature::BackgroundJobs)
+            ),
+            expected
+        );
+    }
+    Ok(())
+}
 use crate::plugins::plugins_manager_for_config;
 use crate::session::multi_agents::resolve_usage_hints;
 use assert_matches::assert_matches;

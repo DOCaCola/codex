@@ -40,6 +40,8 @@ async fn multi_agent_v2_request_user_input_rejects_subagent_threads() {
         available_modes: Vec::new(),
     }
     .handle(ToolInvocation {
+        command_stack: None,
+        exec_command_is_dependency: false,
         session: Arc::new(session),
         step_context: StepContext::for_test(Arc::clone(&turn)),
         turn,
@@ -118,6 +120,8 @@ async fn request_user_input_sets_non_blocking_outside_plan_mode(
                 available_modes: vec![ModeKind::Default],
             }
             .handle(ToolInvocation {
+                command_stack: None,
+                exec_command_is_dependency: false,
                 session,
                 step_context: StepContext::for_test(Arc::clone(&turn)),
                 turn,
@@ -239,6 +243,8 @@ async fn request_user_input_sets_blocking_from_turn_mode() {
                 available_modes: vec![ModeKind::Plan],
             }
             .handle(ToolInvocation {
+                command_stack: None,
+                exec_command_is_dependency: false,
                 session,
                 step_context: StepContext::for_test(Arc::clone(&turn)),
                 turn,
