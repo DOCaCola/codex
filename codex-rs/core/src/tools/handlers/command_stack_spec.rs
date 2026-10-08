@@ -29,15 +29,26 @@ pub(crate) fn create_command_stack_tool(
     write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
     patch_tool: CommandStackPatchTool,
+    idle_continuation: bool,
+    policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
 ) -> ToolSpec {
     let managed_guidance = if exec_arguments
         .properties
         .as_ref()
         .is_some_and(|properties| properties.contains_key("execution_mode"))
     {
-        " execution_mode values: auto (default: initial wait then automatic completion delivery), background (return promptly with automatic delivery), foreground (wait until exit), interactive (manual supervision for servers/watchers; default with tty=true). timeout_ms is a positive execution deadline, separate from yield_time_ms; standalone and final-step foreground commands default to 300000 ms and auto/background have no implicit deadline. Finite commands in earlier steps run to completion before dependent steps start, with no implicit deadline; an explicit timeout_ms still applies. Their exit codes control continue_on_failure. Interactive commands cannot be dependencies. Running results report running=true and success=null until a completion arrives. Final-step finite commands deliver completion automatically; continue independent work without polling. The runtime keeps the turn active while they run. Use foreground when the stack must return final results, or write_stdin wait_mode=\"completion\" when blocked (empty chars, no yield_time_ms). Empty timed reads back off; completed output remains readable via session_id in a bounded session-local cache."
+        let deadlines = policy.map_or_else(
+            || "standalone and final-step foreground commands default to 300000 ms and auto/background have no implicit deadline. Finite commands in earlier steps run to completion before dependent steps start, with no implicit deadline; an explicit timeout_ms still applies.".to_owned(),
+            |policy| policy.deadline_guidance(),
+        );
+        let turn_lifetime = if idle_continuation {
+            "Auto/background jobs keep running after the turn ends. You may finish the turn; completion starts a follow-up turn unless interrupted or in Plan mode, when results wait for user input."
+        } else {
+            "The runtime keeps the turn active while they run."
+        };
+        format!(" execution_mode values: auto (default: initial wait then automatic completion delivery), background (return promptly with automatic delivery), foreground (wait until exit), interactive (manual supervision for servers/watchers; default with tty=true). timeout_ms is a positive execution deadline, separate from yield_time_ms; {deadlines} Their exit codes control continue_on_failure. Interactive commands cannot be dependencies. Running results report running=true and success=null until a completion arrives. Final-step finite commands deliver completion automatically; continue independent work without polling. {turn_lifetime} Use foreground when the stack must return final results, or write_stdin wait_mode=\"completion\" when blocked (empty chars, no yield_time_ms). Empty timed reads back off; completed output remains readable via session_id in a bounded session-local cache.")
     } else {
-        ""
+        String::new()
     };
     let (patch_rule, patch_rules) = match patch_tool {
         CommandStackPatchTool::ApplyPatch => {

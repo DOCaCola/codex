@@ -40,6 +40,32 @@ pub struct CodexdcBackgroundJobsListParams {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct CodexdcBackgroundWorkState {
+    pub background_jobs_enabled: bool,
+    pub job_timers: Vec<CodexdcBackgroundJobTimer>,
+    pub idle_continuation: bool,
+    pub unattended_deadline_ms: u64,
+    pub thread_id: String,
+    pub pending: bool,
+    pub active: bool,
+    pub last_turn_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct CodexdcBackgroundJobTimer {
+    pub item_id: String,
+    pub process_id: String,
+    #[ts(type = "number")]
+    pub started_at_ms: i64,
+    pub explicit_timeout_seconds: Option<u64>,
+    pub duration_seconds: Option<u64>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct CodexdcBackgroundJobsListResponse {
     pub enabled: bool,
     pub data: Vec<BackgroundJob>,

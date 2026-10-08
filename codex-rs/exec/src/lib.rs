@@ -6,6 +6,7 @@
 #![deny(clippy::print_stdout)]
 
 mod cli;
+mod background_wait;
 mod event_processor;
 mod event_processor_with_human_output;
 pub(crate) mod event_processor_with_jsonl_output;
@@ -726,6 +727,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         enable_codex_api_key_env: true,
         client_name: "codex_exec".to_string(),
         client_version: env!("CARGO_PKG_VERSION").to_string(),
+        // codexdc background-work reads/notifications require this explicit transport opt-in.
         experimental_api: true,
         mcp_server_openai_form_elicitation: false,
         opt_out_notification_methods: Vec::new(),
@@ -1131,6 +1133,27 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     });
 
+    let background_policy = if !config.features.enabled(Feature::BackgroundJobsIdleContinuation)
+        || matches!(&initial_operation, InitialOperation::ForkOnly)
+    {
+        None
+    } else {
+        Some(
+            send_request_with_response::<codex_app_server_protocol::CodexdcBackgroundWorkState>(
+                &client,
+                ClientRequest::CodexdcBackgroundWorkRead {
+                    request_id: request_ids.next(),
+                    params: codex_app_server_protocol::CodexdcBackgroundJobsListParams {
+                        thread_id: primary_thread_id.to_string(),
+                    },
+                },
+                "codexdc/backgroundWork/read",
+            )
+            .await
+            .map_err(anyhow::Error::msg)?,
+        )
+    };
+
     let task_id = match initial_operation {
         InitialOperation::ForkOnly => {
             request_shutdown(&client, &mut request_ids, &primary_thread_id_for_span)
@@ -1218,6 +1241,15 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     // Run the loop until the task is complete.
     // Track whether a fatal error was reported by the server so we can
     // exit with a non-zero status for automation-friendly signaling.
+    let mut background = match background_policy {
+        Some(policy) => background_wait::BackgroundWait::new(
+            policy.idle_continuation,
+            task_id.clone(),
+            Duration::from_millis(policy.unattended_deadline_ms),
+        ),
+        None => background_wait::BackgroundWait::new(false, task_id.clone(), Duration::ZERO),
+    };
+    event_processor.set_background_continuations(background.enabled);
     let mut error_seen = false;
     let mut interrupt_channel_open = true;
     let primary_thread_id_for_requests = primary_thread_id.to_string();
@@ -1228,13 +1260,20 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                     interrupt_channel_open = false;
                     continue;
                 }
+                background.interrupt();
+                let Some(turn_id) = background.current.clone() else {
+                    if let Err(error) = request_shutdown(&client, &mut request_ids, &primary_thread_id_for_requests).await {
+                        warn!("thread/unsubscribe failed during shutdown: {error}");
+                    }
+                    break;
+                };
                 if let Err(err) = send_request_with_response::<TurnInterruptResponse>(
                     &client,
                     ClientRequest::TurnInterrupt {
                         request_id: request_ids.next(),
                         params: TurnInterruptParams {
                             thread_id: primary_thread_id_for_requests.clone(),
-                            turn_id: task_id.clone(),
+                            turn_id,
                         },
                     },
                     "turn/interrupt",
@@ -1245,10 +1284,22 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 }
                 continue;
             }
+            _ = background.wait_for_bound() => {
+                background.expire();
+                event_processor.process_warning("background job continuation wait exceeded the unattended deadline".into());
+                if let Err(error) = request_shutdown(&client, &mut request_ids, &primary_thread_id_for_requests).await {
+                    warn!("thread/unsubscribe failed during shutdown: {error}");
+                }
+                break;
+            }
             maybe_event = client.next_event() => maybe_event,
         };
 
         let Some(server_event) = server_event else {
+            if background.enabled && !background.finished() {
+                background.interrupt();
+                event_processor.process_warning("app-server ended before background continuations completed".into());
+            }
             break;
         };
 
@@ -1258,16 +1309,31 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
             }
             InProcessServerEvent::ServerNotification(notification) => {
                 let mut notification = *notification;
+                if let ServerNotification::CodexdcBackgroundWorkChanged(state) = &notification
+                    && background.enabled && state.thread_id == primary_thread_id_for_requests
+                {
+                    background.observe(state);
+                    if background.finished() {
+                        if let Err(error) = request_shutdown(&client, &mut request_ids, &primary_thread_id_for_requests).await {
+                            warn!("thread/unsubscribe failed during shutdown: {error}");
+                        }
+                        break;
+                    }
+                }
+                if background.adopt(&notification, &primary_thread_id_for_requests) {
+                    event_processor.automatic_continuation();
+                }
+                let tracked = background.current.clone().unwrap_or_default();
                 if let ServerNotification::Error(payload) = &notification {
                     if payload.thread_id == primary_thread_id_for_requests
-                        && payload.turn_id == task_id
+                        && payload.turn_id == tracked
                         && !payload.will_retry
                     {
                         error_seen = true;
                     }
                 } else if let ServerNotification::TurnCompleted(payload) = &notification
                     && payload.thread_id == primary_thread_id_for_requests
-                    && payload.turn.id == task_id
+                    && payload.turn.id == tracked
                     && matches!(
                         payload.turn.status,
                         codex_app_server_protocol::TurnStatus::Failed
@@ -1280,7 +1346,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                 if should_process_notification(
                     &notification,
                     &primary_thread_id_for_requests,
-                    &task_id,
+                    &tracked,
                 ) {
                     maybe_backfill_turn_completed_items(
                         config.ephemeral,
@@ -1290,20 +1356,40 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                     )
                     .await;
 
-                    match event_processor.process_server_notification(notification) {
-                        CodexStatus::Running => {}
-                        CodexStatus::InitiateShutdown => {
-                            if let Err(err) = request_shutdown(
-                                &client,
-                                &mut request_ids,
-                                &primary_thread_id_for_requests,
-                            )
-                            .await
-                            {
-                                warn!("thread/unsubscribe failed during shutdown: {err}");
+                    let completed = matches!(&notification, ServerNotification::TurnCompleted(done)
+                        if done.turn.status != codex_app_server_protocol::TurnStatus::InProgress);
+                    if completed { background.complete(error_seen); }
+                    let status = event_processor.process_server_notification(notification);
+                    if completed && background.enabled && !background.finished() {
+                        let result = {
+                            tokio::select! {
+                                result = background.read(&client, &mut request_ids, &primary_thread_id_for_requests) => Some(result),
+                                signal = interrupt_rx.recv(), if interrupt_channel_open => {
+                                    interrupt_channel_open = signal.is_some();
+                                    None
+                                },
                             }
-                            break;
+                        };
+                        let result = if result.is_none() && !interrupt_channel_open {
+                            Some(background.read(&client, &mut request_ids, &primary_thread_id_for_requests).await)
+                        } else { result };
+                        match result {
+                            Some(Ok(())) => {},
+                            Some(Err(error)) => { background.expire(); event_processor.process_warning(error); },
+                            None => background.interrupt(),
                         }
+                    }
+                    if status == CodexStatus::InitiateShutdown || background.finished() {
+                        if let Err(err) = request_shutdown(
+                            &client,
+                            &mut request_ids,
+                            &primary_thread_id_for_requests,
+                        )
+                        .await
+                        {
+                            warn!("thread/unsubscribe failed during shutdown: {err}");
+                        }
+                        break;
                     }
                 }
             }
@@ -1319,7 +1405,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         warn!("in-process app-server shutdown failed: {err}");
     }
     event_processor.print_final_output();
-    if error_seen {
+    if error_seen || background.failed {
         std::process::exit(1);
     }
 

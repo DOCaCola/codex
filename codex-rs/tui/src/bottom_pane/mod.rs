@@ -1655,6 +1655,11 @@ impl BottomPane {
         }
     }
 
+    pub(crate) fn set_background_job_timers(&mut self, timers: Vec<crate::background_job_timer::JobTimer>) {
+        self.unified_exec_footer.set_job_timers(timers);
+        self.sync_status_inline_message();
+    }
+
     /// Update hook activity after the lifecycle reveal delay, even outside a turn.
     pub(crate) fn set_hook_status_message(&mut self, message: Option<String>) {
         if self.hook_status_message == message {

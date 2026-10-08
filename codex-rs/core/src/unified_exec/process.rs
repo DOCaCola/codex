@@ -104,6 +104,8 @@ enum ProcessHandle {
 /// Unified wrapper over directly spawned PTY sessions and exec-server-backed
 /// processes.
 pub(crate) struct UnifiedExecProcess {
+    pub(super) started_at: tokio::time::Instant,
+    pub(super) started_at_utc: chrono::DateTime<chrono::Utc>,
     process_handle: ProcessHandle,
     output_tx: broadcast::Sender<Vec<u8>>,
     output: OutputHandles,
@@ -148,6 +150,8 @@ impl UnifiedExecProcess {
         let (state_tx, state_rx) = watch::channel(ProcessState::default());
 
         Self {
+            started_at: tokio::time::Instant::now(),
+            started_at_utc: chrono::Utc::now(),
             process_handle,
             output_tx,
             output,

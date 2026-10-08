@@ -16,31 +16,16 @@ use crate::unified_exec::WriteStdinRequest;
 impl UnifiedExecProcessManager {
     /// Append at most four bounded completion fragments at a sampling boundary.
     pub(crate) async fn record_command_completions(&self, context: &UnifiedExecContext) -> bool {
-        let queued = context
-            .step_context
-            .turn
-            .config
-            .features
-            .enabled(codex_features::Feature::BackgroundJobs);
-        let jobs = if queued {
-            self.managed.registry.queued().await
-        } else {
-            self.managed.records().await
-        };
+        if context.session.background_jobs.enabled {
+            return self.record_queued_completions(context).await;
+        }
+        let jobs = self.managed.records().await;
         let mut items = Vec::new();
         for (id, job) in jobs {
-            let job_id = if queued {
-                Some(job.metadata.lock().await.job_id)
-            } else {
-                None
-            };
             if job.revoked.is_cancelled()
                 || job.initial_response_consumed.load(Ordering::Acquire)
                 || job.acknowledged.load(Ordering::Acquire)
             {
-                if let Some(job_id) = job_id {
-                    self.managed.registry.consumed(job_id).await;
-                }
                 continue;
             }
             if !job.initial_response_done.is_cancelled() || !job.process.has_exited() {
@@ -50,11 +35,6 @@ impl UnifiedExecProcessManager {
                 continue;
             };
             if job.acknowledged.load(Ordering::Acquire) {
-                continue;
-            }
-            if let Some(job_id) = job_id
-                && !self.managed.registry.contains(job_id).await
-            {
                 continue;
             }
             let result = self
@@ -82,7 +62,7 @@ impl UnifiedExecProcessManager {
                 }
                 Err(error) => Err(error),
             };
-            let mut fragment = match result {
+            let fragment = match result {
                 Ok(output) => {
                     let fragment = CommandCompletion::from_output(id, &output);
                     state.result = Some(output);
@@ -96,12 +76,6 @@ impl UnifiedExecProcessManager {
             {
                 let mut metadata = job.metadata.lock().await;
                 metadata.finish(&job.process, job.revoked.is_cancelled());
-                if queued {
-                    fragment = fragment.with_metadata(&metadata);
-                }
-            }
-            if let Some(job_id) = job_id {
-                self.managed.registry.consumed(job_id).await;
             }
             if !job.revoked.is_cancelled() {
                 items.push(ContextualUserFragment::into(fragment));

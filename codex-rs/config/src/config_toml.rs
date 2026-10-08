@@ -6,6 +6,7 @@ use std::num::NonZeroU64;
 use std::num::NonZeroUsize;
 use std::path::Path;
 
+use crate::BackgroundJobsConfigToml;
 use crate::HooksToml;
 use crate::browser_use::BrowserUseConfigToml;
 use crate::computer_use::ComputerUseConfigToml;
@@ -340,6 +341,9 @@ pub struct ConfigToml {
     /// Maximum poll window for background terminal output (`write_stdin`), in milliseconds.
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: Option<u64>,
+
+    /// Managed command defaults, used only with features.background_jobs enabled.
+    pub background_jobs: Option<BackgroundJobsConfigToml>,
 
     /// Seconds a thread must have no subscribers and no activity before app-server
     /// unloads it. Defaults to 60; zero unloads immediately. Changes require a server restart.

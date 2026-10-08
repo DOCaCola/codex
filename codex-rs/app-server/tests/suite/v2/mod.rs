@@ -14,6 +14,7 @@ mod bedrock_setup;
 mod client_metadata;
 mod code_mode_host;
 mod codexdc_background_jobs;
+mod codexdc_background_lifecycle;
 mod codexdc_capabilities;
 mod collaboration_mode_list;
 #[cfg(unix)]

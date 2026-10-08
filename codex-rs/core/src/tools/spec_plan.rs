@@ -112,6 +112,8 @@ const IMAGEGEN_TOOL_NAME: &str = "imagegen";
 
 #[derive(Clone, Copy)]
 struct CoreToolPlanContext<'a> {
+    idle_continuation: bool,
+    background_job_policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
     tool_policy: &'a codex_extension_api::ToolPolicy,
     turn_context: &'a TurnContext,
     model_info: &'a ModelInfo,
@@ -142,6 +144,8 @@ pub(crate) fn build_tool_router(
         .thread_extension_data
         .get::<crate::WaitForEnvironmentToolConfig>();
     let context = CoreToolPlanContext {
+        idle_continuation: session.background_continuation.enabled,
+        background_job_policy: session.background_jobs.enabled.then_some(session.background_jobs),
         tool_policy: &session.tool_policy,
         turn_context,
         model_info,
@@ -287,6 +291,8 @@ pub(crate) fn build_core_tool_registry(
     let default_agent_type_description =
         crate::agent::role::spawn_tool_spec::build(&std::collections::BTreeMap::new());
     let context = CoreToolPlanContext {
+        idle_continuation: false,
+        background_job_policy: None,
         tool_policy: &Default::default(),
         turn_context,
         model_info,
@@ -1133,9 +1139,12 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
         include_windows_shell_guidance: should_include_windows_shell_guidance(context.environments),
     };
     if features.enabled(Feature::UnifiedExec) {
-        let background_delivery = features.enabled(Feature::BackgroundCommandDelivery);
+        let background_delivery = features.enabled(Feature::BackgroundCommandDelivery)
+            || context.background_job_policy.is_some();
         let exec_handler =
-            ExecCommandHandler::new(options).with_background_delivery(background_delivery);
+            ExecCommandHandler::new(options).with_background_delivery(background_delivery)
+                .with_idle_continuation(context.idle_continuation)
+                .with_background_job_policy(context.background_job_policy);
         if command_stack_available {
             registry.add_with_exposure(exec_handler, ToolExposure::Hidden);
             registry.add_with_exposure(
@@ -1423,7 +1432,8 @@ fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, registry: &mut Tool
             write_stdin_spec.parameters,
             include_environment_id,
             patch_tool,
-        ),
+        ).with_idle_continuation(context.idle_continuation)
+            .with_background_job_policy(context.background_job_policy),
         ToolExposure::DirectModelOnly,
     );
 }

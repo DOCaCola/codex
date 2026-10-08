@@ -1,5 +1,6 @@
 mod application_requirements;
 mod auth_policy;
+mod background_jobs;
 mod browser_computer_use_requirements;
 mod browser_use;
 mod cloud_config_bundle;
@@ -47,6 +48,9 @@ mod tui_effects;
 mod tui_keymap;
 mod tui_rendering;
 pub mod types;
+
+pub use background_jobs::BackgroundJobsConfig;
+pub use background_jobs::BackgroundJobsConfigToml;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
 

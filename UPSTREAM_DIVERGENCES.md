@@ -229,3 +229,123 @@ maintaining parallel logic or compatibility fallbacks.
 - Remove when: upstream provides equivalent session job identity and queued
   completion delivery. Local code: `core/src/unified_exec/managed_registry.rs`,
   managed delivery, and the first-sample boundary in `core/src/session/turn.rs`.
+
+
+## Optional background job interrupt and stop policy
+
+- Added: 2026-10-08.
+- With `background_jobs`, interrupt ends the turn without killing its auto/
+  background jobs. Pending completions stay in the session queue for the next
+  user turn's first sample. No idle wake is introduced in this stage.
+- Queue acceptance caches output/error in the shared job record and commits
+  history before acknowledgement. Cancellation before commit preserves the
+  queue; an admitted history commit finishes without scheduling inference.
+- Terminal termination and shutdown revoke delivery as before. Ctrl-C through
+  `write_stdin` for an opted-in finite job now revokes delivery and terminates
+  that exact process. The stopped command's direct tool result can be returned
+  without acknowledging its revoked automatic completion or running its hooks.
+- With `background_jobs` off, the accepted interrupt, delivery, Ctrl-C and
+  foreground one-shot policies remain unchanged. Foreground move-to-background,
+  idle continuation, host deadlines, Plan wake policy and exec continuation
+  remain later-stage work under the resolved audit decisions.
+- Remove when: upstream supplies equivalent interrupt/stop completion ownership.
+  Local code: managed queue delivery and unified-exec process manager.
+
+
+## Optional background work guard for automatic thread unload
+
+- Added: 2026-10-08.
+- With `background_jobs`, live managed registry jobs and pending, non-revoked
+  auto/background completions count as activity for automatic no-subscriber
+  unload. Registry work is an internal core predicate, not a new wire status.
+  It scans UUID-owned records, including pending results whose terminal ID has
+  been reused; the process-ID index still serves the existing ordered paths.
+- The existing subscriber/status countdown also waits on the managed `changed`
+  notification, registered before checking work. Delivery/revocation resumes
+  the normal idle delay; there is no extra polling timer or notification.
+- Explicit client removal (archive/delete) and session/server shutdown keep their
+  existing termination/revocation paths. The flag-off managed map is excluded
+  from the guard, preserving the accepted unload behavior.
+- No idle wake, Plan policy, host deadline or exec continuation is introduced.
+  Exec-runner continuation moves to stage 6 with idle continuation; parked turns
+  already keep `codex exec` waiting in the current lifecycle mode.
+- Remove when: upstream supplies equivalent registry-aware unload protection.
+  Local code: core background work accessors and app-server thread_unloading.rs.
+
+## Opt-in background job idle continuation
+
+- Added: 2026-10-08. `background_jobs_idle_continuation` defaults off and implies
+  `background_jobs`, which implies delivery. Its capability is captured once
+  when the session is created; runtime configuration refresh cannot switch it.
+- On: final answers may end a turn while jobs run. Existing registry changes and
+  task-finish scheduling feed the existing idle-only continuation admission,
+  with an expected previous turn and internal `background_job_completion` input.
+  Mailbox work retains priority; user input starts/steers through normal admission.
+- Interrupted pending UUIDs and jobs from the interrupted turn cannot wake or
+  join an internal turn. The next user-started turn clears suppression when its
+  regular execution begins. Already admitted delivery commits keep Step 9 rules.
+- Plan-mode results wait for user input. A mode change during admission uses the
+  existing Automatic Plan rejection, with no retry timer/loop. Flag-off tool
+  descriptions and turn parking retain the accepted behavior.
+- Exec-runner continuations remain Step 11b; desktop rendering remains a later
+  live check. No deadline or foreground conversion is added here.
+- Remove when: upstream provides equivalent opt-in completion admission and
+  session instruction capabilities. Local code: session/background_continuation.rs.
+
+## Session background command defaults
+
+- Added: 2026-10-08. `[background_jobs]` resolves positive millisecond values for
+  unattended deadlines (1800000), managed foreground timeouts (300000), and auto
+  initial waits (10000). Settings apply only with `features.background_jobs`.
+- `Exec` is unattended. CLI, VSCode, Custom and Unknown are interactive. `Mcp`
+  is also interactive: upstream uses that source for AppServer, so it is not an
+  unattended-host indicator. Delegates/internal sessions inherit root/owner class.
+- Class, feature capability and defaults are captured per session. Interactive
+  auto/background has no deadline; explicit model timeout overrides all defaults.
+  Enabled deadlines use the existing termination path from the adopted process
+  start timestamp, including foreground and requested-mode stack dependencies.
+- Only the configured default auto wait (yield omitted, flag on) bypasses the
+  legacy Windows floor and yield clamp. Explicit model yields keep the legacy
+  clamp on either flag setting. Off retains its defaults and foreground literal.
+  Deadline source/origin
+  metadata preserves explicit-only timeout labels. No maximum/default reset on
+  backgrounding or new exec-runner policy is introduced.
+- Remove when: upstream provides equivalent typed defaults and inherited host
+  policy. Local code: config/src/background_jobs.rs, core/unified_exec/background_policy.rs.
+
+## Exec background continuation lifetime and codexdc signal
+
+- Added: 2026-10-08. With captured background_jobs_idle_continuation enabled,
+  exec follows primary-thread continuation turns instead of exiting on its first
+  completion. Flag off retains its original completion/shutdown behavior.
+- Experimental codexdc/backgroundWork/read and codexdc/backgroundWork/changed
+  expose captured session policy and the Step 10 predicate with active-task and
+  last-started-turn fences.
+  Reads run through the existing unload listener and synchronize its baseline.
+  The listener registers Notify before its ordinary wait snapshot. There is no
+  second watcher or polling.
+- Exec explicitly opts into experimental transport and makes starts/work changes
+  lossless on the opted-in in-process path. Other clients retain experimental
+  filtering. BackgroundWork protocol revision 1 is advertised separately.
+- Each idle wait uses the resolved unattended deadline. Expiry and Ctrl-C fail
+  the run and invoke normal shutdown, which terminates outstanding jobs.
+- Human output marks automatic continuation; JSONL keeps existing turn/item
+  events. Last-message output and final token summary occur once after the last
+  turn. Automatic turns inherit the original user turn's output schema.
+- Remove when: upstream supports equivalent exec lifetime and event-driven host
+  work signals. Local code: exec/background_wait.rs, thread_unloading.rs, codexdc_processor.rs.
+
+## TUI managed background job timer labels
+
+- Added: 2026-10-08. Captured background_jobs sessions show Claude-style elapsed
+  labels on existing exec previews/details, /ps, and background footer/status.
+  Explicit model limits appear only on running jobs; host defaults are hidden.
+  Completed durations freeze from managed process metadata; no countdown is shown.
+- The existing experimental codexdc work signal carries compact timer records
+  and the captured capability. Its existing registry/unload watcher emits on
+  metadata changes as well as pending transitions. No API polling or watcher is
+  added. TUI views accept metadata after starts; timing is finalized before ends.
+- TUI frame requests and transcript cache hooks redraw live clocks. Off retains
+  prior rendering and snapshots. Local code: tui/background_job_timer.rs,
+  tui/chatwidget/background_job_labels.rs, core/unified_exec/managed_listing.rs.
+- Remove when: upstream provides equivalent captured managed-job timing labels.

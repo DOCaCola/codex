@@ -66,6 +66,7 @@ pub(crate) async fn run_codex_thread_interactive(
         ));
     }
     config.permissions.approval_policy = Constrained::allow_only(AskForApproval::Never);
+    config.background_jobs_host = Some(parent_session.background_jobs.host);
     config.model_provider.supports_websockets &= parent_session
         .services
         .model_client

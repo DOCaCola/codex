@@ -289,6 +289,9 @@ impl Session {
         input: Vec<TurnInput>,
         task: T,
     ) {
+        let background_reservation = turn_context
+            .extension_data
+            .get::<crate::session::background_continuation::BackgroundWakeReservation>();
         self.activate_plugin_selection(&turn_context).await;
         // Inherited or recovered roots are applied before task start. Otherwise this
         // task owns its turn, including background work. Later mail cannot change it.
@@ -311,9 +314,19 @@ impl Session {
         let cancellation_token = CancellationToken::new();
         let done = Arc::new(Notify::new());
 
-        let (pending_items, _) = self.input_queue.drain_mailbox_input_items().await;
+        let pending_items = if background_reservation.is_some() {
+            Vec::new()
+        } else {
+            self.input_queue.drain_mailbox_input_items().await.0
+        };
         let turn_state = {
             let mut active = self.active_turn.lock().await;
+            if background_reservation
+                .as_ref()
+                .is_some_and(|reservation| !reservation.matches(active.as_ref()))
+            {
+                return;
+            }
             self.record_started_turn(&turn_context.sub_id).await;
             let turn = active.get_or_insert_with(ActiveTurn::default);
             debug_assert!(turn.task.is_none());
@@ -331,6 +344,18 @@ impl Session {
         .await;
 
         let mut active = self.active_turn.lock().await;
+        if background_reservation
+            .as_ref()
+            .is_some_and(|reservation| !reservation.matches(active.as_ref()))
+        {
+            return;
+        }
+        if background_reservation.is_some() {
+            let (pending, _) = self.input_queue.drain_mailbox_input_items().await;
+            self.input_queue
+                .extend_pending_input_for_turn_state(turn_state.as_ref(), pending)
+                .await;
+        }
         let turn = active.get_or_insert_with(ActiveTurn::default);
         debug_assert!(turn.task.is_none());
         let agent_execution_guard = self.services.agent_control.admit_turn(
@@ -430,7 +455,7 @@ impl Session {
     /// Starts a regular turn when the session is idle and pending work is waiting.
     ///
     /// Pending work includes mailbox mail marked with `trigger_turn`, or any mailbox mail while
-    /// an outstanding durable sleep is attached to the thread.
+    /// an outstanding durable sleep is attached to the thread, plus opted-in background completions.
     ///
     /// This helper generates a fresh sub-id for the synthetic turn before delegating to the
     /// explicit-sub-id variant.
@@ -447,7 +472,7 @@ impl Session {
     /// session.
     ///
     /// The turn is created only when the session is idle and mailbox mail either requests a turn
-    /// or can wake an outstanding durable sleep.
+    /// or can wake an outstanding durable sleep, or a background completion is eligible.
     pub(crate) async fn maybe_start_turn_for_pending_work_with_sub_id(
         self: &Arc<Self>,
         sub_id: String,
@@ -456,6 +481,7 @@ impl Session {
             || (!self.input_queue.has_trigger_turn_mailbox_items().await
                 && !self.has_outstanding_durable_sleep())
         {
+            self.maybe_start_background_completion(sub_id).await;
             return;
         }
 
@@ -534,6 +560,7 @@ impl Session {
     }
 
     pub async fn abort_all_tasks(self: &Arc<Self>, reason: TurnAbortReason) {
+        let _background_interrupt = self.begin_background_interrupt(Some(&reason), /*origin*/ None).await;
         let mut aborted_turn = false;
         let mut active_turn_to_clear = None;
         let mut turn_context = None;
@@ -575,6 +602,7 @@ impl Session {
         reason: TurnAbortReason,
         error: Option<ErrorEvent>,
     ) -> bool {
+        let _background_interrupt = self.begin_background_interrupt(Some(&reason), Some(turn_id)).await;
         let active_turn = {
             let mut active = self.active_turn.lock().await;
             if active
@@ -607,6 +635,7 @@ impl Session {
         reason: TurnAbortReason,
         error: Option<ErrorEvent>,
     ) {
+        let _background_interrupt = self.begin_background_interrupt(Some(&reason), active_turn.task.as_ref().map(|task| task.turn_context.sub_id.as_str())).await;
         let task = active_turn.task.take();
         let turn_context = task.as_ref().map(|task| Arc::clone(&task.turn_context));
         if let Some(task) = task {
@@ -657,6 +686,7 @@ impl Session {
             .turn_metadata_state
             .cancel_git_enrichment_task();
 
+        let _background_interrupt = self.begin_background_interrupt(abort_reason.as_ref(), Some(&turn_context.sub_id)).await;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             active.as_mut().and_then(|active_turn| {

@@ -46,6 +46,7 @@ pub(super) fn server_notification_thread_target(
     notification: &ServerNotification,
 ) -> ServerNotificationThreadTarget {
     let thread_id = match notification {
+        ServerNotification::CodexdcBackgroundWorkChanged(state) => Some(state.thread_id.as_str()),
         ServerNotification::Error(notification) => Some(notification.thread_id.as_str()),
         ServerNotification::ThreadStarted(notification) => Some(notification.thread.id.as_str()),
         ServerNotification::ThreadStatusChanged(notification) => {

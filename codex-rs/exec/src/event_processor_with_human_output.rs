@@ -33,6 +33,7 @@ pub(crate) struct EventProcessorWithHumanOutput {
     show_agent_reasoning: bool,
     show_raw_agent_reasoning: bool,
     last_message_path: Option<PathBuf>,
+    background_continuations: bool,
     final_message: Option<String>,
     final_message_rendered: bool,
     emit_final_message_on_shutdown: bool,
@@ -58,6 +59,7 @@ impl EventProcessorWithHumanOutput {
             show_agent_reasoning: !config.hide_agent_reasoning,
             show_raw_agent_reasoning: config.show_raw_agent_reasoning,
             last_message_path,
+            background_continuations: false,
             final_message: None,
             final_message_rendered: false,
             emit_final_message_on_shutdown: false,
@@ -209,6 +211,14 @@ impl EventProcessorWithHumanOutput {
 }
 
 impl EventProcessor for EventProcessorWithHumanOutput {
+    fn set_background_continuations(&mut self, enabled: bool) {
+        self.background_continuations = enabled;
+    }
+
+    fn automatic_continuation(&mut self) {
+        eprintln!("Background job completed; continuing automatically.");
+    }
+
     fn print_config_summary(
         &mut self,
         config: &Config,
@@ -225,7 +235,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
     }
 
     fn process_server_notification(&mut self, notification: ServerNotification) -> CodexStatus {
-        match notification {
+        let status = match notification {
             ServerNotification::ConfigWarning(notification) => {
                 let details = notification
                     .details
@@ -369,9 +379,17 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 }
                 CodexStatus::Running
             }
-            ServerNotification::TurnStarted(_) => CodexStatus::Running,
+            ServerNotification::TurnStarted(_) => {
+                if self.background_continuations {
+                    self.final_message = None;
+                    self.final_message_rendered = false;
+                    self.emit_final_message_on_shutdown = false;
+                }
+                CodexStatus::Running
+            },
             _ => CodexStatus::Running,
-        }
+        };
+        if self.background_continuations { CodexStatus::Running } else { status }
     }
 
     fn process_warning(&mut self, message: String) -> CodexStatus {
@@ -383,7 +401,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
     }
 
     fn print_final_output(&mut self) {
-        if self.emit_final_message_on_shutdown
+        if (self.emit_final_message_on_shutdown || self.background_continuations)
             && let Some(path) = self.last_message_path.as_deref()
         {
             handle_last_message(self.final_message.as_deref(), path);

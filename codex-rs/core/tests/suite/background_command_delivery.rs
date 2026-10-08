@@ -15,6 +15,12 @@ mod contract;
 mod jobs;
 #[path = "background_job_queue.rs"]
 mod queue;
+#[path = "background_job_interrupt.rs"]
+mod interrupt;
+#[path = "background_idle_continuation.rs"]
+mod idle;
+#[path = "background_job_defaults.rs"]
+mod defaults;
 
 fn gated_command() -> &'static str {
     match test_target_os() {

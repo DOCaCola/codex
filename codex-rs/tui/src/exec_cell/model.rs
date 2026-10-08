@@ -79,13 +79,21 @@ pub(crate) struct ExecCall {
 pub(crate) struct ExecCell {
     pub(crate) group: ActivityGroup<ExecCall>,
     animations_enabled: bool,
+    pub(crate) job_timers: std::collections::HashMap<String, crate::background_job_timer::JobTimer>,
 }
 
 impl ExecCell {
     pub(crate) fn new(call: ExecCall, animations_enabled: bool) -> Self {
         Self {
             group: ActivityGroup::new(vec![call]),
+            job_timers: Default::default(),
             animations_enabled,
+        }
+    }
+
+    pub(crate) fn set_job_timers(&mut self, timers: &crate::background_job_timer::JobTimers) {
+        for call in &self.group.calls {
+            if let Some(timer) = timers.get(&call.call_id) { self.job_timers.insert(call.call_id.clone(), timer); }
         }
     }
 
@@ -126,12 +134,14 @@ impl ExecCell {
         );
         self.group.details = newer.group.details;
         self.group.calls.append(&mut newer.group.calls);
+        self.job_timers.extend(newer.job_timers);
         Ok(())
     }
 
     /// Preserve live clocks and pending output when a validated older page extends exploration.
     pub(crate) fn prepend(&mut self, older: Self) {
         self.group.prepend(older.group);
+        self.job_timers.extend(older.job_timers);
     }
 
     /// Marks the most recently matching call as finished and returns whether a call was found.

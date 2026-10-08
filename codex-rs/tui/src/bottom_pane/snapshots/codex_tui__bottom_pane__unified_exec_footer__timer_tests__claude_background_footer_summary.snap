@@ -1,0 +1,5 @@
+---
+source: tui/src/bottom_pane/unified_exec_footer_timer_tests.rs
+expression: rendered
+---
+1 background terminal running (0s · timeout 30m) · /ps to view · /stop to close

@@ -74,6 +74,8 @@ pub(crate) struct Session {
     /// The set of enabled features should be invariant for the lifetime of the
     /// session.
     pub(super) features: ManagedFeatures,
+    pub(crate) background_jobs: crate::unified_exec::background_policy::BackgroundJobPolicy,
+    pub(crate) background_continuation: super::background_continuation::BackgroundContinuation,
     pub(super) isolation: codex_extension_api::SessionIsolation,
     pub(crate) tool_policy: Arc<codex_extension_api::ToolPolicy>,
     pub(crate) windows_sandbox_proxy_settings_mode:
@@ -1788,6 +1790,12 @@ impl Session {
                 code_mode_message_tasks: CodeModeMessageTasks::default(),
                 managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
                 features: config.features.clone(),
+                background_jobs: crate::unified_exec::background_policy::BackgroundJobPolicy::capture(
+                    &config, &session_configuration.session_source,
+                ),
+                background_continuation: super::background_continuation::BackgroundContinuation::new(
+                    config.features.enabled(Feature::BackgroundJobsIdleContinuation),
+                ),
                 isolation,
                 tool_policy,
                 windows_sandbox_proxy_settings_mode,
@@ -1944,6 +1952,7 @@ impl Session {
                 state.queue_pending_session_start_source(session_start_source);
             }
             sess.enable_mcp_server_notification_delivery().await;
+            sess.start_background_continuation_worker();
             Ok(sess)
         }
         .await;

@@ -1088,6 +1088,7 @@ impl ThreadManager {
         }
         let parent = self.get_thread(parent_thread_id).await?;
         options.initial_history = history;
+        options.config.background_jobs_host = Some(parent.session.background_jobs.host);
         options.internal_parent = Some(InternalSessionParent {
             thread_id: parent_thread_id,
             auth_manager: Arc::clone(&parent.session.services.auth_manager),
@@ -2169,6 +2170,18 @@ impl ThreadManagerState {
                 }) => Some(*parent_thread_id),
                 _ => None,
             });
+        if config.features.enabled(codex_features::Feature::BackgroundJobs)
+            && config.background_jobs_host.is_none()
+        {
+            config.background_jobs_host = Some(if let Some(parent_id) = parent_thread_id {
+                self.get_thread(parent_id).await?.session.background_jobs.host
+            } else {
+                crate::unified_exec::background_policy::HostClass::for_source(
+                    &self.session_source,
+                    crate::unified_exec::background_policy::HostClass::Interactive,
+                )
+            });
+        }
         // Host controllers can already be shared with live threads. Publish root settings
         // only after registration succeeds, so a failed start cannot update their tree.
         let initial_host_config = (self.agent_control_factory.is_some()

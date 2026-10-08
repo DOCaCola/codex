@@ -49,7 +49,7 @@ pub type SharedTurnDiffTracker = Arc<Mutex<TurnDiffTracker>>;
 #[derive(Default)]
 pub(crate) struct ToolCallState {
     pub(crate) command_stack: Option<CommandStackIdentity>,
-    /// Stack dependencies wait for exit without an implicit execution deadline.
+    /// Stack dependencies wait for exit, retaining their requested mode and host deadline.
     pub(crate) exec_command_is_dependency: bool,
     pub(crate) terminal_outcome_reached: AtomicBool,
     pub(crate) delivered_assistant_message: OnceLock<String>,

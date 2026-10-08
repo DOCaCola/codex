@@ -1089,6 +1089,11 @@ pub struct Config {
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: u64,
 
+    /// Resolved managed command defaults; inactive unless background_jobs is enabled.
+    pub background_jobs: codex_config::BackgroundJobsConfig,
+    /// Runtime owner classification inherited by child/internal session configs.
+    pub background_jobs_host: Option<crate::background_jobs::BackgroundJobHostClass>,
+
     /// Idle timeout for unsubscribed app-server threads, resolved at server startup.
     pub thread_unload_delay: Duration,
 
@@ -3904,6 +3909,7 @@ impl Config {
             .as_ref()
             .and_then(|agents| agents.interrupt_message)
             .unwrap_or(true);
+        let background_jobs = cfg.background_jobs.clone().unwrap_or_default().resolve()?;
         let background_terminal_max_timeout = cfg
             .background_terminal_max_timeout
             .unwrap_or(DEFAULT_MAX_BACKGROUND_TERMINAL_TIMEOUT_MS)
@@ -4457,6 +4463,8 @@ impl Config {
             tool_registry,
             code_mode,
             background_terminal_max_timeout,
+            background_jobs,
+            background_jobs_host: None,
             thread_unload_delay,
             ghost_snapshot,
             multi_agent_v2,

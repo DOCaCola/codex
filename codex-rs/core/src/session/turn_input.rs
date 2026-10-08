@@ -169,6 +169,11 @@ impl PreparedTurnInputSettings {
         let Some((turn_context, settings_snapshot)) = turn_context else {
             return Ok(None);
         };
+        if kind == TurnStartKind::User && session.background_continuation.enabled {
+            turn_context
+                .extension_data
+                .insert(super::background_continuation::UserStartedTurn);
+        }
         if let Some(turn_trigger) = turn_trigger {
             turn_context
                 .turn_metadata_state
@@ -236,11 +241,18 @@ pub(super) async fn handle(
                     "continuation requires internal response input".to_string(),
                 ));
             }
+            let kind = if session.background_continuation.enabled
+                && request.start.turn_trigger.as_deref() == Some(super::background_continuation::TRIGGER)
+            {
+                TurnStartKind::Automatic
+            } else {
+                TurnStartKind::Recovery
+            };
             start_if_idle(
                 session,
                 request,
                 submission_id,
-                TurnStartKind::Recovery,
+                kind,
                 Some(expected_previous_turn_id),
             )
             .await
@@ -392,6 +404,9 @@ async fn start_if_idle(
         ..
     } = request;
     let origin = UserInputOrigin::from_turn_trigger(start.turn_trigger.as_deref());
+    let background_wake = session.background_continuation.enabled
+        && kind == TurnStartKind::Automatic
+        && start.turn_trigger.as_deref() == Some(super::background_continuation::TRIGGER);
     if session.input_queue.has_trigger_turn_mailbox_items().await {
         return Ok(TurnInputSubmission::NotSubmitted {
             reason: NotSubmittedReason::PendingTriggerTurn,
@@ -442,6 +457,12 @@ async fn start_if_idle(
                 reason: NotSubmittedReason::Superseded,
             });
         }
+        // Revalidate after waiting for admission; an interrupt may have suppressed the batch.
+        if background_wake && !session.background_completion_ready().await {
+            return Ok(TurnInputSubmission::NotSubmitted {
+                reason: NotSubmittedReason::Superseded,
+            });
+        }
         let active_turn = active_turn.get_or_insert_with(ActiveTurn::default);
         Arc::clone(&active_turn.turn_state)
     };
@@ -481,6 +502,13 @@ async fn start_if_idle(
         turn_context
             .turn_metadata_state
             .set_responsesapi_client_metadata(responsesapi_client_metadata);
+    }
+    if background_wake {
+        turn_context
+            .extension_data
+            .insert(super::background_continuation::BackgroundWakeReservation(
+                Arc::clone(&turn_state),
+            ));
     }
     session
         .maybe_emit_model_warnings_for_turn(turn_context.as_ref())

@@ -96,6 +96,7 @@ pub(crate) async fn prepare_agent_spawn_config(
             .then_some(DEFAULT_ROLE_NAME)
         })
         .map(str::to_owned);
+    config.background_jobs_host = Some(session.background_jobs.host);
     Ok(PreparedSpawnConfig { config, role_name })
 }
 

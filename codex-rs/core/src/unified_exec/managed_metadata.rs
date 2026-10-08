@@ -19,6 +19,13 @@ pub(crate) enum TerminalState {
     Stopped,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DeadlineSource {
+    Explicit,
+    HostDefault,
+}
+
 #[derive(Serialize)]
 pub(crate) struct JobMetadata {
     pub job_id: Uuid,
@@ -30,6 +37,10 @@ pub(crate) struct JobMetadata {
     pub mode: ExecutionMode,
     pub started_at: DateTime<Utc>,
     pub explicit_timeout_ms: Option<u128>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deadline_source: Option<DeadlineSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deadline_origin: Option<&'static str>,
     #[serde(skip)]
     pub effective_deadline: Option<Instant>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -62,6 +73,7 @@ impl JobMetadata {
         request: &ExecCommandRequest,
         context: &UnifiedExecContext,
         execution: super::Execution,
+        process: &UnifiedExecProcess,
         start: Instant,
         deadline: Option<Duration>,
     ) -> Self {
@@ -73,7 +85,20 @@ impl JobMetadata {
             item_id: context.call_id.clone(),
             command: request.hook_command.clone(),
             mode: execution.mode,
-            started_at: Utc::now(),
+            started_at: if context.session.background_jobs.enabled {
+                process.started_at_utc
+            } else {
+                Utc::now()
+            },
+            deadline_source: (context.session.background_jobs.enabled && deadline.is_some()).then_some(
+                if execution.explicit_timeout.is_some() {
+                    DeadlineSource::Explicit
+                } else {
+                    DeadlineSource::HostDefault
+                }
+            ),
+            deadline_origin: (context.session.background_jobs.enabled && deadline.is_some())
+                .then_some("process_start"),
             explicit_timeout_ms: execution
                 .explicit_timeout
                 .map(|timeout| timeout.as_millis()),

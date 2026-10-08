@@ -11,7 +11,8 @@ impl ChatWidget {
         let Some(wait) = self.unified_exec_wait_streak.take() else {
             return;
         };
-        let cell = history_cell::new_unified_exec_interaction(wait.command_display, String::new());
+        let cell = history_cell::new_unified_exec_interaction(wait.command_display, String::new())
+            .with_job_timer(Some(self.background_job_timers.process(&wait.process_id)));
         if let Err(cell) = self.absorb_activity_detail(Box::new(cell)) {
             self.app_event_tx.send(AppEvent::InsertHistoryCell(cell));
         }
@@ -128,7 +129,7 @@ impl ChatWidget {
             self.add_to_history(history_cell::new_unified_exec_interaction(
                 command_display,
                 stdin,
-            ));
+            ).with_job_timer(Some(self.background_job_timers.process(&process_id))));
         }
     }
 
@@ -212,6 +213,7 @@ impl ChatWidget {
             .map(|process| process.command_display.clone())
             .collect();
         self.bottom_pane.set_unified_exec_processes(processes);
+        self.refresh_background_job_labels();
     }
 
     /// Record recent stdout/stderr lines for the unified exec footer.
@@ -308,6 +310,7 @@ impl ChatWidget {
             self.bump_active_cell_revision();
         }
 
+        self.refresh_background_job_labels();
         self.request_redraw();
     }
 
@@ -424,6 +427,7 @@ impl ChatWidget {
                     .as_mut()
                     .and_then(|c| c.as_any_mut().downcast_mut::<ExecCell>())
                 {
+                    cell.set_job_timers(&self.background_job_timers);
                     let completed = cell.complete_call(&id, output, duration);
                     debug_assert!(completed, "active exec cell should contain {id}");
                     if cell.should_flush() {
@@ -443,6 +447,7 @@ impl ChatWidget {
                     /*interaction_input*/ None,
                     self.local_settings.tui.animations && self.local_settings.tui.effects.progress,
                 );
+                orphan.set_job_timers(&self.background_job_timers);
                 let completed = orphan.complete_call(&id, output, duration);
                 debug_assert!(completed, "new orphan exec cell should contain {id}");
                 self.app_event_tx
@@ -458,6 +463,7 @@ impl ChatWidget {
                     /*interaction_input*/ None,
                     self.local_settings.tui.animations && self.local_settings.tui.effects.progress,
                 );
+                cell.set_job_timers(&self.background_job_timers);
                 let completed = cell.complete_call(&id, output, duration);
                 debug_assert!(completed, "new exec cell should contain {id}");
                 if let Some(active) = self
@@ -470,6 +476,7 @@ impl ChatWidget {
                     && cell.is_exploring_cell()
                 {
                     // Replayed commands have completion events without matching starts.
+                    active.job_timers.extend(cell.job_timers);
                     active.group.calls.extend(cell.group.calls);
                     self.bump_active_cell_revision();
                     self.request_redraw();

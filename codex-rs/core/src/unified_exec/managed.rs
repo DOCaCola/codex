@@ -33,6 +33,8 @@ mod delivery;
 mod listing;
 #[path = "managed_registry.rs"]
 mod registry;
+#[path = "managed_queue_delivery.rs"]
+mod queue_delivery;
 
 #[derive(Clone, Copy, Debug, Deserialize, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -101,6 +103,7 @@ impl ManagedCommands {
 }
 
 struct Job {
+    background_jobs: bool,
     origin: Arc<crate::session::step_context::StepContext>,
     metadata: Mutex<metadata::JobMetadata>,
     _slot: Arc<OwnedSemaphorePermit>,
@@ -203,13 +206,9 @@ impl UnifiedExecProcessManager {
         slot: Arc<OwnedSemaphorePermit>,
     ) -> LaunchGuard {
         let job_id = metadata.job_id;
-        let queued = context
-            .step_context
-            .turn
-            .config
-            .features
-            .enabled(codex_features::Feature::BackgroundJobs);
+        let background_jobs = context.session.background_jobs.enabled;
         let job = Arc::new(Job {
+            background_jobs,
             origin: Arc::clone(&context.step_context),
             metadata: Mutex::new(metadata),
             _slot: slot,
@@ -220,7 +219,7 @@ impl UnifiedExecProcessManager {
             revoked: CancellationToken::new(),
             state: Arc::new(Mutex::new(JobState::default())),
         });
-        if queued {
+        if job.background_jobs {
             self.managed
                 .registry
                 .insert(process_id, job_id, Arc::clone(&job))
@@ -237,15 +236,15 @@ impl UnifiedExecProcessManager {
         let finishing = Arc::clone(&job);
         tokio::spawn(async move {
             finishing.process.cancellation_token().cancelled().await;
-            if queued {
-                registry.enqueue(job_id).await;
-                changed.notify_waiters();
-            }
             finishing
                 .metadata
                 .lock()
                 .await
                 .finish(&finishing.process, finishing.revoked.is_cancelled());
+            if finishing.background_jobs {
+                registry.enqueue(job_id).await;
+                changed.notify_waiters();
+            }
         });
         self.managed.changed.notify_waiters();
         LaunchGuard {
@@ -256,34 +255,6 @@ impl UnifiedExecProcessManager {
 
     pub(super) async fn managed_id_reserved(&self, process_id: i32) -> bool {
         self.managed.get(process_id).await.is_some()
-    }
-
-    pub(super) async fn finalize_managed_outcome(
-        &self,
-        process_id: i32,
-        process: &Arc<UnifiedExecProcess>,
-    ) {
-        let Some(job) = self.managed.get(process_id).await else {
-            return;
-        };
-        let queued = job
-            .origin
-            .turn
-            .config
-            .features
-            .enabled(codex_features::Feature::BackgroundJobs);
-        if queued && !Arc::ptr_eq(&job.process, process) {
-            return;
-        }
-        if queued {
-            let job_id = job.metadata.lock().await.job_id;
-            self.managed.registry.enqueue(job_id).await;
-            self.managed.changed.notify_waiters();
-        }
-        job.metadata
-            .lock()
-            .await
-            .finish(&job.process, job.revoked.is_cancelled());
     }
 
     pub(super) async fn revoke_managed_commands(&self) {
@@ -329,6 +300,11 @@ impl UnifiedExecProcessManager {
         // waking a parked turn that observed this in-flight reader.
         let _reader_finished = NotifyOnDrop(Arc::clone(&self.managed.changed));
         let mut state = Arc::clone(&job.state).lock_owned().await;
+        if job.background_jobs && (state.result.is_some() || state.error.is_some()) {
+            return self
+                .read_cached_background_job(context, &job, &mut state, request)
+                .await;
+        }
         if let Some(error) = &state.error {
             return Err(UnifiedExecError::process_failed(error.clone()));
         }
@@ -363,6 +339,15 @@ impl UnifiedExecProcessManager {
             output.completion_delivery = Some(true);
             output
         });
+        if job.background_jobs {
+            let result = self
+                .accept_background_job_read(context, &job, &mut state, result)
+                .await;
+            drop(state);
+            drop(job);
+            self.evict_retired_managed_commands().await;
+            return result;
+        }
         let result = match result {
             Ok(output) if output.process_id.is_none() => {
                 self.accept_managed_output(context, &job, output).await
@@ -472,7 +457,7 @@ impl UnifiedExecProcessManager {
         model_needs_follow_up: bool,
     ) -> bool {
         let delivered = self.record_command_completions(context).await;
-        if delivered || model_needs_follow_up {
+        if delivered || model_needs_follow_up || context.session.background_continuation.enabled {
             return delivered;
         }
         loop {

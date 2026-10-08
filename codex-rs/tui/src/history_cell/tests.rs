@@ -870,18 +870,22 @@ async fn session_info_hides_tooltips_when_disabled() {
 fn ps_output_multiline_snapshot() {
     let cell = new_unified_exec_processes_output(vec![
         UnifiedExecProcessDetails {
+            timer: None,
             command_display: "echo hello\nand then some extra text".to_string(),
             recent_chunks: vec!["hello".to_string(), "done".to_string()],
         },
         UnifiedExecProcessDetails {
+            timer: None,
             command_display: "(\n  sleep 120\n)".to_string(),
             recent_chunks: Vec::new(),
         },
         UnifiedExecProcessDetails {
+            timer: None,
             command_display: "sleep 1\r\nsleep 120".to_string(),
             recent_chunks: Vec::new(),
         },
         UnifiedExecProcessDetails {
+            timer: None,
             command_display: "rg \"foo\" src".to_string(),
             recent_chunks: vec!["src/main.rs:12:foo".to_string()],
         },
@@ -893,6 +897,7 @@ fn ps_output_multiline_snapshot() {
 #[test]
 fn ps_output_multiline_long_command_snapshot() {
     let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
+            timer: None,
         command_display: format!("(\n  {}\n)", "x".repeat(100)),
         recent_chunks: Vec::new(),
     }]);
@@ -938,6 +943,7 @@ fn cyber_policy_error_event_narrow_snapshot() {
 #[test]
 fn ps_output_long_command_snapshot() {
     let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
+            timer: None,
         command_display: String::from(
             "rg \"foo\" src --glob '**/*.rs' --max-count 1000 --no-ignore --hidden --follow --glob '!target/**'",
         ),
@@ -950,6 +956,7 @@ fn ps_output_long_command_snapshot() {
 #[test]
 fn ps_output_halfwidth_sound_marks_snapshot() {
     let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
+            timer: None,
         command_display: "echo ｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟ".to_string(),
         recent_chunks: vec!["output ｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟｶﾞﾊﾟ".to_string()],
     }]);
@@ -962,6 +969,7 @@ fn ps_output_many_sessions_snapshot() {
     let cell = new_unified_exec_processes_output(
         (0..20)
             .map(|idx| UnifiedExecProcessDetails {
+            timer: None,
                 command_display: format!("command {idx}"),
                 recent_chunks: Vec::new(),
             })
@@ -974,6 +982,7 @@ fn ps_output_many_sessions_snapshot() {
 #[test]
 fn ps_output_chunk_leading_whitespace_snapshot() {
     let cell = new_unified_exec_processes_output(vec![UnifiedExecProcessDetails {
+            timer: None,
         command_display: "just fix".to_string(),
         recent_chunks: vec![
             "  indented first".to_string(),

@@ -465,6 +465,7 @@ async fn failed_initial_end_for_unstored_process_uses_fallback_output() {
         hook_command: "echo before".to_string(),
         process_id: 123,
         yield_time_ms: 1000,
+        yield_source: super::super::background_policy::YieldSource::Legacy,
         max_output_tokens: None,
         #[allow(deprecated)]
         cwd: turn.cwd.clone().into(),

@@ -2,25 +2,43 @@ use codex_tools::JsonSchema;
 use codex_tools::ToolSpec;
 use serde_json::json;
 
-pub(super) fn configure_exec(tool: &mut ToolSpec) {
+pub(super) fn configure_exec(tool: &mut ToolSpec, idle_continuation: bool, policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>) {
     let ToolSpec::Function(tool) = tool else {
         return;
     };
-    tool.description.push_str(
-        "\nFinite commands deliver completion automatically. Continue independent work without polling. \
-         When blocked, use write_stdin with wait_mode=\"completion\". The runtime keeps the turn open \
-         while commands run. A started command is not a completed task. Use execution_mode=\"interactive\" \
-         for servers, watchers, REPLs and other persistent work.",
-    );
+    if idle_continuation {
+        tool.description.push_str(
+            "\nAuto/background commands keep running after the turn ends. Continue independent work \
+             or finish the turn; completion starts a follow-up turn unless interrupted or in Plan mode, \
+             when results wait for user input. Use interactive for persistent work and foreground \
+             when final results are required now.",
+        );
+    } else {
+        tool.description.push_str(
+            "\nFinite commands deliver completion automatically. Continue independent work without polling. \
+             When blocked, use write_stdin with wait_mode=\"completion\". The runtime keeps the turn open \
+             while commands run. A started command is not a completed task. Use execution_mode=\"interactive\" \
+             for servers, watchers, REPLs and other persistent work.",
+        );
+    }
     let properties = tool.parameters.properties.get_or_insert_default();
     properties.insert("execution_mode".into(), JsonSchema::string_enum(
         vec![json!("auto"), json!("foreground"), json!("background"), json!("interactive")],
         Some("auto (default) waits initially then delivers completion; foreground waits until exit; background returns promptly and delivers completion; interactive uses manual reads. tty=true defaults to interactive.".into()),
     ));
     properties.insert("timeout_ms".into(), JsonSchema::number(Some(
-        "Positive execution deadline for finite commands, including background time. Foreground defaults to 300000 ms; auto/background have no implicit deadline. This is separate from yield_time_ms.".into(),
+        policy.map_or_else(
+            || "Positive execution deadline for finite commands, including background time. Foreground defaults to 300000 ms; auto/background have no implicit deadline. This is separate from yield_time_ms.".into(),
+            |policy| policy.deadline_guidance(),
+        ),
     )));
     if let Some(yield_time) = properties.get_mut("yield_time_ms") {
+        if let Some(policy) = policy {
+            yield_time.description = Some(format!(
+                "Initial auto wait, default {} ms. Only this omitted auto default bypasses the floor and clamp. Explicit yield_time_ms and interactive keep legacy runtime bounds.",
+                policy.defaults.auto_yield.as_millis(),
+            ));
+        }
         yield_time.description.get_or_insert_default().push_str(
             " Applies only to auto/interactive; background returns promptly and foreground waits until exit or its execution deadline.",
         );

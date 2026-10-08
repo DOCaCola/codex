@@ -1154,6 +1154,7 @@ impl App {
     }
 
     fn render_chat_widget_frame(&mut self, tui: &mut tui::Tui, screen_size: Size) -> Result<Rect> {
+        self.chat_widget.refresh_background_job_labels();
         self.sync_thread_title_progress();
         self.chat_widget
             .set_sparkle_terminal_focus(tui.is_terminal_focused());

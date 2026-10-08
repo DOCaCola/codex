@@ -6741,6 +6741,12 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         code_mode_message_tasks: Default::default(),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        background_jobs: crate::unified_exec::background_policy::BackgroundJobPolicy::capture(
+            &config, &session_configuration.session_source,
+        ),
+        background_continuation: super::background_continuation::BackgroundContinuation::new(
+            config.features.enabled(Feature::BackgroundJobsIdleContinuation),
+        ),
 
         isolation: codex_extension_api::SessionIsolation::Inherit,
         tool_policy: Arc::default(),
@@ -9023,6 +9029,12 @@ where
         code_mode_message_tasks: Default::default(),
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
+        background_jobs: crate::unified_exec::background_policy::BackgroundJobPolicy::capture(
+            &config, &session_configuration.session_source,
+        ),
+        background_continuation: super::background_continuation::BackgroundContinuation::new(
+            config.features.enabled(Feature::BackgroundJobsIdleContinuation),
+        ),
 
         isolation: codex_extension_api::SessionIsolation::Inherit,
         tool_policy: Arc::default(),

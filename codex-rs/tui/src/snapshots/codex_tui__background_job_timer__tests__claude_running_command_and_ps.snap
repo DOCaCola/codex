@@ -1,0 +1,14 @@
+---
+source: tui/src/background_job_timer_tests.rs
+expression: rendered
+---
+Command:
+• Running sleep 10 (0s · timeout 1m 30s)
+Processes:
+/ps
+
+Background terminals
+
+  • sleep 10 (0s · timeout 1m 30s)
+Interaction:
+• Waited for background terminal · sleep 10 (0s · timeout 1m 30s)

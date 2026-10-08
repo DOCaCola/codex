@@ -481,6 +481,30 @@
       ],
       "type": "object"
     },
+    "BackgroundJobsConfigToml": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_yield_ms": {
+          "description": "Initial auto wait, without the legacy Windows floor. Default: 10000.",
+          "format": "uint64",
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "foreground_timeout_ms": {
+          "description": "Managed foreground deadline. Default: 300000.",
+          "format": "uint64",
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "unattended_deadline_ms": {
+          "description": "Auto/background deadline on unattended hosts, from process start. Default: 1800000.",
+          "format": "uint64",
+          "minimum": 1.0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "BrowserUseConfigToml": {
       "additionalProperties": false,
       "properties": {
@@ -754,6 +778,9 @@
               "type": "boolean"
             },
             "background_jobs": {
+              "type": "boolean"
+            },
+            "background_jobs_idle_continuation": {
               "type": "boolean"
             },
             "background_paginated_rollout_migration": {
@@ -6659,6 +6686,14 @@
       "default": null,
       "description": "Optional policy instructions for the guardian auto-reviewer."
     },
+    "background_jobs": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/BackgroundJobsConfigToml"
+        }
+      ],
+      "description": "Managed command defaults, used only with features.background_jobs enabled."
+    },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
       "format": "uint64",
@@ -6809,6 +6844,9 @@
           "type": "boolean"
         },
         "background_jobs": {
+          "type": "boolean"
+        },
+        "background_jobs_idle_continuation": {
           "type": "boolean"
         },
         "background_paginated_rollout_migration": {

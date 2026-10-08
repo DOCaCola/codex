@@ -16,12 +16,14 @@ use crate::render::renderable::Renderable;
 /// Tracks active unified-exec processes and renders a compact summary.
 pub(crate) struct UnifiedExecFooter {
     processes: Vec<String>,
+    job_timers: Vec<crate::background_job_timer::JobTimer>,
 }
 
 impl UnifiedExecFooter {
     pub(crate) fn new() -> Self {
         Self {
             processes: Vec::new(),
+            job_timers: Vec::new(),
         }
     }
 
@@ -31,6 +33,10 @@ impl UnifiedExecFooter {
         }
         self.processes = processes;
         true
+    }
+
+    pub(crate) fn set_job_timers(&mut self, timers: Vec<crate::background_job_timer::JobTimer>) {
+        self.job_timers = timers;
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -49,8 +55,9 @@ impl UnifiedExecFooter {
 
         let count = self.processes.len();
         let plural = if count == 1 { "" } else { "s" };
+        let labels: String = self.job_timers.iter().map(|timer| format!(" {}", timer.label())).collect();
         Some(format!(
-            "{count} background terminal{plural} running · /ps to view · /stop to close"
+            "{count} background terminal{plural} running{labels} · /ps to view · /stop to close"
         ))
     }
 
@@ -115,3 +122,7 @@ mod tests {
         assert_snapshot!("render_many_sessions", format!("{buf:?}"));
     }
 }
+
+#[cfg(test)]
+#[path = "unified_exec_footer_timer_tests.rs"]
+mod timer_tests;

@@ -240,6 +240,7 @@ mod reasoning_effort;
 mod submission;
 pub(crate) use reasoning_effort::RequestEffortUsage;
 pub(crate) use submission::Submission;
+pub(crate) mod background_continuation;
 mod input_queue;
 mod mcp;
 mod mcp_notifications;
@@ -540,7 +541,7 @@ impl Session {
     async fn spawn_internal(args: SessionSpawnArgs) -> CodexResult<(Arc<Self>, SessionIo)> {
         let SessionSpawnArgs {
             startup,
-            config,
+            mut config,
             allow_provider_model_fallback,
             instructions,
             installation_id,
@@ -583,6 +584,12 @@ impl Session {
             git_enrichment_policy,
             windows_sandbox_proxy_settings_mode,
         } = args;
+        config.background_jobs_host = Some(
+            crate::unified_exec::background_policy::HostClass::for_source(
+                &session_source,
+                config.background_jobs_host.unwrap_or(crate::unified_exec::background_policy::HostClass::Interactive),
+            ),
+        );
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
 
@@ -2026,10 +2033,11 @@ impl Session {
 
     pub(crate) async fn get_config(&self) -> std::sync::Arc<Config> {
         let state = self.state.lock().await;
-        state
-            .session_configuration
-            .original_config_do_not_use
-            .clone()
+        let mut config = Arc::clone(&state.session_configuration.original_config_do_not_use);
+        if config.background_jobs_host != Some(self.background_jobs.host) {
+            Arc::make_mut(&mut config).background_jobs_host = Some(self.background_jobs.host);
+        }
+        config
     }
 
     pub(crate) async fn inherited_instructions(&self) -> SessionInstructions {

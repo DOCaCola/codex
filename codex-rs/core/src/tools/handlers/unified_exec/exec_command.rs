@@ -83,12 +83,16 @@ pub struct ExecCommandHandler {
     options: ExecCommandHandlerOptions,
     lifetime: ExecCommandLifetime,
     background_delivery: bool,
+    idle_continuation: bool,
+    background_job_policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
 }
 
 impl Default for ExecCommandHandler {
     fn default() -> Self {
         Self {
             background_delivery: false,
+            idle_continuation: false,
+            background_job_policy: None,
             lifetime: ExecCommandLifetime::Interactive,
             options: ExecCommandHandlerOptions {
                 allow_login_shell: false,
@@ -109,6 +113,8 @@ impl ExecCommandHandler {
             options,
             lifetime: ExecCommandLifetime::Interactive,
             background_delivery: false,
+            idle_continuation: false,
+            background_job_policy: None,
         }
     }
 
@@ -117,7 +123,19 @@ impl ExecCommandHandler {
             options,
             lifetime: ExecCommandLifetime::OneShot,
             background_delivery: false,
+            idle_continuation: false,
+            background_job_policy: None,
         }
+    }
+
+    pub(crate) fn with_background_job_policy(mut self, policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>) -> Self {
+        self.background_job_policy = policy;
+        self
+    }
+
+    pub(crate) fn with_idle_continuation(mut self, enabled: bool) -> Self {
+        self.idle_continuation = enabled;
+        self
     }
 
     pub(crate) fn with_background_delivery(mut self, enabled: bool) -> Self {
@@ -192,7 +210,7 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
             ExecCommandLifetime::OneShot => one_shot_exec_command_spec(spec),
         };
         if self.background_delivery {
-            super::managed_spec::configure_exec(&mut spec);
+            super::managed_spec::configure_exec(&mut spec, self.idle_continuation, self.background_job_policy);
         }
         if !self.options.allow_tty
             && let ToolSpec::Function(spec) = &mut spec
@@ -419,24 +437,36 @@ impl ExecCommandHandler {
                     "timeout_ms is too large".into(),
                 ));
             }
-            if mode == ExecutionMode::Foreground {
-                wait = CommandWait::Completion {
-                    timeout: if exec_command_is_dependency {
-                        timeout
+            if session.background_jobs.enabled {
+                let deadline = session.background_jobs.deadline(mode, timeout);
+                if mode == ExecutionMode::Foreground || exec_command_is_dependency {
+                    wait = CommandWait::Completion { timeout: None };
+                }
+                Some(Execution {
+                    mode,
+                    explicit_timeout: timeout,
+                    timeout: deadline,
+                })
+            } else {
+                if mode == ExecutionMode::Foreground {
+                    wait = CommandWait::Completion {
+                        timeout: if exec_command_is_dependency {
+                            timeout
+                        } else {
+                            Some(timeout.unwrap_or(Duration::from_secs(300)))
+                        },
+                    };
+                }
+                Some(Execution {
+                    mode,
+                    explicit_timeout: timeout,
+                    timeout: if mode == ExecutionMode::Foreground {
+                        None
                     } else {
-                        Some(timeout.unwrap_or(Duration::from_secs(300)))
+                        timeout
                     },
-                };
+                })
             }
-            Some(Execution {
-                mode,
-                explicit_timeout: timeout,
-                timeout: if mode == ExecutionMode::Foreground {
-                    None
-                } else {
-                    timeout
-                },
-            })
         } else {
             if execution_mode.is_some() {
                 return Err(FunctionCallError::RespondToModel(
@@ -445,6 +475,10 @@ impl ExecCommandHandler {
             }
             None
         };
+
+        let (yield_time_ms, yield_source) = yield_time_ms.resolve(
+            &session.background_jobs, managed.map(|execution| execution.mode),
+        );
 
         let exec_permission_approvals_enabled =
             session.features().enabled(Feature::ExecPermissionApprovals);
@@ -552,6 +586,7 @@ impl ExecCommandHandler {
             hook_command: hook_command.clone(),
             process_id,
             yield_time_ms,
+            yield_source,
             max_output_tokens,
             cwd,
             sandbox_cwd: native_environment_cwd,

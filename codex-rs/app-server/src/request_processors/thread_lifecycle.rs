@@ -1,4 +1,5 @@
 use super::*;
+use super::thread_unloading::UnloadingState;
 use crate::extensions::send_thread_warning;
 use codex_app_server_protocol::ThreadQueueChangedNotification;
 use codex_extension_api::ThreadIdleCause;
@@ -15,110 +16,6 @@ pub(super) struct ListenerTaskContext {
     pub(super) thread_unload_delay: Duration,
     pub(super) skills_watcher: Arc<SkillsWatcher>,
     pub(super) turn_cost_worker: Option<crate::turn_cost_worker::TurnCostWorkerHandle>,
-}
-
-struct UnloadingState {
-    delay: Duration,
-    has_subscribers_rx: watch::Receiver<bool>,
-    has_subscribers: (bool, Instant),
-    thread_status_rx: watch::Receiver<ThreadStatus>,
-    is_active: (bool, Instant),
-}
-
-impl UnloadingState {
-    async fn new(
-        listener_task_context: &ListenerTaskContext,
-        thread_id: ThreadId,
-        delay: Duration,
-    ) -> Option<Self> {
-        let has_subscribers_rx = listener_task_context
-            .thread_state_manager
-            .subscribe_to_has_connections(thread_id)
-            .await?;
-        let thread_status_rx = listener_task_context
-            .thread_watch_manager
-            .subscribe(thread_id)
-            .await?;
-        let has_subscribers = (*has_subscribers_rx.borrow(), Instant::now());
-        let is_active = (
-            matches!(*thread_status_rx.borrow(), ThreadStatus::Active { .. }),
-            Instant::now(),
-        );
-        Some(Self {
-            delay,
-            has_subscribers_rx,
-            has_subscribers,
-            thread_status_rx,
-            is_active,
-        })
-    }
-
-    fn unloading_target(&self) -> Option<Instant> {
-        match (self.has_subscribers, self.is_active) {
-            ((false, has_no_subscribers_since), (false, is_inactive_since)) => {
-                std::cmp::max(has_no_subscribers_since, is_inactive_since).checked_add(self.delay)
-            }
-            _ => None,
-        }
-    }
-
-    fn sync_receiver_values(&mut self) {
-        let has_subscribers = *self.has_subscribers_rx.borrow();
-        if self.has_subscribers.0 != has_subscribers {
-            self.has_subscribers = (has_subscribers, Instant::now());
-        }
-
-        let is_active = matches!(*self.thread_status_rx.borrow(), ThreadStatus::Active { .. });
-        if self.is_active.0 != is_active {
-            self.is_active = (is_active, Instant::now());
-        }
-    }
-
-    fn should_unload_now(&mut self) -> bool {
-        self.sync_receiver_values();
-        self.unloading_target()
-            .is_some_and(|target| target <= Instant::now())
-    }
-
-    fn note_thread_activity_observed(&mut self) {
-        if !self.is_active.0 {
-            self.is_active = (false, Instant::now());
-        }
-    }
-
-    async fn wait_for_unloading_trigger(&mut self) -> bool {
-        loop {
-            self.sync_receiver_values();
-            let unloading_target = self.unloading_target();
-            if let Some(target) = unloading_target
-                && target <= Instant::now()
-            {
-                return true;
-            }
-            let unloading_sleep = async {
-                if let Some(target) = unloading_target {
-                    tokio::time::sleep_until(target.into()).await;
-                } else {
-                    futures::future::pending::<()>().await;
-                }
-            };
-            tokio::select! {
-                _ = unloading_sleep => return true,
-                changed = self.has_subscribers_rx.changed() => {
-                    if changed.is_err() {
-                        return false;
-                    }
-                    self.sync_receiver_values();
-                },
-                changed = self.thread_status_rx.changed() => {
-                    if changed.is_err() {
-                        return false;
-                    }
-                    self.sync_receiver_values();
-                },
-            }
-        }
-    }
 }
 
 pub(super) enum ThreadShutdownResult {
@@ -221,6 +118,7 @@ pub(super) async fn ensure_listener_task_running(
     let Some(mut unloading_state) = UnloadingState::new(
         &listener_task_context,
         conversation_id,
+        Arc::clone(&conversation),
         listener_task_context.thread_unload_delay,
     )
     .await
@@ -295,6 +193,7 @@ pub(super) async fn ensure_listener_task_running(
                         &thread_watch_manager,
                         &outgoing_for_task,
                         &pending_thread_unloads,
+                        &mut unloading_state,
                         listener_command,
                     )
                     .await;
@@ -341,6 +240,13 @@ pub(super) async fn ensure_listener_task_running(
                         conversation_id,
                     );
 
+                    if conversation.background_jobs_enabled() && matches!(&event.msg,
+                        EventMsg::ItemCompleted(codex_protocol::protocol::ItemCompletedEvent {
+                            item: codex_protocol::items::TurnItem::CommandExecution(_), ..
+                        })
+                    ) {
+                        unloading_state.refresh_background_work().await;
+                    }
                     apply_bespoke_event_handling(
                         event.clone(),
                         conversation_id,
@@ -364,6 +270,7 @@ pub(super) async fn ensure_listener_task_running(
                     if !unloading_watchers_open {
                         break;
                     }
+                    unloading_state.refresh_background_work().await;
                     if !unloading_state.should_unload_now() {
                         continue;
                     }
@@ -478,9 +385,14 @@ pub(super) async fn handle_thread_listener_command(
     thread_watch_manager: &ThreadWatchManager,
     outgoing: &Arc<OutgoingMessageSender>,
     pending_thread_unloads: &Arc<Mutex<HashSet<ThreadId>>>,
+    unloading_state: &mut UnloadingState,
     listener_command: ThreadListenerCommand,
 ) {
     match listener_command {
+        ThreadListenerCommand::ReadBackgroundWork { reply } => {
+            // Refresh synchronizes the listener's baseline; its next wait registers before reading.
+            let _ = reply.send(unloading_state.refresh_background_work().await);
+        }
         ThreadListenerCommand::SendThreadResumeResponse {
             request: resume_request,
             completion_tx,

@@ -41,6 +41,8 @@ pub(crate) struct CommandStackHandler {
     write_stdin_arguments: JsonSchema,
     include_environment_id: bool,
     patch_tool: CommandStackPatchTool,
+    idle_continuation: bool,
+    background_job_policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
 }
 
 impl CommandStackHandler {
@@ -57,7 +59,19 @@ impl CommandStackHandler {
             write_stdin_arguments,
             include_environment_id,
             patch_tool,
+            idle_continuation: false,
+            background_job_policy: None,
         }
+    }
+
+    pub(crate) fn with_background_job_policy(mut self, policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>) -> Self {
+        self.background_job_policy = policy;
+        self
+    }
+
+    pub(crate) fn with_idle_continuation(mut self, enabled: bool) -> Self {
+        self.idle_continuation = enabled;
+        self
     }
 }
 
@@ -72,6 +86,8 @@ impl ToolExecutor<ToolInvocation> for CommandStackHandler {
             self.write_stdin_arguments.clone(),
             self.include_environment_id,
             self.patch_tool,
+            self.idle_continuation,
+            self.background_job_policy,
         )
     }
 
@@ -126,8 +142,9 @@ impl CommandStackHandler {
             .config
             .features
             .enabled(codex_features::Feature::BackgroundCommandDelivery)
+            || invocation.session.background_jobs.enabled
         {
-            managed::prepare_dependencies(&mut commands)?
+            managed::prepare_dependencies(&mut commands, invocation.session.background_jobs.enabled)?
         } else {
             1
         };

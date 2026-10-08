@@ -52,6 +52,7 @@ mod errors;
 mod head_tail_buffer;
 pub(crate) mod managed;
 mod oneshot;
+pub(crate) mod background_policy;
 mod process;
 mod process_manager;
 mod process_state;
@@ -120,6 +121,7 @@ pub(crate) struct ExecCommandRequest {
     pub hook_command: String,
     pub process_id: i32,
     pub yield_time_ms: u64,
+    pub yield_source: background_policy::YieldSource,
     pub max_output_tokens: Option<usize>,
     pub cwd: PathUri,
     pub sandbox_cwd: PathUri,

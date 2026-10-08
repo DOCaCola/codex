@@ -15,6 +15,7 @@ use codex_ansi_escape::ansi_escape_line;
 use ratatui::style::Modifier;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use unicode_width::UnicodeWidthStr;
 
 impl ExecCell {
     pub(super) fn command_disclosure(&self, width: u16) -> Option<ActivityDisclosure> {
@@ -103,11 +104,14 @@ impl ExecCell {
         // Highlight before clipping so the compact row keeps the same shell token colors.
         let mut command_lines = highlight_bash_to_lines(&script).into_iter();
         let mut header = command_lines.next().unwrap_or_default();
-        header
-            .spans
-            .splice(0..0, [marker, " ".into(), title.bold(), " ".into()]);
+        header.spans.splice(0..0, [marker, " ".into(), title.bold(), " ".into()]);
         if command_lines.next().is_some() {
             header.push_span(" …");
+        }
+        let timer = self.job_timers.get(&call.call_id).map(|timer| format!(" {}", timer.label())).unwrap_or_default();
+        if !timer.is_empty() {
+            header = clipped_line(header, width.saturating_sub(timer.width() as u16)).line;
+            header.push_span(timer.dim());
         }
         let mut lines = vec![clipped_line(header, width)];
         if let Some(output) = &call.output {

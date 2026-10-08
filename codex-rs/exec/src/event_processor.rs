@@ -25,6 +25,8 @@ pub(crate) trait EventProcessor {
     /// Handle a local exec warning that is not represented as an app-server notification.
     fn process_warning(&mut self, message: String) -> CodexStatus;
 
+    fn set_background_continuations(&mut self, _enabled: bool) {}
+    fn automatic_continuation(&mut self) {}
     fn print_final_output(&mut self) {}
 }
 

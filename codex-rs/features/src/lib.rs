@@ -137,6 +137,8 @@ pub enum Feature {
     BackgroundCommandDelivery,
     /// Enable richer managed-job identity and completion context.
     BackgroundJobs,
+    /// Allow opted-in session-owned jobs to resume an idle conversation.
+    BackgroundJobsIdleContinuation,
     /// Allow unified exec commands to allocate an interactive terminal.
     UnifiedExecTty,
     /// Expose a single tool that stacks exec_command and apply_patch calls.
@@ -709,6 +711,9 @@ impl Features {
     }
 
     pub fn normalize_dependencies(&mut self) {
+        if self.enabled(Feature::BackgroundJobsIdleContinuation) {
+            self.enable(Feature::BackgroundJobs);
+        }
         if self.enabled(Feature::BackgroundJobs) {
             self.enable(Feature::BackgroundCommandDelivery);
         }
@@ -1033,6 +1038,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::BackgroundJobs,
         key: "background_jobs",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::BackgroundJobsIdleContinuation,
+        key: "background_jobs_idle_continuation",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

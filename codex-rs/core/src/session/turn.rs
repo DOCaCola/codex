@@ -168,6 +168,7 @@ pub(crate) async fn run_turn(
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<Option<String>> {
+    sess.begin_background_user_turn(&turn_context).await;
     if crate::guardian::is_basic_session_source(&turn_context.session_source) {
         crate::guardian::check_pending_guardian_input(&sess, &turn_context).await?;
     }
@@ -514,12 +515,7 @@ pub(crate) async fn run_turn(
                 .await;
 
             // Include completions that arrived during turn setup/compaction in its first sample.
-            if first_sample
-                && turn_context
-                    .config
-                    .features
-                    .enabled(Feature::BackgroundJobs)
-            {
+            if first_sample && sess.background_jobs.enabled {
                 let context = crate::unified_exec::UnifiedExecContext::new(
                     Arc::clone(&sess),
                     Arc::clone(&step_context),
@@ -576,6 +572,7 @@ pub(crate) async fn run_turn(
                     .config
                     .features
                     .enabled(Feature::BackgroundCommandDelivery)
+                    || sess.background_jobs.enabled
                 {
                     let context = crate::unified_exec::UnifiedExecContext::new(
                         Arc::clone(&sess),

@@ -59,7 +59,6 @@ use crate::unified_exec::async_watcher::emit_exec_end_for_unified_exec;
 use crate::unified_exec::async_watcher::emit_failed_exec_end_for_unified_exec;
 use crate::unified_exec::async_watcher::spawn_exit_watcher;
 use crate::unified_exec::async_watcher::start_streaming_output;
-use crate::unified_exec::clamp_yield_time;
 use crate::unified_exec::generate_chunk_id;
 use crate::unified_exec::head_tail_buffer::HeadTailBuffer;
 use crate::unified_exec::process::OutputBuffers;
@@ -573,12 +572,19 @@ impl UnifiedExecProcessManager {
         let process = Arc::new(process);
         if let Some(timeout) = request.managed.and_then(|execution| execution.timeout) {
             let process = Arc::clone(&process);
+            let process_start = context.session.background_jobs.enabled.then_some(process.started_at);
             tokio::spawn(async move {
                 let exited = process.cancellation_token();
                 tokio::select! {
                     biased;
                     _ = exited.cancelled() => {}
-                    _ = tokio::time::sleep(timeout) => {
+                    _ = async {
+                        if let Some(start) = process_start {
+                            tokio::time::sleep_until(start + timeout).await;
+                        } else {
+                            tokio::time::sleep(timeout).await;
+                        }
+                    } => {
                         process.mark_timed_out();
                         if let Err(error) = process.terminate_confirmed().await {
                             process.fail_and_terminate(error.to_string());
@@ -637,7 +643,11 @@ impl UnifiedExecProcessManager {
         emitter.emit(event_ctx, ToolEventStage::Begin).await;
 
         start_streaming_output(&process, context);
-        let start = Instant::now();
+        let start = if context.session.background_jobs.enabled {
+            process.started_at
+        } else {
+            Instant::now()
+        };
         // Persist live sessions before the initial yield wait so interrupting the
         // turn cannot drop the last Arc and terminate the background process.
         let process_started_alive = !process.has_exited() && process.exit_code().is_none();
@@ -683,6 +693,7 @@ impl UnifiedExecProcessManager {
                         &request,
                         context,
                         execution,
+                        process.as_ref(),
                         start,
                         completion
                             .as_ref()
@@ -703,7 +714,7 @@ impl UnifiedExecProcessManager {
             }) {
                 0
             } else {
-                clamp_yield_time(request.yield_time_ms)
+                request.yield_source.initial_wait_ms(request.yield_time_ms)
             };
             // For the initial exec_command call, we both stream output to events
             // (via start_streaming_output above) and collect a snapshot here for
@@ -1088,7 +1099,9 @@ impl UnifiedExecProcessManager {
         if !request.input.is_empty() {
             if !tty {
                 if request.input == INTERRUPT {
-                    process.interrupt().await?;
+                    if !self.stop_managed_command(process_id, &process).await? {
+                        process.interrupt().await?;
+                    }
                 } else {
                     return Err(UnifiedExecError::StdinClosed);
                 }

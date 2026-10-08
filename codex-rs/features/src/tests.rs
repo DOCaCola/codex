@@ -896,3 +896,19 @@ fn background_jobs_implies_delivery_after_config_resolution() {
     assert!(features.enabled(crate::Feature::BackgroundJobs));
     assert!(features.enabled(crate::Feature::BackgroundCommandDelivery));
 }
+
+// Written, not run: one sub-flag transitively enables both owning features.
+#[test]
+fn background_idle_continuation_normalizes_transitive_dependencies() {
+    let config: FeaturesToml = toml::from_str(
+        "background_jobs_idle_continuation = true\nbackground_jobs = false\nbackground_command_delivery = false",
+    ).unwrap();
+    let features = crate::Features::from_sources(
+        crate::FeatureConfigSource { features: Some(&config), ..Default::default() },
+        crate::FeatureConfigSource::default(), crate::FeatureOverrides::default(),
+    );
+    assert!(features.enabled(crate::Feature::BackgroundJobsIdleContinuation));
+    assert!(features.enabled(crate::Feature::BackgroundJobs));
+    assert!(features.enabled(crate::Feature::BackgroundCommandDelivery));
+    assert!(!crate::Features::default().enabled(crate::Feature::BackgroundJobsIdleContinuation));
+}

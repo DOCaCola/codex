@@ -600,6 +600,7 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
         });
         let mut pending_request_responses =
             HashMap::<RequestId, oneshot::Sender<PendingClientRequestResponse>>::new();
+        let mut continuation_threads = std::collections::HashSet::new();
         let mut shutdown_ack = None;
 
         loop {
@@ -684,6 +685,13 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                     let outgoing_message = queued_message.message;
                     match outgoing_message {
                         OutgoingMessage::Response(response) => {
+                            if let codex_app_server_protocol::ClientResponsePayload::CodexdcBackgroundWorkRead(state) = response.result.as_ref() {
+                                if state.idle_continuation {
+                                    continuation_threads.insert(state.thread_id.clone());
+                                } else {
+                                    continuation_threads.remove(&state.thread_id);
+                                }
+                            }
                             if let Some(response_tx) = pending_request_responses.remove(&response.id) {
                                 let result = serde_json::to_value(response.result).map_err(|err| {
                                     internal_error(format!("failed to serialize response: {err}"))
@@ -740,7 +748,16 @@ async fn start_uninitialized(mut args: InProcessStartArgs) -> IoResult<InProcess
                         }
                         OutgoingMessage::AppServerNotification(envelope) => {
                             let notification = envelope.notification;
-                            if server_notification_requires_delivery(&notification) {
+                            if server_notification_requires_delivery(&notification)
+                                || match &notification {
+                                    ServerNotification::TurnStarted(start) => continuation_threads.contains(&start.thread_id),
+                                    ServerNotification::CodexdcBackgroundWorkChanged(state) => state.background_jobs_enabled,
+                                    ServerNotification::ItemCompleted(ItemCompletedNotification {
+                                        thread_id, item: ThreadItem::AgentMessage { .. }, ..
+                                    }) => continuation_threads.contains(thread_id),
+                                    _ => false,
+                                }
+                            {
                                 if event_tx
                                     .send(InProcessServerEvent::ServerNotification(Box::new(
                                         notification,

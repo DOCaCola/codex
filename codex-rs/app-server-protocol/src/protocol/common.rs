@@ -764,6 +764,12 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::CodexdcBackgroundJobsListResponse,
     },
+    #[experimental("codexdc/backgroundWork/read")]
+    CodexdcBackgroundWorkRead => "codexdc/backgroundWork/read" {
+        params: v2::CodexdcBackgroundJobsListParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::CodexdcBackgroundWorkState,
+    },
     ThreadRevert => "thread/revert" {
         params: v2::ThreadRevertParams,
         serialization: thread_id(params.thread_id),
@@ -1954,6 +1960,8 @@ server_notification_definitions! {
     ThreadSettingsUpdated => "thread/settings/updated" (v2::ThreadSettingsUpdatedNotification),
     ThreadTokenUsageUpdated => "thread/tokenUsage/updated" (v2::ThreadTokenUsageUpdatedNotification),
     TurnStarted => "turn/started" (v2::TurnStartedNotification),
+    #[experimental("codexdc/backgroundWork/changed")]
+    CodexdcBackgroundWorkChanged => "codexdc/backgroundWork/changed" (v2::CodexdcBackgroundWorkState),
     HookStarted => "hook/started" (v2::HookStartedNotification),
     TurnCompleted => "turn/completed" (v2::TurnCompletedNotification),
     HookCompleted => "hook/completed" (v2::HookCompletedNotification),

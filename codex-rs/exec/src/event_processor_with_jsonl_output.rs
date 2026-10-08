@@ -58,6 +58,7 @@ use crate::exec_events::WebSearchItem;
 
 pub struct EventProcessorWithJsonOutput {
     last_message_path: Option<PathBuf>,
+    background_continuations: bool,
     next_item_id: AtomicU64,
     raw_to_exec_item_id: HashMap<String, String>,
     running_todo_list: Option<RunningTodoList>,
@@ -83,6 +84,7 @@ impl EventProcessorWithJsonOutput {
     pub fn new(last_message_path: Option<PathBuf>) -> Self {
         Self {
             last_message_path,
+            background_continuations: false,
             next_item_id: AtomicU64::new(0),
             raw_to_exec_item_id: HashMap::new(),
             running_todo_list: None,
@@ -592,17 +594,26 @@ impl EventProcessorWithJsonOutput {
                 CodexStatus::Running
             }
             ServerNotification::TurnStarted(_) => {
+                if self.background_continuations {
+                    self.final_message = None;
+                    self.emit_final_message_on_shutdown = false;
+                    self.last_critical_error = None;
+                }
                 events.push(ThreadEvent::TurnStarted(TurnStartedEvent {}));
                 CodexStatus::Running
             }
             _ => CodexStatus::Running,
         };
 
-        CollectedThreadEvents { events, status }
+        CollectedThreadEvents { events, status: if self.background_continuations { CodexStatus::Running } else { status } }
     }
 }
 
 impl EventProcessor for EventProcessorWithJsonOutput {
+    fn set_background_continuations(&mut self, enabled: bool) {
+        self.background_continuations = enabled;
+    }
+
     fn print_config_summary(
         &mut self,
         _: &Config,
@@ -629,7 +640,7 @@ impl EventProcessor for EventProcessorWithJsonOutput {
     }
 
     fn print_final_output(&mut self) {
-        if self.emit_final_message_on_shutdown
+        if (self.emit_final_message_on_shutdown || self.background_continuations)
             && let Some(path) = self.last_message_path.as_deref()
         {
             handle_last_message(self.final_message.as_deref(), path);

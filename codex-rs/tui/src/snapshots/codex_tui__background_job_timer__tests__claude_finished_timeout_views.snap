@@ -1,0 +1,14 @@
+---
+source: tui/src/background_job_timer_tests.rs
+expression: rendered
+---
+Chat:
+• Ran sleep 10 (3m 12s)
+  └ timed out
+Owned:
+• Failed (exit 124) sleep 10 (3m 12s)
+  └ timed out
+Transcript:
+$ sleep 10 (3m 12s)
+timed out
+✗ (124)

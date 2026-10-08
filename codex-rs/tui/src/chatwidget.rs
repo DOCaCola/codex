@@ -257,6 +257,7 @@ use crate::tui::FrameRequester;
 mod activity_groups;
 mod activity_presentation;
 mod command_lifecycle;
+mod background_job_labels;
 mod connector_mentions;
 mod connectors;
 mod constructor;
@@ -609,6 +610,7 @@ pub(crate) struct ChatWidget {
     safety_buffering: SafetyBufferingState,
     task_complete_pending: bool,
     unified_exec_processes: Vec<UnifiedExecProcessSummary>,
+    background_job_timers: crate::background_job_timer::JobTimers,
     /// Tracks per-server MCP startup state while startup is in progress.
     ///
     /// The map is `Some(_)` from the first startup status update until the
@@ -1470,6 +1472,7 @@ impl ChatWidget {
             .map(|process| history_cell::UnifiedExecProcessDetails {
                 command_display: process.command_display.clone(),
                 recent_chunks: process.recent_chunks.clone(),
+                timer: Some(self.background_job_timers.process(&process.key)),
             })
             .collect();
         self.add_to_history(history_cell::new_unified_exec_processes_output(processes));

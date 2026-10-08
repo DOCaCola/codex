@@ -349,6 +349,9 @@ pub(crate) async fn emit_exec_end_for_unified_exec(
     duration: Duration,
     timed_out: bool,
 ) {
+    if session_ref.background_jobs.enabled {
+        session_ref.services.unified_exec_manager.finish_background_job_timing(&call_id).await;
+    }
     let aggregated_output = resolve_aggregated_output(&output_buffer, fallback_output).await;
     let output = ExecToolCallOutput {
         exit_code,

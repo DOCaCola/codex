@@ -64,6 +64,17 @@ impl SessionJobRegistry {
             .collect()
     }
 
+    /// Identity-owned records, including results whose terminal ID was reused.
+    pub(super) async fn all_jobs(&self) -> Vec<Arc<Job>> {
+        self.state
+            .lock()
+            .await
+            .jobs
+            .values()
+            .map(|entry| Arc::clone(&entry.job))
+            .collect()
+    }
+
     pub(super) async fn enqueue(&self, job_id: Uuid) {
         let mut state = self.state.lock().await;
         // A retired job's late exit cannot enqueue a replacement terminal handle.
