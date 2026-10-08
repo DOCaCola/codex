@@ -144,3 +144,14 @@ maintaining parallel logic or compatibility fallbacks.
 - Remote MCP launches adopt upstream preservation of Windows system and temporary
   directory variables alongside explicit remote environment variables. The fork
   notification path and temporary Windows daemon default remain unchanged.
+
+## Stable v0.162.0 integration
+
+- Command batching uses upstream stable environment declarations, current shell
+  invocation handling, and environment requests that bind thread capability roots.
+- hpatch preserves its translation working directory through upstream patch
+  verification; line ending handling follows the current upstream patch engine.
+- The fork owner-configuration guard compares caller requests against attached
+  selections while retaining independent task-root updates.
+- The latest-only local-release output change remains in place. Windows daemon
+  startup remains disabled by default pending the local runtime verification.

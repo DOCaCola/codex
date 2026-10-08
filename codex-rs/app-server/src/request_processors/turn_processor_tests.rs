@@ -18,7 +18,7 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
     let roots = vec![cwd.clone()];
     let mut environments = test
         .thread_manager
-        .default_environment_selections(&cwd, &roots);
+        .default_environment_requests(&cwd, &roots);
     let owner_config = EnvironmentConfig {
         allow_login_shell: false,
         workspace_roots: environments[0].workspace_roots.clone(),
@@ -43,7 +43,7 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
         submit_thread_settings(
             &test.codex,
             ThreadSettingsOverrides {
-                environments: Some(TurnEnvironmentSelections::new(
+                environments: Some(TurnEnvironmentRequests::new(
                     cwd.clone(),
                     environments.clone(),
                 )),
@@ -58,14 +58,14 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
             &test.codex,
             Some(cwd.clone()),
             Some(roots.clone()),
-            /*environment_selections*/ None,
+            /*environment_requests*/ None,
         )
         .await;
-        assert_eq!(overrides.environments, None);
+        assert_eq!(overrides.environment_requests, None);
         assert_eq!(overrides.runtime_workspace_roots, Some(roots.clone()));
         test.codex
             .preview_thread_settings_overrides(CodexThreadSettingsOverrides {
-                environments: overrides.environments.clone(),
+                environments: overrides.environment_requests.clone(),
                 runtime_workspace_roots: overrides.runtime_workspace_roots.clone(),
                 ..Default::default()
             })
@@ -73,13 +73,21 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
         submit_thread_settings(
             &test.codex,
             ThreadSettingsOverrides {
-                environments: overrides.environments,
+                environments: overrides.environment_requests,
                 runtime_workspace_roots: overrides.runtime_workspace_roots,
                 ..Default::default()
             },
         )
         .await?;
-        assert_eq!(test.codex.environment_selections().await, environments);
+        assert_eq!(
+            test.codex
+                .environment_selections()
+                .await
+                .into_iter()
+                .map(TurnEnvironmentSelection::into_request)
+                .collect::<Vec<_>>(),
+            environments
+        );
         assert_eq!(
             test.codex
                 .thread_settings_snapshot()
@@ -94,13 +102,13 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
             &test.codex,
             Some(cwd.join("other-workspace")),
             Some(roots.clone()),
-            /*environment_selections*/ None,
+            /*environment_requests*/ None,
         )
         .await;
         assert!(
             test.codex
                 .preview_thread_settings_overrides(CodexThreadSettingsOverrides {
-                    environments: changed.environments,
+                    environments: changed.environment_requests,
                     runtime_workspace_roots: changed.runtime_workspace_roots,
                     ..Default::default()
                 })
@@ -117,12 +125,15 @@ fn selection(
     config: EnvironmentConfigState,
 ) -> TurnEnvironmentSelection {
     let cwd = PathUri::from_abs_path(cwd);
-    TurnEnvironmentSelection {
-        environment_id: environment_id.to_string(),
-        cwd: cwd.clone(),
-        workspace_roots: vec![cwd],
-        config,
-    }
+    TurnEnvironmentSelection::new(
+        TurnEnvironmentRequest {
+            environment_id: environment_id.to_string(),
+            cwd: cwd.clone(),
+            workspace_roots: vec![cwd],
+            config,
+        },
+        &[],
+    )
 }
 
 #[test]
@@ -133,11 +144,14 @@ fn same_environment_attachments_ignores_configuration_ownership() {
         &cwd,
         EnvironmentConfigState::Pending,
     )];
-    let requested = vec![selection(
-        LOCAL_ENVIRONMENT_ID,
-        &cwd,
-        EnvironmentConfigState::FromThread,
-    )];
+    let requested = vec![
+        selection(
+            LOCAL_ENVIRONMENT_ID,
+            &cwd,
+            EnvironmentConfigState::FromThread,
+        )
+        .into_request(),
+    ];
 
     assert!(same_environment_attachments(&current, &requested));
 }
@@ -150,11 +164,14 @@ fn same_environment_attachments_detects_a_new_cwd() {
         &cwd,
         EnvironmentConfigState::Pending,
     )];
-    let requested = vec![selection(
-        LOCAL_ENVIRONMENT_ID,
-        &cwd.join("new-cwd"),
-        EnvironmentConfigState::FromThread,
-    )];
+    let requested = vec![
+        selection(
+            LOCAL_ENVIRONMENT_ID,
+            &cwd.join("new-cwd"),
+            EnvironmentConfigState::FromThread,
+        )
+        .into_request(),
+    ];
 
     assert!(!same_environment_attachments(&current, &requested));
 }
