@@ -161,6 +161,7 @@ async fn local_mcp_startup_and_refresh_use_configured_http_client() -> Result<()
         .await?;
     wait_for_mcp_server(&fixture.codex, SERVER_NAME).await?;
 
+    let current_config = fixture.codex.config().await;
     let mut refreshed_config = fixture.config.clone();
     let mut servers = refreshed_config.mcp_servers.get().clone();
     let server = servers
@@ -178,7 +179,10 @@ async fn local_mcp_startup_and_refresh_use_configured_http_client() -> Result<()
         .mcp_servers
         .set(servers)
         .expect("test MCP servers should accept the refreshed configuration");
-    fixture.codex.refresh_runtime_config(refreshed_config).await;
+    let _ = fixture
+        .codex
+        .refresh_runtime_config(current_config, refreshed_config)
+        .await;
     let result = fixture
         .codex
         .call_mcp_tool(
@@ -400,7 +404,7 @@ async fn skill_mcp_dependency_oauth_uses_configured_http_client() -> Result<()> 
                 },
             ])
             .with_thread_settings(ThreadSettingsOverrides {
-                environments: Some(environments),
+                environments: Some(environments.into_requests()),
                 approval_policy: Some(AskForApproval::Never),
                 sandbox_policy: Some(sandbox_policy),
                 permission_profile,

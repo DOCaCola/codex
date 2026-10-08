@@ -50,15 +50,11 @@ impl HpatchHandler {
         };
         let original_input = input.clone();
         let (environment_id, workdir, script) = parse_input(input, self.multi_environment)?;
-        let Some(turn_environment) = resolve_tool_environment(
-            &invocation.step_context.environments,
+        let turn_environment = resolve_tool_environment(
+            &invocation.step_context,
             environment_id.as_deref(),
-        )?
-        else {
-            return Err(FunctionCallError::RespondToModel(
-                "hpatch is unavailable in this session".to_string(),
-            ));
-        };
+            "hpatch is unavailable in this session",
+        )?;
         let (cwd, root) = resolve_translation_paths(
             turn_environment.cwd(),
             turn_environment.workspace_roots(),
@@ -183,8 +179,10 @@ async fn collect_translation(
         for chunk in response.chunks {
             after_seq = after_seq.max(chunk.seq);
             match chunk.stream {
-                ExecOutputStream::Stdout | ExecOutputStream::Pty => stdout.extend(chunk.chunk.0),
-                ExecOutputStream::Stderr => stderr.extend(chunk.chunk.0),
+                ExecOutputStream::Stdout | ExecOutputStream::Pty => {
+                    stdout.extend_from_slice(&chunk.chunk.0)
+                }
+                ExecOutputStream::Stderr => stderr.extend_from_slice(&chunk.chunk.0),
             }
         }
         if let Some(failure) = response.failure {

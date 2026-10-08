@@ -7,6 +7,7 @@ use codex_tools::UnifiedExecShellMode;
 use codex_tools::ZshForkConfig;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
+use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 
@@ -95,93 +96,176 @@ fn test_get_command_respects_explicit_bash_shell() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<()> {
-    let Some(bash) = crate::shell::get_shell(ShellType::Bash) else {
-        return Ok(());
-    };
-    let (session, turn) = make_session_and_context().await;
-    let turn_environment = turn
-        .initial_environments
-        .primary()
-        .expect("primary local environment");
-    let handler = ExecCommandHandler::new(ExecCommandHandlerOptions {
-        allow_login_shell: false,
-        allow_tty: false,
-        exec_permission_approvals_enabled: false,
-        include_environment_id: false,
-        include_shell_parameter: true,
-        persist_shell_selection: true,
-        include_windows_shell_guidance: cfg!(windows),
-    });
-    let previous_snapshot = session.services.turn_environments.snapshot().await;
-    let previous_shell = previous_snapshot.primary().unwrap().shell.clone();
-    let mut args: ExecCommandArgs = parse_arguments(
-        &serde_json::json!({
-            "cmd": "echo persistent shell",
-            "shell": bash.shell_path,
-        })
-        .to_string(),
+/// Nested commands must find the first reported tool directory after login startup without duplicating existing entries.
+#[cfg(unix)]
+#[test]
+fn test_get_command_keeps_path_prepends_after_login_startup() -> anyhow::Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let path_dir = temp_dir.path().join("codex '[*] path");
+    let extra_path_dir = temp_dir.path().join("extra tools");
+    for directory in [&path_dir, &extra_path_dir] {
+        std::fs::create_dir(directory)?;
+        let rg = directory.join("rg");
+        codex_utils_cargo_bin::write_executable(&rg, "#!/bin/sh\n")?;
+    }
+    let rg = path_dir.join("rg");
+    let startup = temp_dir.path().join("startup");
+    std::fs::write(
+        &startup,
+        "export PATH=\"$CODEX_TEST_LOGIN_PATH\" CODEX_TEST_LOGIN_PATH_RESET=1\n",
     )?;
-
-    let selected = handler
-        .maybe_persist_local_shell(
-            &mut args,
-            &session,
-            turn_environment.environment.as_ref(),
-            &UnifiedExecShellMode::Direct,
-        )
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?
-        .expect("command-stack exec should persist a requested local shell");
-
-    assert!(args.shell.is_none());
-    assert_eq!(selected.shell_type, ShellType::Bash);
-    assert_eq!(session.user_shell().shell_type, ShellType::Bash);
-    assert_eq!(session.user_shell().shell_path, selected.shell_path);
-    let refreshed_snapshot = session.services.turn_environments.snapshot().await;
+    let path_dirs = [
+        PathUri::from_host_native_path(&path_dir)?,
+        PathUri::from_host_native_path(&extra_path_dir)?,
+    ];
+    let args: ExecCommandArgs = parse_arguments(
+        r#"{"cmd":"sh -c 'test \"$CODEX_TEST_LOGIN_PATH_RESET\" = 1 && printf \"%s\\n\" \"$PATH\" && command -v rg'"}"#,
+    )?;
+    let shell = Arc::new(get_shell(ShellType::Bash).expect("bash should be available"));
+    let resolved = get_command(
+        &args,
+        Arc::clone(&shell),
+        &UnifiedExecShellMode::Direct,
+        /*allow_login_shell*/ true,
+    )
+    .map_err(anyhow::Error::msg)?;
     assert_eq!(
-        refreshed_snapshot.primary().unwrap().shell.as_ref(),
-        Some(selected.as_ref())
+        resolved.command,
+        shell.derive_exec_args(&args.cmd, /*use_login_shell*/ true)
     );
-    assert_eq!(previous_snapshot.primary().unwrap().shell, previous_shell);
+
+    let execution_command = resolved
+        .shell
+        .derive_exec_args_with_path_prepends(&args.cmd, &path_dirs)
+        .expect("login shell should restore PATH");
+    let path_dir = path_dirs[0].inferred_native_path_string();
+    let extra_path_dir = path_dirs[1].inferred_native_path_string();
+    let already_present = format!(
+        "{}:{path_dir}:{extra_path_dir}:/usr/bin:/bin",
+        temp_dir.path().display()
+    );
+    for (login_path, expected_path) in [
+        (
+            "/usr/bin:/bin".to_string(),
+            format!("{path_dir}:{extra_path_dir}:/usr/bin:/bin"),
+        ),
+        (already_present.clone(), already_present),
+    ] {
+        let output = std::process::Command::new(&execution_command[0])
+            .args(&execution_command[1..])
+            .env("BASH_ENV", &startup)
+            .env("CODEX_TEST_LOGIN_PATH", login_path)
+            .env_remove("CODEX_TEST_LOGIN_PATH_RESET")
+            .env("PATH", &path_dir)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8(output.stdout)?,
+            format!("{expected_path}\n{}\n", rg.display())
+        );
+    }
+    Ok(())
+}
+
+/// The requested login shell and its command still run when startup forbids changing PATH.
+#[cfg(unix)]
+#[test]
+fn test_get_command_runs_login_shell_when_path_is_readonly() -> anyhow::Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let startup = temp_dir.path().join("startup");
+    // An explicit exit from a login Bash runs ~/.bash_logout; keep the runner's file out of the test.
+    std::fs::write(temp_dir.path().join(".bash_logout"), ":\n")?;
+    std::fs::write(
+        &startup,
+        "if shopt -q login_shell; then\n    export HOME=\"$CODEX_TEST_LOGIN_HOME\"\n    export PATH=/usr/bin:/bin\n    readonly PATH\n    set -e\nfi\n",
+    )?;
+    let path_dir = PathUri::from_host_native_path(temp_dir.path().join("codex-path"))?;
+    let args: ExecCommandArgs = parse_arguments(
+        r#"{"cmd":"shopt -q login_shell || exit 90; case $- in *e*) ;; *) exit 91 ;; esac; /bin/sh -c 'printf \"%s\\n\" \"$PATH\"'; exit 23","login":true}"#,
+    )?;
+    let shell = Arc::new(get_shell(ShellType::Bash).expect("bash should be available"));
+    let resolved = get_command(
+        &args,
+        shell,
+        &UnifiedExecShellMode::Direct,
+        /*allow_login_shell*/ true,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let command = resolved
+        .shell
+        .derive_exec_args_with_path_prepends(&args.cmd, &[path_dir])
+        .expect("the reported directory can be put on PATH");
+    let output = std::process::Command::new(&command[0])
+        .args(&command[1..])
+        .env("BASH_ENV", startup)
+        .env("CODEX_TEST_LOGIN_HOME", temp_dir.path())
+        .env_remove("SHLVL")
+        .output()?;
+
     assert_eq!(
-        handler
-            .shell_for_environment(&session, turn_environment)
-            .shell_type,
-        ShellType::Bash,
-        "later commands in the same stack must not reuse the stale turn shell"
+        (
+            output.status.code(),
+            String::from_utf8(output.stdout)?,
+            String::from_utf8(output.stderr)?
+        ),
+        (Some(23), "/usr/bin:/bin\n".to_string(), String::new())
     );
     Ok(())
 }
 
-#[tokio::test]
-async fn regular_exec_keeps_explicit_shell_one_shot() -> anyhow::Result<()> {
-    let Some(bash) = crate::shell::get_shell(ShellType::Bash) else {
-        return Ok(());
-    };
-    let (session, _turn) = make_session_and_context().await;
-    let original_shell = session.user_shell();
-    let handler = ExecCommandHandler::default();
-    let mut args: ExecCommandArgs = parse_arguments(
-        &serde_json::json!({
-            "cmd": "echo one shot",
-            "shell": bash.shell_path,
-        })
-        .to_string(),
-    )?;
-
-    let selected = handler
-        .maybe_persist_local_shell(
-            &mut args,
-            &session,
-            &Environment::default_for_tests(),
+/// The package path only affects Codex's own POSIX login shells when the executor reports a POSIX path.
+#[test]
+fn test_get_command_does_not_change_nested_login_or_powershell() -> anyhow::Result<()> {
+    for (shell_type, shell_path, arguments, use_login_shell, path) in [
+        (
+            ShellType::Bash,
+            "/bin/bash",
+            r#"{"cmd":"bash -lc 'command -v rg'","login":false}"#,
+            false,
+            "file:///executor/codex-path",
+        ),
+        (
+            ShellType::PowerShell,
+            "pwsh",
+            r#"{"cmd":"Get-Command rg"}"#,
+            true,
+            "file:///executor/codex-path",
+        ),
+        (
+            ShellType::Bash,
+            "/bin/bash",
+            r#"{"cmd":"command -v rg"}"#,
+            true,
+            "file:///C:/executor/codex-path",
+        ),
+    ] {
+        let args: ExecCommandArgs = parse_arguments(arguments)?;
+        let path_dir = PathUri::parse(path)?;
+        let shell = Arc::new(Shell {
+            shell_type,
+            shell_path: PathBuf::from(shell_path),
+        });
+        let resolved = get_command(
+            &args,
+            Arc::clone(&shell),
             &UnifiedExecShellMode::Direct,
+            /*allow_login_shell*/ true,
         )
-        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-
-    assert!(selected.is_none());
-    assert!(args.shell.is_some());
-    assert_eq!(session.user_shell().as_ref(), original_shell.as_ref());
+        .map_err(anyhow::Error::msg)?;
+        assert_eq!(
+            (
+                resolved.command,
+                resolved
+                    .shell
+                    .derive_exec_args_with_path_prepends(&args.cmd, &[path_dir])
+            ),
+            (shell.derive_exec_args(&args.cmd, use_login_shell), None)
+        );
+    }
     Ok(())
 }
 
@@ -220,7 +304,7 @@ fn test_get_command_resolves_powershell_by_type() -> anyhow::Result<()> {
         resolved.command,
         expected_shell.derive_exec_args("echo hello", /*use_login_shell*/ true)
     );
-    assert_eq!(resolved.shell_type, expected_shell.shell_type);
+    assert_eq!(resolved.shell.shell, expected_shell);
     Ok(())
 }
 
@@ -402,16 +486,6 @@ async fn exec_command_reuses_foreign_windows_grant() {
         )),
         ..Default::default()
     };
-    *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
-    let turn_state = {
-        let active_turn = session.active_turn.lock().await;
-        Arc::clone(&active_turn.as_ref().expect("active turn").turn_state)
-    };
-    turn_state.lock().await.record_granted_permissions(
-        codex_exec_server::REMOTE_ENVIRONMENT_ID,
-        granted_permissions.clone(),
-    );
-
     {
         let turn = Arc::get_mut(&mut turn).expect("turn should be uniquely owned");
         let TurnEnvironmentState::Ready(environment) = turn
@@ -432,10 +506,16 @@ async fn exec_command_reuses_foreign_windows_grant() {
         );
     }
 
+    let step_context = StepContext::for_test(Arc::clone(&turn));
+    step_context.turn.record_granted_permissions(
+        codex_exec_server::REMOTE_ENVIRONMENT_ID,
+        granted_permissions.clone(),
+        /*strict_auto_review*/ false,
+    );
     let response = ExecCommandHandler::default()
         .handle(ToolInvocation {
             session: Arc::clone(&session),
-            step_context: StepContext::for_test(Arc::clone(&turn)),
+            step_context,
             turn,
             cancellation_token: tokio_util::sync::CancellationToken::new(),
             tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
@@ -522,7 +602,6 @@ async fn exec_command_post_tool_use_payload_uses_output_for_noninteractive_one_s
         arguments: serde_json::json!({ "cmd": "echo three", "tty": false }).to_string(),
     };
     let output = ExecCommandToolOutput {
-        completion_delivery: None,
         event_call_id: "call-43".to_string(),
         chunk_id: "chunk-1".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -533,6 +612,7 @@ async fn exec_command_post_tool_use_payload_uses_output_for_noninteractive_one_s
         exit_code: Some(0),
         original_token_count: None,
         output_omitted_bytes: None,
+        completion_delivery: None,
         hook_command: Some("echo three".to_string()),
     };
     let invocation = invocation_for_payload("exec_command", "call-43", payload).await;
@@ -554,7 +634,6 @@ async fn exec_command_post_tool_use_payload_uses_output_for_interactive_completi
         arguments: serde_json::json!({ "cmd": "echo three", "tty": true }).to_string(),
     };
     let output = ExecCommandToolOutput {
-        completion_delivery: None,
         event_call_id: "call-44".to_string(),
         chunk_id: "chunk-1".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -565,6 +644,7 @@ async fn exec_command_post_tool_use_payload_uses_output_for_interactive_completi
         exit_code: Some(0),
         original_token_count: None,
         output_omitted_bytes: None,
+        completion_delivery: None,
         hook_command: Some("echo three".to_string()),
     };
     let invocation = invocation_for_payload("exec_command", "call-44", payload).await;
@@ -587,7 +667,6 @@ async fn exec_command_post_tool_use_payload_skips_running_sessions() {
         arguments: serde_json::json!({ "cmd": "echo three", "tty": false }).to_string(),
     };
     let output = ExecCommandToolOutput {
-        completion_delivery: None,
         event_call_id: "event-45".to_string(),
         chunk_id: "chunk-1".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -598,6 +677,7 @@ async fn exec_command_post_tool_use_payload_skips_running_sessions() {
         exit_code: None,
         original_token_count: None,
         output_omitted_bytes: None,
+        completion_delivery: None,
         hook_command: Some("echo three".to_string()),
     };
     let invocation = invocation_for_payload("exec_command", "call-45", payload).await;
@@ -615,7 +695,6 @@ async fn write_stdin_post_tool_use_payload_uses_original_exec_call_id_and_comman
         .to_string(),
     };
     let output = ExecCommandToolOutput {
-        completion_delivery: None,
         event_call_id: "exec-call-45".to_string(),
         chunk_id: "chunk-2".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -626,6 +705,7 @@ async fn write_stdin_post_tool_use_payload_uses_original_exec_call_id_and_comman
         exit_code: Some(0),
         original_token_count: None,
         output_omitted_bytes: None,
+        completion_delivery: None,
         hook_command: Some("sleep 1; echo finished".to_string()),
     };
     let invocation = invocation_for_payload("write_stdin", "write-stdin-call", payload).await;
@@ -648,7 +728,6 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
         arguments: serde_json::json!({ "session_id": 45, "chars": "" }).to_string(),
     };
     let output_a = ExecCommandToolOutput {
-        completion_delivery: None,
         event_call_id: "exec-call-a".to_string(),
         chunk_id: "chunk-a".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -659,10 +738,10 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
         exit_code: Some(0),
         original_token_count: None,
         output_omitted_bytes: None,
+        completion_delivery: None,
         hook_command: Some("sleep 2; echo alpha".to_string()),
     };
     let output_b = ExecCommandToolOutput {
-        completion_delivery: None,
         event_call_id: "exec-call-b".to_string(),
         chunk_id: "chunk-b".to_string(),
         wall_time: std::time::Duration::from_millis(498),
@@ -673,6 +752,7 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
         exit_code: Some(0),
         original_token_count: None,
         output_omitted_bytes: None,
+        completion_delivery: None,
         hook_command: Some("sleep 1; echo beta".to_string()),
     };
     let invocation_b = invocation_for_payload("write_stdin", "write-call-b", payload.clone()).await;
@@ -701,4 +781,94 @@ async fn write_stdin_post_tool_use_payload_keeps_parallel_session_metadata_separ
             }),
         ]
     );
+}
+
+#[tokio::test]
+async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<()> {
+    let Some(bash) = crate::shell::get_shell(ShellType::Bash) else {
+        return Ok(());
+    };
+    let (session, turn) = make_session_and_context().await;
+    let turn_environment = turn
+        .initial_environments
+        .primary()
+        .expect("primary local environment");
+    let handler = ExecCommandHandler::new(ExecCommandHandlerOptions {
+        include_login_parameter: false,
+        allow_tty: false,
+        exec_permission_approvals_enabled: false,
+        include_environment_id: false,
+        include_shell_parameter: true,
+        persist_shell_selection: true,
+        include_windows_shell_guidance: cfg!(windows),
+    });
+    let previous_snapshot = session.services.turn_environments.snapshot().await;
+    let previous_shell = previous_snapshot.primary().unwrap().shell.clone();
+    let mut args: ExecCommandArgs = parse_arguments(
+        &serde_json::json!({
+            "cmd": "echo persistent shell",
+            "shell": bash.shell_path,
+        })
+        .to_string(),
+    )?;
+
+    let selected = handler
+        .maybe_persist_local_shell(
+            &mut args,
+            &session,
+            turn_environment.environment.as_ref(),
+            &UnifiedExecShellMode::Direct,
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?
+        .expect("command-stack exec should persist a requested local shell");
+
+    assert!(args.shell.is_none());
+    assert_eq!(selected.shell_type, ShellType::Bash);
+    assert_eq!(session.user_shell().shell_type, ShellType::Bash);
+    assert_eq!(session.user_shell().shell_path, selected.shell_path);
+    let refreshed_snapshot = session.services.turn_environments.snapshot().await;
+    assert_eq!(
+        refreshed_snapshot.primary().unwrap().shell.as_ref(),
+        Some(selected.as_ref())
+    );
+    assert_eq!(previous_snapshot.primary().unwrap().shell, previous_shell);
+    assert_eq!(
+        handler
+            .shell_for_environment(&session, turn_environment)
+            .shell_type,
+        ShellType::Bash,
+        "later commands in the same stack must not reuse the stale turn shell"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn regular_exec_keeps_explicit_shell_one_shot() -> anyhow::Result<()> {
+    let Some(bash) = crate::shell::get_shell(ShellType::Bash) else {
+        return Ok(());
+    };
+    let (session, _turn) = make_session_and_context().await;
+    let original_shell = session.user_shell();
+    let handler = ExecCommandHandler::default();
+    let mut args: ExecCommandArgs = parse_arguments(
+        &serde_json::json!({
+            "cmd": "echo one shot",
+            "shell": bash.shell_path,
+        })
+        .to_string(),
+    )?;
+
+    let selected = handler
+        .maybe_persist_local_shell(
+            &mut args,
+            &session,
+            &Environment::default_for_tests(),
+            &UnifiedExecShellMode::Direct,
+        )
+        .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+
+    assert!(selected.is_none());
+    assert!(args.shell.is_some());
+    assert_eq!(session.user_shell().as_ref(), original_shell.as_ref());
+    Ok(())
 }
