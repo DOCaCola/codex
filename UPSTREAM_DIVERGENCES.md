@@ -161,3 +161,14 @@ maintaining parallel logic or compatibility fallbacks.
   including the production sandbox-refresh launcher with a disposable helper.
   Sandbox provisioning itself was not exercised. The temporary daemon startup
   fixture override and local reversion note were removed.
+
+## Stable v0.162.1 integration
+
+- Daemon feature compatibility checks follow upstream: only explicit CLI feature
+  overrides request a shared-service restart; daemon defaults and file settings
+  remain authoritative until restart, subject to managed requirements.
+- Multiline async questions preserve line breaks and links using upstream rendering
+  and snapshot coverage. The restored daemon startup default remains enabled on
+  every platform.
+- When preparing the public release checkout, update its fork release smoke check
+  to expect daemon_auto_start to be true on Windows as well as other platforms.
