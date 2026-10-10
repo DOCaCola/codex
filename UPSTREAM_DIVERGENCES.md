@@ -153,5 +153,11 @@ maintaining parallel logic or compatibility fallbacks.
   verification; line ending handling follows the current upstream patch engine.
 - The fork owner-configuration guard compares caller requests against attached
   selections while retaining independent task-root updates.
-- The latest-only local-release output change remains in place. Windows daemon
-  startup remains disabled by default pending the local runtime verification.
+- The latest-only local-release output change remains in place.
+- On 2026-10-10, the upstream daemon startup default was restored on Windows after
+  installed v0.162.0-doca runtime probes confirmed direct commands, PowerShell,
+  Bash, MCP startup, and a session hook had no console when launched from a
+  detached app-server. The three upstream console regressions also passed,
+  including the production sandbox-refresh launcher with a disposable helper.
+  Sandbox provisioning itself was not exercised. The temporary daemon startup
+  fixture override and local reversion note were removed.
