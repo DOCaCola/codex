@@ -28,13 +28,12 @@ def main() -> None:
         features = subprocess.check_output(
             [str(cli), "features", "list"], env=env, text=True, timeout=20
         )
-        expected = "false" if sys.platform == "win32" else "true"
         daemon = next(
             line
             for line in features.splitlines()
             if line.startswith("daemon_auto_start")
         )
-        assert daemon.split()[-1] == expected, daemon
+        assert daemon.split()[-1] == "true", daemon
         with (Path(home) / "stderr.log").open("w") as stderr:
             child = subprocess.Popen(
                 [str(cli), "app-server"],
