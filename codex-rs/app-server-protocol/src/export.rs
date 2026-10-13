@@ -39,6 +39,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::thread;
 
+#[path = "export_notifications.rs"]
+mod notifications;
 #[path = "export_user_verification.rs"]
 mod user_verification;
 
@@ -279,6 +281,15 @@ fn filter_experimental_ts(out_dir: &Path) -> Result<()> {
     // post-processing because they encode method/field information locally.
     filter_request_ts(out_dir, "ClientRequest.ts", EXPERIMENTAL_CLIENT_METHODS)?;
     filter_request_ts(out_dir, "ServerRequest.ts", EXPERIMENTAL_SERVER_METHODS)?;
+    let notification_methods =
+        notifications::methods_with_excluded_payloads(&experimental_method_types)?;
+    let notification_methods: Vec<&str> = notification_methods.iter().map(String::as_str).collect();
+    filter_request_ts(out_dir, "ServerNotification.ts", &notification_methods)?;
+    filter_request_ts(
+        out_dir,
+        "ServerNotificationEnvelope.ts",
+        &notification_methods,
+    )?;
     filter_experimental_type_fields_ts(out_dir, &registered_fields)?;
     remove_generated_type_files(out_dir, &experimental_method_types, "ts")?;
     let elicitation_path = out_dir.join("v2/McpServerElicitationRequestParams.ts");
@@ -292,9 +303,17 @@ fn filter_experimental_ts(out_dir: &Path) -> Result<()> {
 pub(crate) fn filter_experimental_ts_tree(tree: &mut BTreeMap<PathBuf, String>) -> Result<()> {
     let registered_fields = experimental_fields();
     let experimental_method_types = experimental_method_types();
+    let notification_methods =
+        notifications::methods_with_excluded_payloads(&experimental_method_types)?;
+    let notification_methods: Vec<&str> = notification_methods.iter().map(String::as_str).collect();
     for (file_name, experimental_methods) in [
         ("ClientRequest.ts", EXPERIMENTAL_CLIENT_METHODS),
         ("ServerRequest.ts", EXPERIMENTAL_SERVER_METHODS),
+        ("ServerNotification.ts", notification_methods.as_slice()),
+        (
+            "ServerNotificationEnvelope.ts",
+            notification_methods.as_slice(),
+        ),
     ] {
         if let Some(content) = tree.get_mut(Path::new(file_name)) {
             *content = filter_request_ts_contents(std::mem::take(content), experimental_methods);
@@ -355,15 +374,7 @@ fn filter_request_ts_contents(mut content: String, experimental_methods: &[&str]
         .copied()
         .filter(|method| !method.is_empty())
         .collect();
-    let arms = split_top_level(&body, '|');
-    let filtered_arms: Vec<String> = arms
-        .into_iter()
-        .filter(|arm| {
-            extract_discriminator_from_arm(arm, "method")
-                .is_none_or(|method| !experimental_methods.contains(method.as_str()))
-        })
-        .collect();
-    let new_body = filtered_arms.join(" | ");
+    let new_body = notifications::filter_method_union(&body, &experimental_methods);
     content = format!("{prefix}{new_body}{suffix}");
     let import_usage_scope = split_type_alias(&content)
         .map(|(_, filtered_body, _)| filtered_body)
@@ -444,6 +455,10 @@ fn filter_experimental_schema(bundle: &mut Value) -> Result<()> {
     filter_experimental_fields_in_definitions(bundle, &registered_fields);
     prune_experimental_methods(bundle, EXPERIMENTAL_CLIENT_METHODS);
     prune_experimental_methods(bundle, EXPERIMENTAL_SERVER_METHODS);
+    let notification_methods =
+        notifications::methods_with_excluded_payloads(&experimental_method_types())?;
+    let notification_methods: Vec<&str> = notification_methods.iter().map(String::as_str).collect();
+    prune_experimental_methods(bundle, &notification_methods);
     remove_experimental_method_type_definitions(bundle);
     user_verification::filter_json(bundle);
     Ok(())

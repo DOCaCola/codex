@@ -128,7 +128,10 @@ impl ExecCommandHandler {
         }
     }
 
-    pub(crate) fn with_background_job_policy(mut self, policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>) -> Self {
+    pub(crate) fn with_background_job_policy(
+        mut self,
+        policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
+    ) -> Self {
         self.background_job_policy = policy;
         self
     }
@@ -210,7 +213,11 @@ impl ToolExecutor<ToolInvocation> for ExecCommandHandler {
             ExecCommandLifetime::OneShot => one_shot_exec_command_spec(spec),
         };
         if self.background_delivery {
-            super::managed_spec::configure_exec(&mut spec, self.idle_continuation, self.background_job_policy);
+            super::managed_spec::configure_exec(
+                &mut spec,
+                self.idle_continuation,
+                self.background_job_policy,
+            );
         }
         if !self.options.allow_tty
             && let ToolSpec::Function(spec) = &mut spec
@@ -472,7 +479,8 @@ impl ExecCommandHandler {
         };
 
         let (yield_time_ms, yield_source) = yield_time_ms.resolve(
-            &session.background_jobs, managed.map(|execution| execution.mode),
+            &session.background_jobs,
+            managed.map(|execution| execution.mode),
         );
 
         let exec_permission_approvals_enabled =

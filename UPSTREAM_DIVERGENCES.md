@@ -325,7 +325,7 @@ notes are excluded. The original local development branches retain that history.
   task-finish scheduling feed the existing idle-only continuation admission,
   with an expected previous turn and internal `background_job_completion` input.
   Mailbox work retains priority; user input starts/steers through normal admission.
-- Interrupted pending UUIDs and jobs from the interrupted turn cannot wake or
+- Interrupted live/pending UUIDs and jobs from the interrupted turn cannot wake or
   join an internal turn. The next user-started turn clears suppression when its
   regular execution begins. Already admitted delivery commits keep Step 9 rules.
 - Plan-mode results wait for user input. A mode change during admission uses the
@@ -393,3 +393,20 @@ notes are excluded. The original local development branches retain that history.
   prior rendering and snapshots. Local code: tui/background_job_timer.rs,
   tui/chatwidget/background_job_labels.rs, core/unified_exec/managed_listing.rs.
 - Remove when: upstream provides equivalent captured managed-job timing labels.
+
+## Background integration with v0.162.1 interfaces
+
+- The continuation request uses upstream's WithTurnExtensionData wrapper.
+  Snapshot reads remain under the admission lock inside the session owner,
+  without exposing private session state or changing captured capability rules.
+- Command-event fixtures use upstream's aggregate output and turn attribution;
+  continuation fixtures include root turn lineage. Generated schemas are the
+  authority for config and experimental codexdc payloads after integration.
+- Compile/artifact validation is separate from behavioral validation. Regression
+  coverage verifies older-origin running-job suppression and exec parked-turn
+  gates. Suppression snapshots all
+  eligible registry identities; wake readiness still reads only queued results.
+- Stable schema export gates notifications that share an excluded experimental
+  method payload, including the intersection-wrapped notification envelope.
+  Existing upstream notification contracts remain intact. Experimental generation
+  includes the background-work read/changed variants and all payload definitions.

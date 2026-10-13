@@ -80,6 +80,7 @@ async fn running_final_step_reports_pending_and_keeps_execution_events_running()
         .as_object_mut()
         .unwrap()
         .remove("output");
+    result.sort_all_objects();
     insta::assert_snapshot!(
         "running_stack_result",
         serde_json::to_string_pretty(&result)?

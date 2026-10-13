@@ -136,21 +136,7 @@ impl crate::codex_thread::CodexThread {
 
     /// Snapshot under turn admission's lock, so a drained queue cannot hide an admitted turn.
     pub async fn background_work_state(&self) -> BackgroundWorkState {
-        let active = self.session.active_turn.lock().await;
-        let pending = self.has_live_background_work().await;
-        let last = self.session.state.lock().await.last_started_turn_id.clone();
-        BackgroundWorkState {
-            pending,
-            active: active.as_ref().is_some_and(|turn| turn.task.is_some()),
-            last_turn_id: last,
-            idle_continuation: self.session.background_continuation.enabled,
-            unattended_deadline: self.session.background_jobs.defaults.unattended_deadline,
-            job_timers: if self.session.background_jobs.enabled {
-                self.session.services.unified_exec_manager.background_job_timers().await
-            } else {
-                Vec::new()
-            },
-        }
+        self.session.background_work_state().await
     }
 
     /// Opted-in registry work that must survive automatic no-subscriber unload.

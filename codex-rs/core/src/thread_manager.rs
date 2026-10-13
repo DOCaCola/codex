@@ -2220,11 +2220,17 @@ impl ThreadManagerState {
                 }) => Some(*parent_thread_id),
                 _ => None,
             });
-        if config.features.enabled(codex_features::Feature::BackgroundJobs)
+        if config
+            .features
+            .enabled(codex_features::Feature::BackgroundJobs)
             && config.background_jobs_host.is_none()
         {
             config.background_jobs_host = Some(if let Some(parent_id) = parent_thread_id {
-                self.get_thread(parent_id).await?.session.background_jobs.host
+                self.get_thread(parent_id)
+                    .await?
+                    .session
+                    .background_jobs
+                    .host
             } else {
                 crate::unified_exec::background_policy::HostClass::for_source(
                     &self.session_source,

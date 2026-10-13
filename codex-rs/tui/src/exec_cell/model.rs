@@ -93,7 +93,9 @@ impl ExecCell {
 
     pub(crate) fn set_job_timers(&mut self, timers: &crate::background_job_timer::JobTimers) {
         for call in &self.group.calls {
-            if let Some(timer) = timers.get(&call.call_id) { self.job_timers.insert(call.call_id.clone(), timer); }
+            if let Some(timer) = timers.get(&call.call_id) {
+                self.job_timers.insert(call.call_id.clone(), timer);
+            }
         }
     }
 

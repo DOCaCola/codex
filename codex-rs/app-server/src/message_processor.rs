@@ -1485,7 +1485,9 @@ impl MessageProcessor {
                     .await
             }
             ClientRequest::CodexdcBackgroundWorkRead { params, .. } => {
-                self.codexdc_processor.background_work_read(params, &self.thread_processor).await
+                self.codexdc_processor
+                    .background_work_read(params, &self.thread_processor)
+                    .await
             }
             ClientRequest::ThreadRevert { params, .. } => {
                 self.thread_processor

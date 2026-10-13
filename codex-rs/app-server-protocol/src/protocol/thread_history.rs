@@ -3911,6 +3911,7 @@ mod tests {
         let cwd: codex_utils_path_uri::PathUri = test_path_buf("/tmp").abs().into();
         let events = vec![
             EventMsg::TurnStarted(TurnStartedEvent {
+                turn_attribution: None,
                 turn_id: "turn-stack".into(),
                 root_turn_id: None,
                 trace_id: None,
@@ -3964,12 +3965,9 @@ mod tests {
                 interaction_input: None,
                 plugin_id: None,
                 script_path: None,
-                stdout: "one\n".into(),
-                stderr: String::new(),
                 aggregated_output: "one\n".into(),
                 exit_code: 0,
                 duration: Duration::from_millis(5),
-                formatted_output: "one\n".into(),
                 status: CoreExecCommandStatus::Completed,
             }),
             EventMsg::ExecCommandEnd(ExecCommandEndEvent {
@@ -3984,15 +3982,13 @@ mod tests {
                 interaction_input: None,
                 plugin_id: None,
                 script_path: None,
-                stdout: "zero\n".into(),
-                stderr: String::new(),
                 aggregated_output: "zero\n".into(),
                 exit_code: 0,
                 duration: Duration::from_millis(6),
-                formatted_output: "zero\n".into(),
                 status: CoreExecCommandStatus::Completed,
             }),
             EventMsg::TurnComplete(TurnCompleteEvent {
+                root_turn_id: None,
                 turn_id: "turn-stack".into(),
                 last_agent_message: None,
                 error: None,

@@ -34,9 +34,14 @@ pub(crate) struct BackgroundJobPolicy {
 impl BackgroundJobPolicy {
     pub(crate) fn capture(config: &crate::config::Config, source: &SessionSource) -> Self {
         Self {
-            enabled: config.features.enabled(codex_features::Feature::BackgroundJobs),
+            enabled: config
+                .features
+                .enabled(codex_features::Feature::BackgroundJobs),
             host: HostClass::for_source(
-                source, config.background_jobs_host.unwrap_or(HostClass::Interactive),
+                source,
+                config
+                    .background_jobs_host
+                    .unwrap_or(HostClass::Interactive),
             ),
             defaults: config.background_jobs,
         }
@@ -45,13 +50,23 @@ impl BackgroundJobPolicy {
     pub(crate) fn deadline_guidance(&self) -> String {
         let background = match self.host {
             HostClass::Interactive => "no implicit deadline".to_owned(),
-            HostClass::Unattended => format!("a default deadline of {} ms", self.defaults.unattended_deadline.as_millis()),
+            HostClass::Unattended => format!(
+                "a default deadline of {} ms",
+                self.defaults.unattended_deadline.as_millis()
+            ),
         };
-        format!("Foreground defaults to {} ms; auto/background have {background}. Deadlines count from process start; explicit timeout_ms overrides every default. Dependencies keep their requested mode's deadline. Auto initially waits {} ms unless yield_time_ms is supplied.",
-            self.defaults.foreground_timeout.as_millis(), self.defaults.auto_yield.as_millis())
+        format!(
+            "Foreground defaults to {} ms; auto/background have {background}. Deadlines count from process start; explicit timeout_ms overrides every default. Dependencies keep their requested mode's deadline. Auto initially waits {} ms unless yield_time_ms is supplied.",
+            self.defaults.foreground_timeout.as_millis(),
+            self.defaults.auto_yield.as_millis()
+        )
     }
 
-    pub(crate) fn deadline(&self, mode: ExecutionMode, explicit: Option<Duration>) -> Option<Duration> {
+    pub(crate) fn deadline(
+        &self,
+        mode: ExecutionMode,
+        explicit: Option<Duration>,
+    ) -> Option<Duration> {
         explicit.or(match mode {
             ExecutionMode::Foreground => Some(self.defaults.foreground_timeout),
             ExecutionMode::Auto | ExecutionMode::Background => match self.host {
@@ -63,8 +78,11 @@ impl BackgroundJobPolicy {
     }
 }
 
-#[derive(Clone, Copy)]
-pub(crate) enum YieldSource { Legacy, SessionDefault }
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum YieldSource {
+    Legacy,
+    SessionDefault,
+}
 
 impl YieldSource {
     pub(crate) fn initial_wait_ms(self, millis: u64) -> u64 {
@@ -81,9 +99,16 @@ impl YieldSource {
 pub(crate) struct InitialYield(pub Option<u64>);
 
 impl InitialYield {
-    pub(crate) fn resolve(self, policy: &BackgroundJobPolicy, mode: Option<ExecutionMode>) -> (u64, YieldSource) {
+    pub(crate) fn resolve(
+        self,
+        policy: &BackgroundJobPolicy,
+        mode: Option<ExecutionMode>,
+    ) -> (u64, YieldSource) {
         if self.0.is_none() && policy.enabled && mode == Some(ExecutionMode::Auto) {
-            (policy.defaults.auto_yield.as_millis() as u64, YieldSource::SessionDefault)
+            (
+                policy.defaults.auto_yield.as_millis() as u64,
+                YieldSource::SessionDefault,
+            )
         } else {
             (self.0.unwrap_or(10_000), YieldSource::Legacy)
         }

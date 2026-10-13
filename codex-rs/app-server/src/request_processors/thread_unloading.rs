@@ -1,6 +1,6 @@
 //! Existing subscriber/idle unload countdown, including opted-in registry work.
-use super::*;
 use super::thread_lifecycle::ListenerTaskContext;
+use super::*;
 
 pub(super) struct UnloadingState {
     conversation: Arc<CodexThread>,
@@ -34,7 +34,8 @@ impl UnloadingState {
         let has_subscribers = (*has_subscribers_rx.borrow(), Instant::now());
         let has_background_work = conversation.has_live_background_work().await;
         let is_active = (
-            matches!(*thread_status_rx.borrow(), ThreadStatus::Active { .. }) || has_background_work,
+            matches!(*thread_status_rx.borrow(), ThreadStatus::Active { .. })
+                || has_background_work,
             Instant::now(),
         );
         Some(Self {
@@ -86,18 +87,26 @@ impl UnloadingState {
         }
     }
 
-    pub(super) async fn refresh_background_work(&mut self) -> codex_app_server_protocol::CodexdcBackgroundWorkState {
+    pub(super) async fn refresh_background_work(
+        &mut self,
+    ) -> codex_app_server_protocol::CodexdcBackgroundWorkState {
         let core = self.conversation.background_work_state().await;
         let pending = core.pending;
         let state = codex_app_server_protocol::CodexdcBackgroundWorkState {
             background_jobs_enabled: self.conversation.background_jobs_enabled(),
-            job_timers: core.job_timers.into_iter().map(|timer| codex_app_server_protocol::CodexdcBackgroundJobTimer {
-                item_id: timer.item_id,
-                process_id: timer.process_id,
-                started_at_ms: timer.started_at_ms,
-                explicit_timeout_seconds: timer.explicit_timeout_seconds,
-                duration_seconds: timer.duration_seconds,
-            }).collect(),
+            job_timers: core
+                .job_timers
+                .into_iter()
+                .map(
+                    |timer| codex_app_server_protocol::CodexdcBackgroundJobTimer {
+                        item_id: timer.item_id,
+                        process_id: timer.process_id,
+                        started_at_ms: timer.started_at_ms,
+                        explicit_timeout_seconds: timer.explicit_timeout_seconds,
+                        duration_seconds: timer.duration_seconds,
+                    },
+                )
+                .collect(),
             thread_id: self.thread_id.to_string(),
             pending,
             active: core.active,
@@ -105,11 +114,22 @@ impl UnloadingState {
             idle_continuation: core.idle_continuation,
             unattended_deadline_ms: core.unattended_deadline.as_millis() as u64,
         };
-        if (pending != self.has_background_work || state.job_timers != self.job_timers) && state.background_jobs_enabled {
-            let connections = self.thread_state_manager.subscribed_connection_ids(self.thread_id).await;
-            ThreadScopedOutgoingMessageSender::new(Arc::clone(&self.outgoing), connections, self.thread_id)
-                .send_server_notification(ServerNotification::CodexdcBackgroundWorkChanged(state.clone()))
+        if (pending != self.has_background_work || state.job_timers != self.job_timers)
+            && state.background_jobs_enabled
+        {
+            let connections = self
+                .thread_state_manager
+                .subscribed_connection_ids(self.thread_id)
                 .await;
+            ThreadScopedOutgoingMessageSender::new(
+                Arc::clone(&self.outgoing),
+                connections,
+                self.thread_id,
+            )
+            .send_server_notification(ServerNotification::CodexdcBackgroundWorkChanged(
+                state.clone(),
+            ))
+            .await;
         }
         self.job_timers = state.job_timers.clone();
         self.has_background_work = pending;
@@ -157,4 +177,3 @@ impl UnloadingState {
         }
     }
 }
-

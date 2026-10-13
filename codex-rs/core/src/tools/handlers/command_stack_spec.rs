@@ -46,7 +46,9 @@ pub(crate) fn create_command_stack_tool(
         } else {
             "The runtime keeps the turn active while they run."
         };
-        format!(" execution_mode values: auto (default: initial wait then automatic completion delivery), background (return promptly with automatic delivery), foreground (wait until exit), interactive (manual supervision for servers/watchers; default with tty=true). timeout_ms is a positive execution deadline, separate from yield_time_ms; {deadlines} Their exit codes control continue_on_failure. Interactive commands cannot be dependencies. Running results report running=true and success=null until a completion arrives. Final-step finite commands deliver completion automatically; continue independent work without polling. {turn_lifetime} Use foreground when the stack must return final results, or write_stdin wait_mode=\"completion\" when blocked (empty chars, no yield_time_ms). Empty timed reads back off; completed output remains readable via session_id in a bounded session-local cache.")
+        format!(
+            " execution_mode values: auto (default: initial wait then automatic completion delivery), background (return promptly with automatic delivery), foreground (wait until exit), interactive (manual supervision for servers/watchers; default with tty=true). timeout_ms is a positive execution deadline, separate from yield_time_ms; {deadlines} Their exit codes control continue_on_failure. Interactive commands cannot be dependencies. Running results report running=true and success=null until a completion arrives. Final-step finite commands deliver completion automatically; continue independent work without polling. {turn_lifetime} Use foreground when the stack must return final results, or write_stdin wait_mode=\"completion\" when blocked (empty chars, no yield_time_ms). Empty timed reads back off; completed output remains readable via session_id in a bounded session-local cache."
+        )
     } else {
         String::new()
     };

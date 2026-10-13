@@ -42,11 +42,12 @@ impl JobTimer {
     pub(crate) fn label_at(&self, now_ms: i64) -> String {
         let timer = self.0.lock().unwrap();
         let duration = timer.duration_seconds;
-        let seconds = duration.unwrap_or_else(|| {
-            now_ms.saturating_sub(timer.started_at_ms).max(0) as u64 / 1000
-        });
+        let seconds = duration
+            .unwrap_or_else(|| now_ms.saturating_sub(timer.started_at_ms).max(0) as u64 / 1000);
         let elapsed = compact_duration(seconds);
-        if duration.is_none() && let Some(timeout) = timer.explicit_timeout_seconds {
+        if duration.is_none()
+            && let Some(timeout) = timer.explicit_timeout_seconds
+        {
             let timeout = compact_duration(timeout);
             format!("({elapsed} · timeout {timeout})")
         } else {
@@ -76,7 +77,8 @@ impl JobTimers {
         let mut next = HashMap::new();
         for metadata in timers {
             let id = metadata.item_id.clone();
-            let timer = by_item.remove(&id)
+            let timer = by_item
+                .remove(&id)
                 .unwrap_or_else(|| JobTimer::new(metadata.clone()));
             *timer.0.lock().unwrap() = metadata;
             next.insert(id, timer);
@@ -85,12 +87,18 @@ impl JobTimers {
     }
 
     pub(crate) fn for_process(&self, process_id: &str) -> Option<JobTimer> {
-        self.by_item.lock().unwrap().values().find(|timer| timer.0.lock().unwrap().process_id == process_id).cloned()
+        self.by_item
+            .lock()
+            .unwrap()
+            .values()
+            .find(|timer| timer.0.lock().unwrap().process_id == process_id)
+            .cloned()
     }
 
     pub(crate) fn process(&self, process_id: &str) -> ProcessJobTimer {
         ProcessJobTimer {
-            by_item: Arc::clone(&self.by_item), process_id: process_id.to_string(),
+            by_item: Arc::clone(&self.by_item),
+            process_id: process_id.to_string(),
             resolved: Arc::new(Mutex::new(None)),
         }
     }
@@ -112,8 +120,13 @@ impl ProcessJobTimer {
     fn resolve(&self) -> Option<JobTimer> {
         let mut resolved = self.resolved.lock().unwrap();
         if resolved.is_none() {
-            *resolved = self.by_item.lock().unwrap().values()
-                .find(|timer| timer.0.lock().unwrap().process_id == self.process_id).cloned();
+            *resolved = self
+                .by_item
+                .lock()
+                .unwrap()
+                .values()
+                .find(|timer| timer.0.lock().unwrap().process_id == self.process_id)
+                .cloned();
         }
         resolved.clone()
     }

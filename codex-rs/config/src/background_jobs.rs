@@ -37,9 +37,21 @@ impl BackgroundJobsConfigToml {
     pub fn resolve(&self) -> std::io::Result<BackgroundJobsConfig> {
         let defaults = BackgroundJobsConfig::default();
         Ok(BackgroundJobsConfig {
-            unattended_deadline: milliseconds("unattended_deadline_ms", self.unattended_deadline_ms, defaults.unattended_deadline.as_millis() as u64)?,
-            foreground_timeout: milliseconds("foreground_timeout_ms", self.foreground_timeout_ms, defaults.foreground_timeout.as_millis() as u64)?,
-            auto_yield: milliseconds("auto_yield_ms", self.auto_yield_ms, defaults.auto_yield.as_millis() as u64)?,
+            unattended_deadline: milliseconds(
+                "unattended_deadline_ms",
+                self.unattended_deadline_ms,
+                defaults.unattended_deadline.as_millis() as u64,
+            )?,
+            foreground_timeout: milliseconds(
+                "foreground_timeout_ms",
+                self.foreground_timeout_ms,
+                defaults.foreground_timeout.as_millis() as u64,
+            )?,
+            auto_yield: milliseconds(
+                "auto_yield_ms",
+                self.auto_yield_ms,
+                defaults.auto_yield.as_millis() as u64,
+            )?,
         })
     }
 }

@@ -26,7 +26,9 @@ impl ExecCell {
             }
             let script = strip_bash_lc_and_escape(&call.command);
             let mut highlighted_script = highlight_bash_to_lines(&script);
-            if let Some(timer) = self.job_timers.get(&call.call_id) && let Some(line) = highlighted_script.first_mut() {
+            if let Some(timer) = self.job_timers.get(&call.call_id)
+                && let Some(line) = highlighted_script.first_mut()
+            {
                 line.push_span(format!(" {}", timer.label()).dim());
             }
             let cmd_display = adaptive_wrap_hyperlink_lines(
@@ -60,7 +62,9 @@ impl ExecCell {
                             format!(" ({})", output.exit_code).into(),
                         ])
                     };
-                    if !self.job_timers.contains_key(&call.call_id) && let Some(duration) = call.duration {
+                    if !self.job_timers.contains_key(&call.call_id)
+                        && let Some(duration) = call.duration
+                    {
                         let duration = format_duration(duration);
                         result.push_span(format!(" • {duration}").dim());
                     }

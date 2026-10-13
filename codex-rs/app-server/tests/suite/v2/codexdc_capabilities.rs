@@ -56,7 +56,10 @@ async fn capabilities_identify_the_running_build() -> Result<()> {
         CodexdcCapabilitiesResponse {
             fork: "codexdc".to_string(),
             version: version.to_string(),
-            protocol: BTreeMap::from([("backgroundJobs".to_string(), 1), ("backgroundWork".to_string(), 1)]),
+            protocol: BTreeMap::from([
+                ("backgroundJobs".to_string(), 1),
+                ("backgroundWork".to_string(), 1)
+            ]),
             features: CodexdcFeatures {
                 background_jobs: false
             },

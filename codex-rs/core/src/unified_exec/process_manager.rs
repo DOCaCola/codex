@@ -572,7 +572,11 @@ impl UnifiedExecProcessManager {
         let process = Arc::new(process);
         if let Some(timeout) = request.managed.and_then(|execution| execution.timeout) {
             let process = Arc::clone(&process);
-            let process_start = context.session.background_jobs.enabled.then_some(process.started_at);
+            let process_start = context
+                .session
+                .background_jobs
+                .enabled
+                .then_some(process.started_at);
             tokio::spawn(async move {
                 let exited = process.cancellation_token();
                 tokio::select! {

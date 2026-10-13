@@ -98,6 +98,34 @@ impl Drop for BackgroundContinuation {
 }
 
 impl Session {
+    /// Keep the snapshot's admission lock and private session state inside the session owner.
+    pub(crate) async fn background_work_state(
+        &self,
+    ) -> crate::background_jobs::BackgroundWorkState {
+        let active = self.active_turn.lock().await;
+        let pending = self
+            .services
+            .unified_exec_manager
+            .has_live_background_work()
+            .await;
+        let last_turn_id = self.state.lock().await.last_started_turn_id.clone();
+        crate::background_jobs::BackgroundWorkState {
+            pending,
+            active: active.as_ref().is_some_and(|turn| turn.task.is_some()),
+            last_turn_id,
+            idle_continuation: self.background_continuation.enabled,
+            unattended_deadline: self.background_jobs.defaults.unattended_deadline,
+            job_timers: if self.background_jobs.enabled {
+                self.services
+                    .unified_exec_manager
+                    .background_job_timers()
+                    .await
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
     pub(crate) async fn begin_background_interrupt(
         &self,
         reason: Option<&TurnAbortReason>,
@@ -106,10 +134,15 @@ impl Session {
         if !self.background_continuation.enabled || reason != Some(&TurnAbortReason::Interrupted) {
             return None;
         }
-        self.background_continuation.interruptions.fetch_add(1, Ordering::AcqRel);
+        self.background_continuation
+            .interruptions
+            .fetch_add(1, Ordering::AcqRel);
         let guard = BackgroundInterruption {
             counter: &self.background_continuation.interruptions,
-            changed: self.services.unified_exec_manager.background_work_notifications(),
+            changed: self
+                .services
+                .unified_exec_manager
+                .background_work_notifications(),
         };
         let capability = &self.background_continuation;
         let epoch = {
@@ -130,15 +163,13 @@ impl Session {
         let pending = self
             .services
             .unified_exec_manager
-            .background_wake_candidates()
+            .background_interrupt_job_ids()
             .await;
         let mut suppression = capability.suppression.lock().await;
         // User-started execution ends the suppression epoch, including an abort
         // whose asynchronous snapshot began before that user turn started.
         if suppression.epoch == epoch {
-            suppression
-                .jobs
-                .extend(pending.into_iter().map(|job| job.job_id));
+            suppression.jobs.extend(pending);
             if let Some(turn) = originating_turn {
                 suppression.turns.insert(turn);
             }
@@ -188,7 +219,11 @@ impl Session {
         }
     }
 
-    pub(crate) async fn background_completion_deliverable(&self, job_id: Uuid, origin: &str) -> bool {
+    pub(crate) async fn background_completion_deliverable(
+        &self,
+        job_id: Uuid,
+        origin: &str,
+    ) -> bool {
         if !self.background_continuation.enabled {
             return true;
         }
@@ -214,7 +249,12 @@ impl Session {
                 break;
             }
         }
-        ready && self.background_continuation.interruptions.load(Ordering::Acquire) == 0
+        ready
+            && self
+                .background_continuation
+                .interruptions
+                .load(Ordering::Acquire)
+                == 0
     }
 
     pub(crate) async fn maybe_start_background_completion(self: &Arc<Self>, sub_id: String) {
@@ -241,13 +281,20 @@ impl Session {
             InternalContextSource::from_static(TRIGGER),
             "Background command results are ready. Continue the existing work from the completion results. This is internal context, not new user authorization.",
         ));
-        let request =
-            TurnInputRequest::new(codex_protocol::turn_input::TurnInput::ResponseItem(fragment))
-                .on_start(TurnStartOptions {
-                    turn_trigger: Some(TRIGGER.into()),
-                    final_output_json_schema: self.background_continuation.suppression.lock().await.output_schema.clone(),
-                    ..Default::default()
-                });
+        let request = TurnInputRequest::new(codex_protocol::turn_input::TurnInput::ResponseItem(
+            fragment,
+        ))
+        .on_start(TurnStartOptions {
+            turn_trigger: Some(TRIGGER.into()),
+            final_output_json_schema: self
+                .background_continuation
+                .suppression
+                .lock()
+                .await
+                .output_schema
+                .clone(),
+            ..Default::default()
+        });
         match super::turn_input::handle(
             self,
             request,
@@ -262,7 +309,9 @@ impl Session {
             Ok(TurnInputSubmission::NotSubmitted { reason }) => {
                 tracing::debug!(?reason, "background wake not admitted");
             }
-            Ok(TurnInputSubmission::Steered { .. }) => unreachable!("internal continuation cannot steer"),
+            Ok(TurnInputSubmission::Steered { .. }) => {
+                unreachable!("internal continuation cannot steer")
+            }
             Err(error) => tracing::warn!(%error, "background continuation admission failed"),
         }
     }

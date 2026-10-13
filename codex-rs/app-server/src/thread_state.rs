@@ -58,7 +58,9 @@ pub(crate) struct PendingThreadResumeRequest {
 
 // ThreadListenerCommand is used to perform operations in the context of the thread listener, for serialization purposes.
 pub(crate) enum ThreadListenerCommand {
-    ReadBackgroundWork { reply: oneshot::Sender<codex_app_server_protocol::CodexdcBackgroundWorkState> },
+    ReadBackgroundWork {
+        reply: oneshot::Sender<codex_app_server_protocol::CodexdcBackgroundWorkState>,
+    },
     // SendThreadResumeResponse is used to resume an already running thread by sending the thread's history to the client and atomically subscribing for new updates.
     SendThreadResumeResponse {
         request: Box<PendingThreadResumeRequest>,

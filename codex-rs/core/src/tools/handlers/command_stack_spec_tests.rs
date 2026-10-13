@@ -164,19 +164,46 @@ fn command_stack_keeps_the_same_surface_when_hpatch_is_selected() {
     );
 }
 
-// Written, not run: actual exec and stack specs select their captured capability.
+// Actual exec and stack specs select their captured capability.
 #[test_case::test_case(false; "parked_turn")]
 #[test_case::test_case(true; "idle_continuation")]
 fn command_stack_and_exec_instructions_select_turn_lifetime(enabled: bool) {
     let ToolSpec::Function(exec) = ExecCommandHandler::default()
-        .with_background_delivery(/*enabled*/ true).with_idle_continuation(enabled).spec()
-    else { panic!("expected exec function tool"); };
-    assert_eq!(exec.description.contains("The runtime keeps the turn open"), !enabled);
-    assert_eq!(exec.description.contains("completion starts a follow-up turn"), enabled);
+        .with_background_delivery(/*enabled*/ true)
+        .with_idle_continuation(enabled)
+        .spec()
+    else {
+        panic!("expected exec function tool");
+    };
+    assert_eq!(
+        exec.description.contains("The runtime keeps the turn open"),
+        !enabled
+    );
+    assert_eq!(
+        exec.description
+            .contains("completion starts a follow-up turn"),
+        enabled
+    );
     let ToolSpec::Freeform(stack) = create_command_stack_tool(
-        exec.parameters, arguments("session_id", &["chars"]), /*include_environment_id*/ false,
-        CommandStackPatchTool::ApplyPatch, enabled, /*policy*/ None,
-    ) else { panic!("expected freeform tool"); };
-    assert_eq!(stack.description.contains("The runtime keeps the turn active while they run."), !enabled);
-    assert_eq!(stack.description.contains("completion starts a follow-up turn"), enabled);
+        exec.parameters,
+        arguments("session_id", &["chars"]),
+        /*include_environment_id*/ false,
+        CommandStackPatchTool::ApplyPatch,
+        enabled,
+        /*policy*/ None,
+    ) else {
+        panic!("expected freeform tool");
+    };
+    assert_eq!(
+        stack
+            .description
+            .contains("The runtime keeps the turn active while they run."),
+        !enabled
+    );
+    assert_eq!(
+        stack
+            .description
+            .contains("completion starts a follow-up turn"),
+        enabled
+    );
 }

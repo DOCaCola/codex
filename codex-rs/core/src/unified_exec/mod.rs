@@ -48,11 +48,11 @@ use crate::tools::network_approval::DeferredNetworkApproval;
 use codex_core_plugins::PluginMetricsSidecar;
 
 mod async_watcher;
+pub(crate) mod background_policy;
 mod errors;
 mod head_tail_buffer;
 pub(crate) mod managed;
 mod oneshot;
-pub(crate) mod background_policy;
 mod process;
 mod process_manager;
 mod process_state;

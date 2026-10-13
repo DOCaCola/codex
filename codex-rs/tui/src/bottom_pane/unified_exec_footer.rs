@@ -55,7 +55,11 @@ impl UnifiedExecFooter {
 
         let count = self.processes.len();
         let plural = if count == 1 { "" } else { "s" };
-        let labels: String = self.job_timers.iter().map(|timer| format!(" {}", timer.label())).collect();
+        let labels: String = self
+            .job_timers
+            .iter()
+            .map(|timer| format!(" {}", timer.label()))
+            .collect();
         Some(format!(
             "{count} background terminal{plural} running{labels} · /ps to view · /stop to close"
         ))

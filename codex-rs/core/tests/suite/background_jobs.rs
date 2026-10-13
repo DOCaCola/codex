@@ -226,13 +226,14 @@ async fn background_jobs_later_turn_preserves_hook_origin(rich: bool, stack: boo
         metadata["originating_turn"] = json!("<origin-turn>");
         metadata["duration_ms"] = json!("<duration>");
         metadata["command"] = json!("<bounded-command>");
+        metadata.sort_all_objects();
         fragment = fragment.replace(serialized, &metadata.to_string());
     } else {
         assert!(!fragment.contains("Managed job metadata"));
         let session = harness.test().codex.list_background_terminals().await;
         assert!(session.is_empty());
     }
-    // Keep the fragment text, masking only runtime identity and timing.
+    // Keep fragment content, normalizing JSON order and runtime identity/timing.
     let start = fragment.find("Command session ").unwrap() + "Command session ".len();
     let end = fragment[start..].find(' ').unwrap() + start;
     let id = fragment[start..end].to_string();

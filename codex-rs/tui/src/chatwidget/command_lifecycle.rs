@@ -126,10 +126,10 @@ impl ChatWidget {
             {
                 self.flush_unified_exec_wait_streak();
             }
-            self.add_to_history(history_cell::new_unified_exec_interaction(
-                command_display,
-                stdin,
-            ).with_job_timer(Some(self.background_job_timers.process(&process_id))));
+            self.add_to_history(
+                history_cell::new_unified_exec_interaction(command_display, stdin)
+                    .with_job_timer(Some(self.background_job_timers.process(&process_id))),
+            );
         }
     }
 

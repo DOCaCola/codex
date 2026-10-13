@@ -386,10 +386,14 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     self.emit_final_message_on_shutdown = false;
                 }
                 CodexStatus::Running
-            },
+            }
             _ => CodexStatus::Running,
         };
-        if self.background_continuations { CodexStatus::Running } else { status }
+        if self.background_continuations {
+            CodexStatus::Running
+        } else {
+            status
+        }
     }
 
     fn process_warning(&mut self, message: String) -> CodexStatus {

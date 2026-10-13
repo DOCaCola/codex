@@ -605,7 +605,9 @@ impl Session {
         config.background_jobs_host = Some(
             crate::unified_exec::background_policy::HostClass::for_source(
                 &session_source,
-                config.background_jobs_host.unwrap_or(crate::unified_exec::background_policy::HostClass::Interactive),
+                config
+                    .background_jobs_host
+                    .unwrap_or(crate::unified_exec::background_policy::HostClass::Interactive),
             ),
         );
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);

@@ -707,9 +707,9 @@ mod request_errors;
 mod thread_delete;
 mod thread_goal_processor;
 mod thread_lifecycle;
-mod thread_unloading;
 mod thread_resume_redaction;
 mod thread_summary;
+mod thread_unloading;
 
 use self::config_errors::*;
 use self::request_errors::*;

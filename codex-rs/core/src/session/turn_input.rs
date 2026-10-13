@@ -263,7 +263,8 @@ pub(super) async fn handle(
                 ));
             }
             let kind = if session.background_continuation.enabled
-                && request.request.start.turn_trigger.as_deref() == Some(super::background_continuation::TRIGGER)
+                && request.request.start.turn_trigger.as_deref()
+                    == Some(super::background_continuation::TRIGGER)
             {
                 TurnStartKind::Automatic
             } else {
@@ -576,11 +577,9 @@ async fn start_if_idle(
             .set_responsesapi_client_metadata(responsesapi_client_metadata);
     }
     if background_wake {
-        turn_context
-            .extension_data
-            .insert(super::background_continuation::BackgroundWakeReservation(
-                Arc::clone(&turn_state),
-            ));
+        turn_context.extension_data.insert(
+            super::background_continuation::BackgroundWakeReservation(Arc::clone(&turn_state)),
+        );
     }
     session
         .maybe_emit_model_warnings_for_turn(turn_context.as_ref())

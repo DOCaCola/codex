@@ -64,7 +64,10 @@ impl CommandStackHandler {
         }
     }
 
-    pub(crate) fn with_background_job_policy(mut self, policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>) -> Self {
+    pub(crate) fn with_background_job_policy(
+        mut self,
+        policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
+    ) -> Self {
         self.background_job_policy = policy;
         self
     }
@@ -144,7 +147,10 @@ impl CommandStackHandler {
             .enabled(codex_features::Feature::BackgroundCommandDelivery)
             || invocation.session.background_jobs.enabled
         {
-            managed::prepare_dependencies(&mut commands, invocation.session.background_jobs.enabled)?
+            managed::prepare_dependencies(
+                &mut commands,
+                invocation.session.background_jobs.enabled,
+            )?
         } else {
             1
         };

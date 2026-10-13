@@ -605,7 +605,14 @@ impl EventProcessorWithJsonOutput {
             _ => CodexStatus::Running,
         };
 
-        CollectedThreadEvents { events, status: if self.background_continuations { CodexStatus::Running } else { status } }
+        CollectedThreadEvents {
+            events,
+            status: if self.background_continuations {
+                CodexStatus::Running
+            } else {
+                status
+            },
+        }
     }
 }
 

@@ -145,7 +145,10 @@ pub(crate) fn build_tool_router(
         .get::<crate::WaitForEnvironmentToolConfig>();
     let context = CoreToolPlanContext {
         idle_continuation: session.background_continuation.enabled,
-        background_job_policy: session.background_jobs.enabled.then_some(session.background_jobs),
+        background_job_policy: session
+            .background_jobs
+            .enabled
+            .then_some(session.background_jobs),
         tool_policy: &session.tool_policy,
         turn_context,
         model_info,
@@ -1224,10 +1227,10 @@ fn add_shell_tools(context: &CoreToolPlanContext<'_>, registry: &mut ToolRegistr
     if features.enabled(Feature::UnifiedExec) {
         let background_delivery = features.enabled(Feature::BackgroundCommandDelivery)
             || context.background_job_policy.is_some();
-        let exec_handler =
-            ExecCommandHandler::new(options).with_background_delivery(background_delivery)
-                .with_idle_continuation(context.idle_continuation)
-                .with_background_job_policy(context.background_job_policy);
+        let exec_handler = ExecCommandHandler::new(options)
+            .with_background_delivery(background_delivery)
+            .with_idle_continuation(context.idle_continuation)
+            .with_background_job_policy(context.background_job_policy);
         if command_stack_available {
             registry.add_with_exposure(exec_handler, ToolExposure::Hidden);
             registry.add_with_exposure(
@@ -1508,8 +1511,9 @@ fn add_command_stack_tool(context: &CoreToolPlanContext<'_>, registry: &mut Tool
             write_stdin_spec.parameters,
             include_environment_id,
             patch_tool,
-        ).with_idle_continuation(context.idle_continuation)
-            .with_background_job_policy(context.background_job_policy),
+        )
+        .with_idle_continuation(context.idle_continuation)
+        .with_background_job_policy(context.background_job_policy),
         ToolExposure::DirectModelOnly,
     );
 }

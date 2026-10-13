@@ -6,11 +6,18 @@ impl ChatWidget {
         &mut self,
         state: codex_app_server_protocol::CodexdcBackgroundWorkState,
     ) {
-        if self.thread_id().is_none_or(|id| id.to_string() != state.thread_id) {
+        if self
+            .thread_id()
+            .is_none_or(|id| id.to_string() != state.thread_id)
+        {
             return;
         }
-        self.background_job_timers.update(state.background_jobs_enabled, state.job_timers);
-        if let Some(cell) = self.transcript.active_cell.as_mut()
+        self.background_job_timers
+            .update(state.background_jobs_enabled, state.job_timers);
+        if let Some(cell) = self
+            .transcript
+            .active_cell
+            .as_mut()
             .and_then(|cell| cell.as_any_mut().downcast_mut::<ExecCell>())
         {
             cell.set_job_timers(&self.background_job_timers);
@@ -23,12 +30,19 @@ impl ChatWidget {
         if !self.background_job_timers.enabled {
             return;
         }
-        let timers: Vec<_> = self.unified_exec_processes.iter()
+        let timers: Vec<_> = self
+            .unified_exec_processes
+            .iter()
             .filter_map(|process| self.background_job_timers.for_process(&process.key))
             .collect();
-        let running = timers.iter().any(crate::background_job_timer::JobTimer::running);
+        let running = timers
+            .iter()
+            .any(crate::background_job_timer::JobTimer::running);
         self.bottom_pane.set_background_job_timers(timers);
-        if let Some(cell) = self.transcript.active_cell.as_mut()
+        if let Some(cell) = self
+            .transcript
+            .active_cell
+            .as_mut()
             .and_then(|cell| cell.as_any_mut().downcast_mut::<ExecCell>())
         {
             cell.set_job_timers(&self.background_job_timers);
@@ -37,7 +51,8 @@ impl ChatWidget {
             }
         }
         if running {
-            self.frame_requester.schedule_frame_in(Duration::from_secs(1));
+            self.frame_requester
+                .schedule_frame_in(Duration::from_secs(1));
         }
     }
 }

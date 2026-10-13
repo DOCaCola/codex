@@ -1667,7 +1667,10 @@ impl BottomPane {
         }
     }
 
-    pub(crate) fn set_background_job_timers(&mut self, timers: Vec<crate::background_job_timer::JobTimer>) {
+    pub(crate) fn set_background_job_timers(
+        &mut self,
+        timers: Vec<crate::background_job_timer::JobTimer>,
+    ) {
         self.unified_exec_footer.set_job_timers(timers);
         self.sync_status_inline_message();
     }

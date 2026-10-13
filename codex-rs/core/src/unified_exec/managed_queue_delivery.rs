@@ -26,6 +26,27 @@ struct PendingCompletion {
 }
 
 impl UnifiedExecProcessManager {
+    /// Interrupt suppression includes eligible identities before their processes exit.
+    pub(crate) async fn background_interrupt_job_ids(&self) -> Vec<Uuid> {
+        let mut ids = Vec::new();
+        for job in self.managed.registry.all_jobs().await {
+            if job.revoked.is_cancelled()
+                || job.acknowledged.load(Ordering::Acquire)
+                || job.initial_response_consumed.load(Ordering::Acquire)
+            {
+                continue;
+            }
+            let metadata = job.metadata.lock().await;
+            if matches!(
+                metadata.mode,
+                super::ExecutionMode::Auto | super::ExecutionMode::Background
+            ) {
+                ids.push(metadata.job_id);
+            }
+        }
+        ids
+    }
+
     pub(crate) async fn background_wake_candidates(
         &self,
     ) -> Vec<crate::session::background_continuation::WakeCandidate> {
@@ -73,8 +94,7 @@ impl UnifiedExecProcessManager {
             if matches!(
                 job.metadata.lock().await.mode,
                 super::ExecutionMode::Auto | super::ExecutionMode::Background
-            )
-            {
+            ) {
                 return true;
             }
         }

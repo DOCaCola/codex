@@ -2,7 +2,11 @@ use codex_tools::JsonSchema;
 use codex_tools::ToolSpec;
 use serde_json::json;
 
-pub(super) fn configure_exec(tool: &mut ToolSpec, idle_continuation: bool, policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>) {
+pub(super) fn configure_exec(
+    tool: &mut ToolSpec,
+    idle_continuation: bool,
+    policy: Option<crate::unified_exec::background_policy::BackgroundJobPolicy>,
+) {
     let ToolSpec::Function(tool) = tool else {
         return;
     };

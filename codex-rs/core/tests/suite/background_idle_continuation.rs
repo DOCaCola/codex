@@ -1,4 +1,4 @@
-//! Written, not run: idle batches, user races, Plan, interruption and flag-off parking.
+//! Idle batches, user races, Plan, interruption and flag-off parking.
 use super::*;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionFuture;
@@ -37,15 +37,26 @@ impl TurnLifecycleContributor for PreparationGate {
 async fn idle_harness(enabled: bool, gate: Arc<PreparationGate>) -> Result<TestCodexHarness> {
     let mut extensions = ExtensionRegistryBuilder::new();
     extensions.turn_lifecycle_contributor(gate);
-    TestCodexHarness::with_auto_env_builder(test_codex().with_model("gpt-5.5")
-        .with_extensions(Arc::new(extensions.build())).with_config(move |config| {
-            config.features.enable(Feature::UnifiedExec).unwrap();
-            config.features.enable(Feature::BackgroundCommandDelivery).unwrap();
-            config.features.enable(Feature::BackgroundJobs).unwrap();
-            config.features.set_enabled(Feature::BackgroundJobsIdleContinuation, enabled).unwrap();
-            config.features.disable(Feature::CommandStack).unwrap();
-            config.features.disable(Feature::CodeMode).unwrap();
-        })).await
+    TestCodexHarness::with_auto_env_builder(
+        test_codex()
+            .with_model("gpt-5.5")
+            .with_extensions(Arc::new(extensions.build()))
+            .with_config(move |config| {
+                config.features.enable(Feature::UnifiedExec).unwrap();
+                config
+                    .features
+                    .enable(Feature::BackgroundCommandDelivery)
+                    .unwrap();
+                config.features.enable(Feature::BackgroundJobs).unwrap();
+                config
+                    .features
+                    .set_enabled(Feature::BackgroundJobsIdleContinuation, enabled)
+                    .unwrap();
+                config.features.disable(Feature::CommandStack).unwrap();
+                config.features.disable(Feature::CodeMode).unwrap();
+            }),
+    )
+    .await
 }
 
 fn launch_response(count: usize) -> String {
@@ -56,10 +67,16 @@ fn launch_response(count: usize) -> String {
     sse(calls)
 }
 fn summary_response() -> String {
-    sse(vec![ev_assistant_message("wait", "waiting"), ev_completed("summary")])
+    sse(vec![
+        ev_assistant_message("wait", "waiting"),
+        ev_completed("summary"),
+    ])
 }
 fn done_response() -> String {
-    sse(vec![ev_assistant_message("done", "finished"), ev_completed("done")])
+    sse(vec![
+        ev_assistant_message("done", "finished"),
+        ev_completed("done"),
+    ])
 }
 async fn completed_jobs(harness: &TestCodexHarness, count: usize) -> Result<()> {
     tokio::time::timeout(Duration::from_secs(20), async {
@@ -70,23 +87,42 @@ async fn completed_jobs(harness: &TestCodexHarness, count: usize) -> Result<()> 
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-    }).await?
+    })
+    .await?
 }
 async fn launch(harness: &TestCodexHarness, mode: ModeKind) -> Result<()> {
     let test = harness.test();
-    let (sandbox_policy, permission_profile) = turn_permission_fields(PermissionProfile::Disabled, test.config.cwd.as_path());
-    test.codex.start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
-        text: "launch".into(), text_elements: vec![],
-    }]).with_thread_settings(ThreadSettingsOverrides {
-        approval_policy: Some(AskForApproval::Never), sandbox_policy: Some(sandbox_policy), permission_profile,
-        collaboration_mode: Some(CollaborationMode { mode, settings: Settings {
-            model: test.session_configured.model.clone(), reasoning_effort: None, developer_instructions: None,
-        }}), ..Default::default()
-    })).await?;
+    let (sandbox_policy, permission_profile) =
+        turn_permission_fields(PermissionProfile::Disabled, test.config.cwd.as_path());
+    test.codex
+        .start_or_steer_turn(
+            TurnInputRequest::user_input(vec![UserInput::Text {
+                text: "launch".into(),
+                text_elements: vec![],
+            }])
+            .with_thread_settings(ThreadSettingsOverrides {
+                approval_policy: Some(AskForApproval::Never),
+                sandbox_policy: Some(sandbox_policy),
+                permission_profile,
+                collaboration_mode: Some(CollaborationMode {
+                    mode,
+                    settings: Settings {
+                        model: test.session_configured.model.clone(),
+                        reasoning_effort: None,
+                        developer_instructions: None,
+                    },
+                }),
+                ..Default::default()
+            }),
+        )
+        .await?;
     Ok(())
 }
 async fn finished(harness: &TestCodexHarness) {
-    wait_for_event(&harness.test().codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    wait_for_event(&harness.test().codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
 }
 
 #[test_case::test_case(false; "two_jobs_one_wake_window")]
@@ -96,21 +132,38 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
     skip_if_no_network!(Ok(()));
     let gate = Arc::new(PreparationGate::default());
     let harness = idle_harness(/*enabled*/ true, Arc::clone(&gate)).await?;
-    let log = mount_sse_sequence(harness.server(), vec![launch_response(2), summary_response(), done_response()]).await;
+    let log = mount_sse_sequence(
+        harness.server(),
+        vec![launch_response(2), summary_response(), done_response()],
+    )
+    .await;
     launch(&harness, ModeKind::Default).await?;
     finished(&harness).await;
-    assert_eq!(log.requests().len(), 2, "turn ends while both jobs are still running");
+    assert_eq!(
+        log.requests().len(),
+        2,
+        "turn ends while both jobs are still running"
+    );
     gate.armed.store(/*val*/ true, Ordering::SeqCst);
     harness.write_file("release-0", "go").await?;
     tokio::time::timeout(Duration::from_secs(20), gate.entered.notified()).await?;
     harness.write_file("release-1", "go").await?;
     completed_jobs(&harness, 2).await?;
     if race_user {
-        submit_unified_exec_turn(harness.test(), "user-race-marker", PermissionProfile::Disabled).await?;
+        submit_unified_exec_turn(
+            harness.test(),
+            "user-race-marker",
+            PermissionProfile::Disabled,
+        )
+        .await?;
     }
     gate.release.notify_one();
     finished(&harness).await;
-    assert_eq!(log.requests().len(), 3, "one continuation sample contains the batch");
+    assert_eq!(
+        log.requests().len(),
+        3,
+        "one continuation sample contains the batch"
+    );
     let input = log.last_request().unwrap().body_json()["input"].to_string();
     assert_eq!(input.matches("<command_completion>").count(), 2);
     assert!(input.contains("background_job_completion"));
@@ -124,21 +177,41 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn background_idle_continuation_plan_waits_for_user_without_rejected_start_loop() -> Result<()> {
+async fn background_idle_continuation_plan_waits_for_user_without_rejected_start_loop() -> Result<()>
+{
     skip_if_no_network!(Ok(()));
     let harness = idle_harness(/*enabled*/ true, Arc::default()).await?;
-    let log = mount_sse_sequence(harness.server(), vec![launch_response(1), summary_response(), done_response()]).await;
+    let log = mount_sse_sequence(
+        harness.server(),
+        vec![launch_response(1), summary_response(), done_response()],
+    )
+    .await;
     launch(&harness, ModeKind::Plan).await?;
     finished(&harness).await;
     harness.write_file("release-0", "go").await?;
     completed_jobs(&harness, 1).await?;
-    assert!(tokio::time::timeout(Duration::from_millis(400), wait_for_event(&harness.test().codex,
-        |event| matches!(event, EventMsg::TurnStarted(_)))).await.is_err());
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(400),
+            wait_for_event(&harness.test().codex, |event| matches!(
+                event,
+                EventMsg::TurnStarted(_)
+            ))
+        )
+        .await
+        .is_err()
+    );
     assert_eq!(log.requests().len(), 2);
     launch(&harness, ModeKind::Plan).await?;
     finished(&harness).await;
     assert_eq!(log.requests().len(), 3);
-    assert_eq!(log.last_request().unwrap().body_json()["input"].to_string().matches("<command_completion>").count(), 1);
+    assert_eq!(
+        log.last_request().unwrap().body_json()["input"]
+            .to_string()
+            .matches("<command_completion>")
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -146,25 +219,51 @@ async fn background_idle_continuation_plan_waits_for_user_without_rejected_start
 async fn background_idle_continuation_interrupt_suppresses_until_next_user_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = idle_harness(/*enabled*/ true, Arc::default()).await?;
-    let log = mount_response_sequence(harness.server(), vec![sse_response(launch_response(1)),
-        sse_response(summary_response()).set_delay(Duration::from_secs(60)), sse_response(done_response())]).await;
+    let log = mount_response_sequence(
+        harness.server(),
+        vec![
+            sse_response(launch_response(1)),
+            sse_response(summary_response()).set_delay(Duration::from_secs(60)),
+            sse_response(done_response()),
+        ],
+    )
+    .await;
     launch(&harness, ModeKind::Default).await?;
     tokio::time::timeout(Duration::from_secs(20), async {
         while log.requests().len() < 2 {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-    }).await?;
+    })
+    .await?;
     harness.test().codex.submit(Op::Interrupt).await?;
-    wait_for_event(&harness.test().codex, |event| matches!(event, EventMsg::TurnAborted(_))).await;
+    wait_for_event(&harness.test().codex, |event| {
+        matches!(event, EventMsg::TurnAborted(_))
+    })
+    .await;
     harness.write_file("release-0", "go").await?;
     completed_jobs(&harness, 1).await?;
-    assert!(tokio::time::timeout(Duration::from_millis(400), wait_for_event(&harness.test().codex,
-        |event| matches!(event, EventMsg::TurnStarted(_)))).await.is_err());
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(400),
+            wait_for_event(&harness.test().codex, |event| matches!(
+                event,
+                EventMsg::TurnStarted(_)
+            ))
+        )
+        .await
+        .is_err()
+    );
     assert_eq!(log.requests().len(), 2);
     submit_unified_exec_turn(harness.test(), "user-resumes", PermissionProfile::Disabled).await?;
     finished(&harness).await;
     assert_eq!(log.requests().len(), 3);
-    assert_eq!(log.last_request().unwrap().body_json()["input"].to_string().matches("<command_completion>").count(), 1);
+    assert_eq!(
+        log.last_request().unwrap().body_json()["input"]
+            .to_string()
+            .matches("<command_completion>")
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -172,13 +271,34 @@ async fn background_idle_continuation_interrupt_suppresses_until_next_user_turn(
 async fn background_idle_continuation_off_retains_parked_turn_and_instruction_text() -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = idle_harness(/*enabled*/ false, Arc::default()).await?;
-    let log = mount_sse_sequence(harness.server(), vec![launch_response(1), summary_response(), done_response()]).await;
+    let log = mount_sse_sequence(
+        harness.server(),
+        vec![launch_response(1), summary_response(), done_response()],
+    )
+    .await;
     launch(&harness, ModeKind::Default).await?;
-    wait_for_event(&harness.test().codex, |event| matches!(event, EventMsg::AgentMessage(message) if message.message == "waiting")).await;
-    assert!(tokio::time::timeout(Duration::from_millis(400), wait_for_event(&harness.test().codex,
-        |event| matches!(event, EventMsg::TurnComplete(_)))).await.is_err());
+    wait_for_event(
+        &harness.test().codex,
+        |event| matches!(event, EventMsg::AgentMessage(message) if message.message == "waiting"),
+    )
+    .await;
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(400),
+            wait_for_event(&harness.test().codex, |event| matches!(
+                event,
+                EventMsg::TurnComplete(_)
+            ))
+        )
+        .await
+        .is_err()
+    );
     assert_eq!(log.requests().len(), 2);
-    assert!(log.last_request().unwrap().body_json()["tools"].to_string().contains("The runtime keeps the turn open"));
+    assert!(
+        log.last_request().unwrap().body_json()["tools"]
+            .to_string()
+            .contains("The runtime keeps the turn open")
+    );
     harness.write_file("release-0", "go").await?;
     finished(&harness).await;
     assert_eq!(log.requests().len(), 3);

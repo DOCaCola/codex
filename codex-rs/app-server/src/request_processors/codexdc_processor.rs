@@ -22,12 +22,18 @@ impl CodexdcRequestProcessor {
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
         let (thread_id, _) = threads.load_thread(&params.thread_id).await?;
         let state = threads.thread_state_manager.thread_state(thread_id).await;
-        let sender = state.lock().await.listener_command_tx().ok_or_else(||
-            crate::error_code::invalid_request("thread background-work listener is unavailable"))?;
+        let sender = state.lock().await.listener_command_tx().ok_or_else(|| {
+            crate::error_code::invalid_request("thread background-work listener is unavailable")
+        })?;
         let (reply, result) = tokio::sync::oneshot::channel();
-        sender.send(crate::thread_state::ThreadListenerCommand::ReadBackgroundWork { reply })
-            .map_err(|_| crate::error_code::internal_error("thread background-work listener closed"))?;
-        let snapshot = result.await.map_err(|_| crate::error_code::internal_error("thread background-work read cancelled"))?;
+        sender
+            .send(crate::thread_state::ThreadListenerCommand::ReadBackgroundWork { reply })
+            .map_err(|_| {
+                crate::error_code::internal_error("thread background-work listener closed")
+            })?;
+        let snapshot = result.await.map_err(|_| {
+            crate::error_code::internal_error("thread background-work read cancelled")
+        })?;
         Ok(Some(snapshot.into()))
     }
 
@@ -51,7 +57,10 @@ impl CodexdcRequestProcessor {
             CodexdcCapabilitiesResponse {
                 fork: "codexdc".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
-                protocol: BTreeMap::from([("backgroundJobs".to_string(), 1), ("backgroundWork".to_string(), 1)]),
+                protocol: BTreeMap::from([
+                    ("backgroundJobs".to_string(), 1),
+                    ("backgroundWork".to_string(), 1),
+                ]),
                 features: CodexdcFeatures {
                     background_jobs: config
                         .features

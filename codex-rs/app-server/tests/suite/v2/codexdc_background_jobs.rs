@@ -10,7 +10,8 @@ use core_test_support::test_target_os;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::time::{Duration, timeout};
+use tokio::time::Duration;
+use tokio::time::timeout;
 
 async fn list(
     server: &mut TestAppServer,

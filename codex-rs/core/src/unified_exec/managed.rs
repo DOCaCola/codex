@@ -31,10 +31,10 @@ use crate::tools::context::ExecCommandToolOutput;
 mod delivery;
 #[path = "managed_listing.rs"]
 mod listing;
-#[path = "managed_registry.rs"]
-mod registry;
 #[path = "managed_queue_delivery.rs"]
 mod queue_delivery;
+#[path = "managed_registry.rs"]
+mod registry;
 
 #[derive(Clone, Copy, Debug, Deserialize, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

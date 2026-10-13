@@ -7075,10 +7075,13 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         background_jobs: crate::unified_exec::background_policy::BackgroundJobPolicy::capture(
-            &config, &session_configuration.session_source,
+            &config,
+            &session_configuration.session_source,
         ),
         background_continuation: super::background_continuation::BackgroundContinuation::new(
-            config.features.enabled(Feature::BackgroundJobsIdleContinuation),
+            config
+                .features
+                .enabled(Feature::BackgroundJobsIdleContinuation),
         ),
 
         isolation: codex_extension_api::SessionIsolation::Inherit,
@@ -9355,10 +9358,13 @@ where
         managed_network_proxy_refresh_lock: Semaphore::new(/*permits*/ 1),
         features: config.features.clone(),
         background_jobs: crate::unified_exec::background_policy::BackgroundJobPolicy::capture(
-            &config, &session_configuration.session_source,
+            &config,
+            &session_configuration.session_source,
         ),
         background_continuation: super::background_continuation::BackgroundContinuation::new(
-            config.features.enabled(Feature::BackgroundJobsIdleContinuation),
+            config
+                .features
+                .enabled(Feature::BackgroundJobsIdleContinuation),
         ),
 
         isolation: codex_extension_api::SessionIsolation::Inherit,

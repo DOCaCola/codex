@@ -290,9 +290,10 @@ impl Session {
         input: Vec<TurnInput>,
         task: T,
     ) {
-        let background_reservation = turn_context
-            .extension_data
-            .get::<crate::session::background_continuation::BackgroundWakeReservation>();
+        let background_reservation =
+            turn_context
+                .extension_data
+                .get::<crate::session::background_continuation::BackgroundWakeReservation>();
         self.activate_plugin_selection(&turn_context).await;
         // Inherited or recovered roots are applied before task start. Otherwise this
         // task owns its turn, including background work. Later mail cannot change it.
@@ -576,7 +577,9 @@ impl Session {
     }
 
     pub async fn abort_all_tasks(self: &Arc<Self>, reason: TurnAbortReason) {
-        let _background_interrupt = self.begin_background_interrupt(Some(&reason), /*origin*/ None).await;
+        let _background_interrupt = self
+            .begin_background_interrupt(Some(&reason), /*origin*/ None)
+            .await;
         let mut aborted_turn = false;
         let mut active_turn_to_clear = None;
         if let Some(mut active_turn) = self.take_active_turn(&reason).await {
@@ -612,7 +615,9 @@ impl Session {
         reason: TurnAbortReason,
         error: Option<ErrorEvent>,
     ) -> bool {
-        let _background_interrupt = self.begin_background_interrupt(Some(&reason), Some(turn_id)).await;
+        let _background_interrupt = self
+            .begin_background_interrupt(Some(&reason), Some(turn_id))
+            .await;
         let active_turn = {
             let mut active = self.active_turn.lock().await;
             if active
@@ -645,7 +650,15 @@ impl Session {
         reason: TurnAbortReason,
         error: Option<ErrorEvent>,
     ) {
-        let _background_interrupt = self.begin_background_interrupt(Some(&reason), active_turn.task.as_ref().map(|task| task.turn_context.sub_id.as_str())).await;
+        let _background_interrupt = self
+            .begin_background_interrupt(
+                Some(&reason),
+                active_turn
+                    .task
+                    .as_ref()
+                    .map(|task| task.turn_context.sub_id.as_str()),
+            )
+            .await;
         let task = active_turn.task.take();
         if let Some(task) = task {
             self.handle_task_abort(task, reason.clone(), &active_turn.turn_state, error)
@@ -691,7 +704,9 @@ impl Session {
             .turn_metadata_state
             .cancel_git_enrichment_task();
 
-        let _background_interrupt = self.begin_background_interrupt(abort_reason.as_ref(), Some(&turn_context.sub_id)).await;
+        let _background_interrupt = self
+            .begin_background_interrupt(abort_reason.as_ref(), Some(&turn_context.sub_id))
+            .await;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             active.as_mut().and_then(|active_turn| {

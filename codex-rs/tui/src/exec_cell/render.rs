@@ -293,7 +293,8 @@ impl HistoryCell for ExecCell {
     }
 
     fn transcript_animation_tick(&self) -> Option<u64> {
-        (self.is_active() && !self.job_timers.is_empty()).then(|| chrono::Utc::now().timestamp() as u64)
+        (self.is_active() && !self.job_timers.is_empty())
+            .then(|| chrono::Utc::now().timestamp() as u64)
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
@@ -346,11 +347,15 @@ impl ExecCell {
                 .parsed
                 .iter()
                 .all(|parsed| matches!(parsed, ParsedCommand::Read { .. }));
-            let group_len = if reads_only && exit_code.is_none() && !self.job_timers.contains_key(&call.call_id) {
+            let group_len = if reads_only
+                && exit_code.is_none()
+                && !self.job_timers.contains_key(&call.call_id)
+            {
                 1 + remaining
                     .iter()
                     .take_while(|next| {
-                        !self.job_timers.contains_key(&next.call_id) && nonzero_exit(next).is_none()
+                        !self.job_timers.contains_key(&next.call_id)
+                            && nonzero_exit(next).is_none()
                             && next
                                 .parsed
                                 .iter()
@@ -429,7 +434,9 @@ impl ExecCell {
                         },
                     );
                 }
-                if index + 1 == line_count && let Some(timer) = self.job_timers.get(&call.call_id) {
+                if index + 1 == line_count
+                    && let Some(timer) = self.job_timers.get(&call.call_id)
+                {
                     line.push(format!(" {}", timer.label()).dim());
                 }
                 let line = Line::from(line);
@@ -486,7 +493,11 @@ impl ExecCell {
         } else {
             Line::from(vec![bullet.clone(), " ".into(), title.bold(), " ".into()])
         };
-        let timer = self.job_timers.get(&call.call_id).map(|timer| format!(" {}", timer.label())).unwrap_or_default();
+        let timer = self
+            .job_timers
+            .get(&call.call_id)
+            .map(|timer| format!(" {}", timer.label()))
+            .unwrap_or_default();
         let header_prefix_width = header_line.width();
         let mut header = HyperlinkLine::from(header_line.clone());
 
@@ -526,7 +537,9 @@ impl ExecCell {
                     Line::from(layout.command_continuation.subsequent_prefix);
                 let mut line = line_to_static(&first_segment.line);
                 line.spans.splice(0..0, header_line.spans.clone());
-                if !timer.is_empty() { line.push_span(timer.clone().dim()); }
+                if !timer.is_empty() {
+                    line.push_span(timer.clone().dim());
+                }
                 header = HyperlinkLine::new(line);
                 header.source = Some(header_source);
             }

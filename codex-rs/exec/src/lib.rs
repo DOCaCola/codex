@@ -5,8 +5,8 @@
 #![recursion_limit = "256"]
 #![deny(clippy::print_stdout)]
 
-mod cli;
 mod background_wait;
+mod cli;
 mod daybreak;
 mod event_processor;
 mod event_processor_with_human_output;
@@ -157,6 +157,7 @@ use std::io::IsTerminal;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
 use supports_color::Stream;
 use tokio::sync::mpsc;
 use tracing::Instrument;
@@ -1197,7 +1198,9 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         }
     });
 
-    let background_policy = if !config.features.enabled(Feature::BackgroundJobsIdleContinuation)
+    let background_policy = if !config
+        .features
+        .enabled(Feature::BackgroundJobsIdleContinuation)
         || matches!(&initial_operation, InitialOperation::ForkOnly)
     {
         None
@@ -1378,7 +1381,9 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         let Some(server_event) = server_event else {
             if background.enabled && !background.finished() {
                 background.interrupt();
-                event_processor.process_warning("app-server ended before background continuations completed".into());
+                event_processor.process_warning(
+                    "app-server ended before background continuations completed".into(),
+                );
             }
             break;
         };
@@ -1390,11 +1395,18 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
             InProcessServerEvent::ServerNotification(notification) => {
                 let mut notification = *notification;
                 if let ServerNotification::CodexdcBackgroundWorkChanged(state) = &notification
-                    && background.enabled && state.thread_id == primary_thread_id_for_requests
+                    && background.enabled
+                    && state.thread_id == primary_thread_id_for_requests
                 {
                     background.observe(state);
                     if background.finished() {
-                        if let Err(error) = request_shutdown(&client, &mut request_ids, &primary_thread_id_for_requests).await {
+                        if let Err(error) = request_shutdown(
+                            &client,
+                            &mut request_ids,
+                            &primary_thread_id_for_requests,
+                        )
+                        .await
+                        {
                             warn!("thread/unsubscribe failed during shutdown: {error}");
                         }
                         break;
@@ -1438,7 +1450,9 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
 
                     let completed = matches!(&notification, ServerNotification::TurnCompleted(done)
                         if done.turn.status != codex_app_server_protocol::TurnStatus::InProgress);
-                    if completed { background.complete(error_seen); }
+                    if completed {
+                        background.complete(error_seen);
+                    }
                     let status = event_processor.process_server_notification(notification);
                     if completed && background.enabled && !background.finished() {
                         let result = {
@@ -1451,11 +1465,24 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                             }
                         };
                         let result = if result.is_none() && !interrupt_channel_open {
-                            Some(background.read(&client, &mut request_ids, &primary_thread_id_for_requests).await)
-                        } else { result };
+                            Some(
+                                background
+                                    .read(
+                                        &client,
+                                        &mut request_ids,
+                                        &primary_thread_id_for_requests,
+                                    )
+                                    .await,
+                            )
+                        } else {
+                            result
+                        };
                         match result {
-                            Some(Ok(())) => {},
-                            Some(Err(error)) => { background.expire(); event_processor.process_warning(error); },
+                            Some(Ok(())) => {}
+                            Some(Err(error)) => {
+                                background.expire();
+                                event_processor.process_warning(error);
+                            }
                             None => background.interrupt(),
                         }
                     }

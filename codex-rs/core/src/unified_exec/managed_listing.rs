@@ -16,7 +16,9 @@ impl UnifiedExecProcessManager {
         self.managed.changed.notify_waiters();
     }
 
-    pub(crate) async fn background_job_timers(&self) -> Vec<crate::background_jobs::BackgroundJobTimer> {
+    pub(crate) async fn background_job_timers(
+        &self,
+    ) -> Vec<crate::background_jobs::BackgroundJobTimer> {
         use super::ExecutionMode;
         use super::metadata::DeadlineSource;
         let mut timers = Vec::new();
@@ -25,19 +27,29 @@ impl UnifiedExecProcessManager {
                 continue;
             }
             let metadata = job.metadata.lock().await;
-            if !matches!(metadata.mode, ExecutionMode::Auto | ExecutionMode::Background) {
+            if !matches!(
+                metadata.mode,
+                ExecutionMode::Auto | ExecutionMode::Background
+            ) {
                 continue;
             }
             timers.push(crate::background_jobs::BackgroundJobTimer {
                 item_id: metadata.item_id.clone(),
                 process_id: id.to_string(),
                 started_at_ms: metadata.started_at.timestamp_millis(),
-                explicit_timeout_seconds: (metadata.deadline_source == Some(DeadlineSource::Explicit))
-                    .then_some(metadata.explicit_timeout_ms).flatten().map(|ms| (ms / 1000) as u64),
-                duration_seconds: metadata.completed_at.map(|_| (metadata.duration_ms / 1000) as u64),
+                explicit_timeout_seconds: (metadata.deadline_source
+                    == Some(DeadlineSource::Explicit))
+                .then_some(metadata.explicit_timeout_ms)
+                .flatten()
+                .map(|ms| (ms / 1000) as u64),
+                duration_seconds: metadata
+                    .completed_at
+                    .map(|_| (metadata.duration_ms / 1000) as u64),
             });
         }
-        timers.sort_by(|left, right| (left.started_at_ms, &left.item_id).cmp(&(right.started_at_ms, &right.item_id)));
+        timers.sort_by(|left, right| {
+            (left.started_at_ms, &left.item_id).cmp(&(right.started_at_ms, &right.item_id))
+        });
         timers
     }
 

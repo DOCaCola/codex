@@ -5,7 +5,10 @@ use serde_json::json;
 
 /// Resolve finite dependencies before starting any command. A dependency stays
 /// inside its original tool call, preserving output ownership and hook ordering.
-pub(super) fn prepare_dependencies(commands: &mut [CommandItem], background_jobs: bool) -> Result<u8, FunctionCallError> {
+pub(super) fn prepare_dependencies(
+    commands: &mut [CommandItem],
+    background_jobs: bool,
+) -> Result<u8, FunctionCallError> {
     let last_step = commands
         .iter()
         .map(|command| command.step)

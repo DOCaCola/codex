@@ -32,7 +32,9 @@ impl UnifiedExecInteractionCell {
 }
 
 impl HistoryCell for UnifiedExecInteractionCell {
-    fn has_stable_transcript_height(&self) -> bool { self.timer.as_ref().is_none_or(|timer| !timer.present()) }
+    fn has_stable_transcript_height(&self) -> bool {
+        self.timer.as_ref().is_none_or(|timer| !timer.present())
+    }
 
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
         Vec::new()
@@ -101,7 +103,9 @@ impl HistoryCell for UnifiedExecInteractionCell {
             } else {
                 out.push(Line::from("Waited for background terminal"));
             }
-            if let Some(label) = self.timer.as_ref().and_then(ProcessJobTimer::label) && let Some(line) = out.first_mut() {
+            if let Some(label) = self.timer.as_ref().and_then(ProcessJobTimer::label)
+                && let Some(line) = out.first_mut()
+            {
                 line.push_span(format!(" {label}"));
             }
             return out;
@@ -118,7 +122,9 @@ impl HistoryCell for UnifiedExecInteractionCell {
         } else {
             out.push(Line::from("Interacted with background terminal"));
         }
-        if let Some(label) = self.timer.as_ref().and_then(ProcessJobTimer::label) && let Some(line) = out.first_mut() {
+        if let Some(label) = self.timer.as_ref().and_then(ProcessJobTimer::label)
+            && let Some(line) = out.first_mut()
+        {
             line.push_span(format!(" {label}"));
         }
         out.extend(raw_lines_from_source(&self.stdin));
@@ -177,7 +183,12 @@ impl HistoryCell for UnifiedExecProcessesCell {
             if shown >= max_processes {
                 break;
             }
-            let timer = process.timer.as_ref().and_then(ProcessJobTimer::label).map(|label| format!(" {label}")).unwrap_or_default();
+            let timer = process
+                .timer
+                .as_ref()
+                .and_then(ProcessJobTimer::label)
+                .map(|label| format!(" {label}"))
+                .unwrap_or_default();
             let command = &process.command_display;
             let (snippet, snippet_truncated) = {
                 let max_graphemes = 80;
@@ -197,7 +208,8 @@ impl HistoryCell for UnifiedExecProcessesCell {
                 shown += 1;
                 continue;
             }
-            let (timer, _, _) = take_prefix_by_width(&timer, wrap_width.saturating_sub(prefix_width));
+            let (timer, _, _) =
+                take_prefix_by_width(&timer, wrap_width.saturating_sub(prefix_width));
             let timer = timer.to_owned();
             let budget = wrap_width.saturating_sub(prefix_width + display_width(&timer));
             let mut needs_suffix = snippet_truncated;
@@ -223,7 +235,11 @@ impl HistoryCell for UnifiedExecProcessesCell {
                 out.push(vec![prefix.dim(), truncated.fg(accent_color())].into());
             }
 
-            if !timer.is_empty() && let Some(line) = out.last_mut() { line.push_span(timer.dim()); }
+            if !timer.is_empty()
+                && let Some(line) = out.last_mut()
+            {
+                line.push_span(timer.dim());
+            }
 
             let chunk_prefix_first = "    ↳ ";
             let chunk_prefix_next = "      ";
@@ -269,7 +285,9 @@ impl HistoryCell for UnifiedExecProcessesCell {
     }
 
     fn has_stable_transcript_height(&self) -> bool {
-        self.processes.iter().all(|process| process.timer.as_ref().is_none_or(|timer| !timer.present()))
+        self.processes
+            .iter()
+            .all(|process| process.timer.as_ref().is_none_or(|timer| !timer.present()))
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {

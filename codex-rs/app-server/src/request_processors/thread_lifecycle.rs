@@ -1,5 +1,5 @@
-use super::*;
 use super::thread_unloading::UnloadingState;
+use super::*;
 use crate::extensions::send_thread_warning;
 use codex_app_server_protocol::ThreadQueueChangedNotification;
 use codex_extension_api::ThreadIdleCause;

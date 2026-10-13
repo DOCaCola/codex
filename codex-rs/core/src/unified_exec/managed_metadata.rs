@@ -90,13 +90,12 @@ impl JobMetadata {
             } else {
                 Utc::now()
             },
-            deadline_source: (context.session.background_jobs.enabled && deadline.is_some()).then_some(
-                if execution.explicit_timeout.is_some() {
+            deadline_source: (context.session.background_jobs.enabled && deadline.is_some())
+                .then_some(if execution.explicit_timeout.is_some() {
                     DeadlineSource::Explicit
                 } else {
                     DeadlineSource::HostDefault
-                }
-            ),
+                }),
             deadline_origin: (context.session.background_jobs.enabled && deadline.is_some())
                 .then_some("process_start"),
             explicit_timeout_ms: execution

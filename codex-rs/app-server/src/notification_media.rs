@@ -120,6 +120,7 @@ pub(crate) fn without_notification_media(notification: ServerNotification) -> Se
         | ServerNotification::GuardianWarning(_)
         | ServerNotification::DeprecationNotice(_)
         | ServerNotification::ConfigWarning(_)
+        | ServerNotification::CodexdcBackgroundWorkChanged(_)
         | ServerNotification::FuzzyFileSearchSessionUpdated(_)
         | ServerNotification::FuzzyFileSearchSessionCompleted(_)
         | ServerNotification::ThreadRealtimeStarted(_)
