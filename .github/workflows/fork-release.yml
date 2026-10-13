@@ -1,0 +1,116 @@
+name: Fork release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "doca-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'DOCaCola/codex'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            suffix: .exe
+            jobs: 4
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            suffix: ""
+            jobs: 2
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: ${{ matrix.jobs }}
+      LIBSQLITE3_FLAGS: SQLITE_DISABLE_INTRINSIC
+      CODEX_REPO_ROOT: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Read source pins and validate release tag
+        shell: python
+        run: |
+          import json, os, pathlib, re, tomllib
+          root = pathlib.Path(".")
+          pin = json.loads((root / "third_party/hpatch/source.json").read_text())
+          cargo = tomllib.loads((root / "codex-rs/Cargo.toml").read_text())
+          version = cargo["workspace"]["package"]["version"]
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:-alpha\.\d+)?-doca(?:\.\d+)?", version):
+              raise SystemExit("Expected a stable or alpha fork workspace version")
+          if os.environ["GITHUB_REF_TYPE"] == "tag":
+              if os.environ["GITHUB_REF_NAME"] != "doca-v" + version:
+                  raise SystemExit("Release tag must match workspace version")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write("HPATCH_GO_VERSION=" + pin["goVersion"] + "\n")
+              env.write("STABLE_GIT_COMMIT=" + os.environ["GITHUB_SHA"] + "\n")
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: ${{ env.HPATCH_GO_VERSION }}
+          cache: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: ./.github/actions/setup-msvc-env
+        if: runner.os == 'Windows'
+        with:
+          target: x86_64-pc-windows-msvc
+      - name: Build complete unsigned package
+        shell: bash
+        run: |
+          python scripts/build_fork_release.py --cache-dir "$RUNNER_TEMP/fork-build" --output-dir dist
+      - name: Smoke test packaged executables
+        shell: bash
+        run: |
+          python scripts/smoke_fork_release.py dist/package
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: codex-${{ matrix.target }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          retention-days: 7
+          if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/doca-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: codex-*
+          path: dist
+      - name: Combine packages and checksums
+        shell: bash
+        run: |
+          mkdir release
+          cp dist/*/*.zip dist/*/*.tar.gz release/
+          cat dist/*/SHA256SUMS > release/SHA256SUMS
+          cd release
+          sha256sum -c SHA256SUMS
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" release/* --verify-tag --draft \
+            --title "$RELEASE_TAG" \
+            --notes "Windows x64 and macOS Apple Silicon fork builds, without publisher signing or notarization. Extract the complete archive and run bin/codex.exe (Windows) or bin/codex (macOS). Includes the pinned hpatch companion and redistribution notices. Voice components are not included."

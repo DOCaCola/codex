@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/DOCaCola/hpatch.git",
+  "commit": "58679f3ee778204070c8b7d2e22f0ed7d40d7efb",
+  "upstreamRepository": "https://github.com/yusing/mekugi.git",
+  "upstreamCommit": "ebf7d6fb57e091b0d55416305897884509bd18ca",
+  "goVersion": "1.26.5"
+}

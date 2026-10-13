@@ -1,9 +1,4 @@
-[build]
-# Keep Cargo build artifacts on C: even when commands are launched from the
-# repository root with `--manifest-path codex-rs/Cargo.toml`.
-target-dir = "C:\\temp\\codex-target-0.117"
 [env]
 # Ask compatible jemalloc processes for transparent huge pages.
-# Cargo passes this to all child processes, including tests and cargo run.
 # An explicit MALLOC_CONF (even empty) keeps precedence.
 MALLOC_CONF = { value = "thp:always", force = false }

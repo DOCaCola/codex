@@ -159,21 +159,6 @@ if [[ "$code_mode_host_bin_provided" == "false" && -f "$code_mode_host_bin" ]]; 
 fi
 
 hpatch_bin="${entrypoint_dir%/}/hpatch${exe_suffix}"
-if [[ "$hpatch_bin_provided" == "false" && ! -f "$hpatch_bin" ]]; then
-  repo_root="${GITHUB_WORKSPACE:-}"
-  if [[ -z "$repo_root" ]]; then
-    repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-  fi
-  hpatch_source_dir="${HPATCH_SOURCE_DIR:-$repo_root/../hpatch}"
-  if [[ ! -f "$hpatch_source_dir/go.mod" ]]; then
-    echo "hpatch source not found at $hpatch_source_dir; pass --hpatch-bin or set HPATCH_SOURCE_DIR" >&2
-    exit 1
-  fi
-  bash "$repo_root/scripts/build-hpatch-companion.sh" \
-    --source "$hpatch_source_dir" \
-    --target "$target" \
-    --output "$hpatch_bin"
-fi
 if [[ "$hpatch_bin_provided" == "false" ]]; then
   resource_args+=(--hpatch-bin "$hpatch_bin")
 fi

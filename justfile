@@ -2,11 +2,10 @@ set working-directory := "codex-rs"
 set positional-arguments
 export CODEX_REPO_ROOT := justfile_directory()
 export JUST_SHELL := justfile_directory() / "scripts/just-shell.py"
-
 set shell := ["python3", "-c", 'import os, runpy; runpy.run_path(os.environ["JUST_SHELL"], run_name="__main__")']
 set windows-shell := ["python", "-c", 'import os, runpy; runpy.run_path(os.environ["JUST_SHELL"], run_name="__main__")']
 
-rust_min_stack := "8388608"
+rust_min_stack := "8388608" # 8 MiB
 python := if os_family() == "windows" { "python" } else { "python3" }
 
 # Display help
@@ -14,9 +13,7 @@ help:
     just -l
 
 # `codex`
-
 alias c := codex
-
 codex *args:
     cargo run --bin codex -- {args}
 
@@ -85,7 +82,6 @@ install:
 #
 # Run `cargo install --locked cargo-nextest` if you don't have it installed.
 # Prefer this for routine local runs. Workspace crate features are banned, so
-
 # there should be no need to add `--all-features`.
 [unix]
 test *args:
@@ -96,7 +92,6 @@ test *args:
     $env:RUST_MIN_STACK = "{{ rust_min_stack }}"; $env:NEXTEST_PROFILE = "local"; cargo nextest run --no-fail-fast @($args | Select-Object -Skip 1)
 
 # Run from the repository root so scripts that resolve paths from `cwd` see
-
 # the same layout they use in GitHub Actions.
 [no-cd]
 test-github-scripts:
@@ -125,7 +120,6 @@ bench-e2e-smoke:
 
 # Build and run Codex from source using Bazel.
 # On Unix, use `[no-cd]` and `--run_under="cd $PWD &&"` to ensure Bazel runs
-
 # the command in the current working directory.
 [no-cd]
 [unix]
@@ -174,15 +168,6 @@ bazel-argument-comment-lint:
 
 build-for-release:
     bazel build //codex-rs/cli:release_binaries
-
-# Build the CLI binary outside the repo tree and copy only output/codex.exe.
-[no-cd]
-sync-output-exe *args:
-    {{ justfile_directory() }}/scripts/sync-output-exe.sh "$@"
-
-[no-cd]
-clean-output-build-cache:
-    {{ justfile_directory() }}/scripts/clean-output-build-cache.sh
 
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:

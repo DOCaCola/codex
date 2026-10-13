@@ -5,6 +5,7 @@ import shutil
 import stat
 from pathlib import Path
 
+from .hpatch import stage_hpatch_notices
 from .targets import PackageInputs
 from .targets import PackageVariant
 from .targets import TargetSpec
@@ -38,6 +39,7 @@ def build_package_dir(
     spec: TargetSpec,
     inputs: PackageInputs,
 ) -> None:
+    stage_hpatch_notices(inputs.hpatch_bin, package_dir, spec.target)
     bin_dir = package_dir / "bin"
     resources_dir = package_dir / "codex-resources"
     path_dir = package_dir / "codex-path"

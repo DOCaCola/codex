@@ -33,3 +33,4 @@ Microsoft provides the following license terms and redistribution information:
 
 - [Visual C++ v14 Redistributable and Runtime license terms](https://visualstudio.microsoft.com/license-terms/vs2026-ga-visualcpp-v14-redist-runtime/)
 - [Visual C++ Redistributable downloads and support information](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)
+- [Visual Studio 2026 redistribution information](https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution)

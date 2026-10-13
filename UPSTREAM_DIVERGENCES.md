@@ -1,4 +1,4 @@
-# Temporary upstream divergences
+# Fork maintenance notes
 
 These fork-only changes should be removed once upstream provides the same or equivalent behavior.
 Review every entry when merging or rebasing from upstream; prefer the upstream implementation over
@@ -52,8 +52,6 @@ maintaining parallel logic or compatibility fallbacks.
 - Lifecycle: reuse the active turn and existing cleanup/interrupt behavior.
   No desktop changes or new app-server wire events; no restart-durable jobs.
   A live turn waiting for a command is intentionally still shown as active.
-- Deferred PostToolUse hooks use the job's captured originating step and turn
-  context, including when completion is consumed in a later turn.
 - The v0.159.0 merge uses upstream's shared output buffers and sandbox
   attribution while retaining the fork's completion ownership and result cache.
 - Remove when: upstream provides equivalent completion consumption, runtime
@@ -122,6 +120,24 @@ maintaining parallel logic or compatibility fallbacks.
   attachments remain subject to ownership validation. The v0.155.0 merge had dropped the
   default-environment check while retaining only the explicit-selection check.
 
+## Maintained fork features
+
+These are intentional features to review on every upstream update, rather than
+session notes or temporary implementation plans:
+
+- Windows Git Bash shell selection and execution integration.
+- `command_stack` grammar, bounded dependency scheduling and managed completion.
+- Experimental hpatch translation through the native apply-patch permission path;
+  its independently maintained source, toolchain and license contract is in
+  `third_party/hpatch/README.md` and `source.json`.
+- Windows x64 fork packaging, unsigned draft releases and the `fast-release` profile.
+  Only `fork-release.yml` is enabled; do not restore upstream private-runner,
+  signing, or registry workflows without adapting and validating them first.
+
+Publication history is based on `rust-v0.156.1` plus the reviewed net fork changes.
+Old SDK executables, personal Cargo cache overrides, and temporary integration
+notes are excluded. The original local development branches retain that history.
+
 ## Stable v0.159.2 integration
 
 - The v0.159.2 merge adopts upstream's shared background process constructor,
@@ -146,6 +162,34 @@ maintaining parallel logic or compatibility fallbacks.
 - Remote MCP launches adopt upstream preservation of Windows system and temporary
   directory variables alongside explicit remote environment variables. The fork
   notification path and temporary Windows daemon default remain unchanged.
+
+## Stable v0.162.0 integration
+
+- Command batching uses upstream stable environment declarations, current shell
+  invocation handling, and environment requests that bind thread capability roots.
+- hpatch preserves its translation working directory through upstream patch
+  verification; line ending handling follows the current upstream patch engine.
+- The fork owner-configuration guard compares caller requests against attached
+  selections while retaining independent task-root updates.
+- The latest-only local-release output change remains in place.
+- On 2026-10-10, the upstream daemon startup default was restored on Windows after
+  installed v0.162.0-doca runtime probes confirmed direct commands, PowerShell,
+  Bash, MCP startup, and a session hook had no console when launched from a
+  detached app-server. The three upstream console regressions also passed,
+  including the production sandbox-refresh launcher with a disposable helper.
+  Sandbox provisioning itself was not exercised. The temporary daemon startup
+  fixture override and local reversion note were removed.
+
+## Stable v0.162.1 integration
+
+- Daemon feature compatibility checks follow upstream: only explicit CLI feature
+  overrides request a shared-service restart; daemon defaults and file settings
+  remain authoritative until restart, subject to managed requirements.
+- Multiline async questions preserve line breaks and links using upstream rendering
+  and snapshot coverage. The restored daemon startup default remains enabled on
+  every platform.
+- The fork release smoke check expects daemon_auto_start to be true on every
+  platform, matching the restored upstream default.
 
 ## CodexDC app-server capability discovery
 
@@ -349,30 +393,3 @@ maintaining parallel logic or compatibility fallbacks.
   prior rendering and snapshots. Local code: tui/background_job_timer.rs,
   tui/chatwidget/background_job_labels.rs, core/unified_exec/managed_listing.rs.
 - Remove when: upstream provides equivalent captured managed-job timing labels.
-## Stable v0.162.0 integration
-
-- Command batching uses upstream stable environment declarations, current shell
-  invocation handling, and environment requests that bind thread capability roots.
-- hpatch preserves its translation working directory through upstream patch
-  verification; line ending handling follows the current upstream patch engine.
-- The fork owner-configuration guard compares caller requests against attached
-  selections while retaining independent task-root updates.
-- The latest-only local-release output change remains in place.
-- On 2026-10-10, the upstream daemon startup default was restored on Windows after
-  installed v0.162.0-doca runtime probes confirmed direct commands, PowerShell,
-  Bash, MCP startup, and a session hook had no console when launched from a
-  detached app-server. The three upstream console regressions also passed,
-  including the production sandbox-refresh launcher with a disposable helper.
-  Sandbox provisioning itself was not exercised. The temporary daemon startup
-  fixture override and local reversion note were removed.
-
-## Stable v0.162.1 integration
-
-- Daemon feature compatibility checks follow upstream: only explicit CLI feature
-  overrides request a shared-service restart; daemon defaults and file settings
-  remain authoritative until restart, subject to managed requirements.
-- Multiline async questions preserve line breaks and links using upstream rendering
-  and snapshot coverage. The restored daemon startup default remains enabled on
-  every platform.
-- When preparing the public release checkout, update its fork release smoke check
-  to expect daemon_auto_start to be true on Windows as well as other platforms.

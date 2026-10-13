@@ -739,7 +739,6 @@ function Test-PackageContentsAreComplete {
         "codex-package.json",
         "bin\codex.exe",
         "bin\codex-code-mode-host.exe",
-        "bin\hpatch.exe",
         "codex-path\rg.exe",
         "codex-resources\codex-command-runner.exe",
         "codex-resources\codex-windows-sandbox-setup.exe"

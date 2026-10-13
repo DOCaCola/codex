@@ -10,6 +10,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from build_winget_package import prepare_winget_package
+from codex_package.test_hpatch import fixture_hpatch
 from codex_package.layout import build_package_dir
 from codex_package.layout import validate_package_dir
 from codex_package.targets import PACKAGE_VARIANTS
@@ -26,7 +27,9 @@ class PackageLayoutTest(unittest.TestCase):
             inputs = PackageInputs(
                 entrypoint_bin=touch_executable(root / "codex.exe"),
                 code_mode_host_bin=touch_executable(root / "codex-code-mode-host.exe"),
-                hpatch_bin=touch_executable(root / "hpatch.exe"),
+                hpatch_bin=fixture_hpatch(
+                    root / "hpatch.exe", "x86_64-pc-windows-msvc"
+                ),
                 rg_bin=touch_executable(root / "rg.exe"),
                 zsh_bin=None,
                 bwrap_bin=None,
@@ -53,6 +56,22 @@ class PackageLayoutTest(unittest.TestCase):
             )
 
             self.assertTrue((package_dir / "bin" / "hpatch.exe").is_file())
+            for name in (
+                "LICENSE",
+                "NOTICE",
+                "licenses/hpatch/dependency-LICENSE",
+                "licenses/hpatch/provenance.json",
+            ):
+                self.assertTrue((package_dir / name).is_file(), name)
+            manifest = json.loads(
+                (package_dir / "licenses/hpatch/provenance.json").read_text()
+            )
+            self.assertEqual(
+                manifest["sha256"],
+                hashlib.sha256(
+                    (package_dir / "bin/hpatch.exe").read_bytes()
+                ).hexdigest(),
+            )
 
     def test_winget_preserves_signed_files_and_voice_hashes(self) -> None:
         for target in ("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"):
@@ -140,7 +159,7 @@ class PackageLayoutTest(unittest.TestCase):
                             code_mode_host_bin=touch_executable(
                                 root / "codex-code-mode-host"
                             ),
-                            hpatch_bin=touch_executable(root / "hpatch"),
+                            hpatch_bin=fixture_hpatch(root / "hpatch", target),
                             rg_bin=rg_bin,
                             zsh_bin=zsh_bin,
                             bwrap_bin=None,
@@ -178,7 +197,7 @@ class PackageLayoutTest(unittest.TestCase):
             inputs = PackageInputs(
                 entrypoint_bin=touch_executable(root / "codex-app-server"),
                 code_mode_host_bin=touch_executable(root / "codex-code-mode-host"),
-                hpatch_bin=touch_executable(root / "hpatch"),
+                hpatch_bin=fixture_hpatch(root / "hpatch", "x86_64-unknown-linux-musl"),
                 rg_bin=touch_executable(root / "rg"),
                 zsh_bin=None,
                 bwrap_bin=touch_executable(root / "bwrap"),

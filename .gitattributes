@@ -5,3 +5,6 @@ scripts/local-release/*.sh text eol=lf
 scripts/local-release/*.bat text eol=crlf
 # SQLx hashes the checkout bytes. Match the official Windows release's migrations.
 codex-rs/state/**/*.sql text eol=crlf
+
+# Buildifier must see LF in Starlark multiline string continuations.
+*.bzl text eol=lf

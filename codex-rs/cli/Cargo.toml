@@ -32,10 +32,10 @@ codex-app-server = { workspace = true }
 codex-app-server-daemon = { workspace = true }
 codex-app-server-protocol = { workspace = true }
 codex-app-server-test-client = { workspace = true }
-codex-api = { workspace = true }
 codex-arg0 = { workspace = true }
-codex-aws-auth = { workspace = true }
 codex-build-info = { workspace = true }
+codex-api = { workspace = true }
+codex-aws-auth = { workspace = true }
 codex-chatgpt = { workspace = true }
 codex-cloud-config = { workspace = true }
 codex-cloud-tasks = { path = "../cloud-tasks" }
