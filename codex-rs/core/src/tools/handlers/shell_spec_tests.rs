@@ -16,7 +16,7 @@ fn has_parameter(tool: &ToolSpec, parameter_name: &str) -> bool {
 #[test]
 fn exec_command_tool_matches_expected_spec() {
     let tool = create_exec_command_tool(CommandToolOptions {
-        allow_login_shell: true,
+        include_login_parameter: true,
         exec_permission_approvals_enabled: false,
         active_shell_name: None,
     });
@@ -103,7 +103,7 @@ fn exec_command_tool_matches_expected_spec() {
 fn exec_command_tool_can_hide_shell_parameter() {
     let tool = create_exec_command_tool_with_environment_id(
         CommandToolOptions {
-            allow_login_shell: true,
+            include_login_parameter: true,
             exec_permission_approvals_enabled: false,
             active_shell_name: None,
         },
@@ -121,7 +121,7 @@ fn exec_command_tool_can_hide_shell_parameter() {
 fn exec_command_tool_can_describe_persistent_shell_selection() {
     let tool = create_exec_command_tool_with_environment_id(
         CommandToolOptions {
-            allow_login_shell: true,
+            include_login_parameter: true,
             exec_permission_approvals_enabled: false,
             active_shell_name: None,
         },

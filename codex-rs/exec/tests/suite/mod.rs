@@ -7,6 +7,9 @@ mod auth_env;
 mod background_wait;
 #[path = "completion_backfill_tests.rs"]
 mod completion_backfill;
+#[path = "cyber_access_program_tests.rs"]
+mod cyber_access_program;
+mod daybreak;
 mod ephemeral;
 mod hooks;
 mod mcp_required_exit;

@@ -349,3 +349,30 @@ maintaining parallel logic or compatibility fallbacks.
   prior rendering and snapshots. Local code: tui/background_job_timer.rs,
   tui/chatwidget/background_job_labels.rs, core/unified_exec/managed_listing.rs.
 - Remove when: upstream provides equivalent captured managed-job timing labels.
+## Stable v0.162.0 integration
+
+- Command batching uses upstream stable environment declarations, current shell
+  invocation handling, and environment requests that bind thread capability roots.
+- hpatch preserves its translation working directory through upstream patch
+  verification; line ending handling follows the current upstream patch engine.
+- The fork owner-configuration guard compares caller requests against attached
+  selections while retaining independent task-root updates.
+- The latest-only local-release output change remains in place.
+- On 2026-10-10, the upstream daemon startup default was restored on Windows after
+  installed v0.162.0-doca runtime probes confirmed direct commands, PowerShell,
+  Bash, MCP startup, and a session hook had no console when launched from a
+  detached app-server. The three upstream console regressions also passed,
+  including the production sandbox-refresh launcher with a disposable helper.
+  Sandbox provisioning itself was not exercised. The temporary daemon startup
+  fixture override and local reversion note were removed.
+
+## Stable v0.162.1 integration
+
+- Daemon feature compatibility checks follow upstream: only explicit CLI feature
+  overrides request a shared-service restart; daemon defaults and file settings
+  remain authoritative until restart, subject to managed requirements.
+- Multiline async questions preserve line breaks and links using upstream rendering
+  and snapshot coverage. The restored daemon startup default remains enabled on
+  every platform.
+- When preparing the public release checkout, update its fork release smoke check
+  to expect daemon_auto_start to be true on Windows as well as other platforms.
