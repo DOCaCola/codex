@@ -11,6 +11,10 @@ maintaining parallel logic or compatibility fallbacks.
   The CLI PATH entry is `../output/bin`; complete packages support daemon startup.
   Successful packaging removes all `output.previous-*` backups, retaining only the
   latest package; a failed replacement restores the previous output.
+  Both recompile scripts then deploy and pin that package through
+  `app-server daemon update --from-cli --yes`, restarting a running daemon and
+  verifying the selected and running versions. Packaging alone leaves daemon
+  deployment to the caller.
 - Remove when: an upstream local build workflow covers the fork companion and local
   output installation.
 
