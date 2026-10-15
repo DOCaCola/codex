@@ -52,7 +52,6 @@ use super::ExecCommandArgs;
 use super::ExecCommandEnvironmentArgs;
 use super::get_command;
 use super::post_unified_exec_tool_use_payload;
-use super::shell_mode_for_environment;
 
 // A byte limit is a conservative hard token bound even for byte-fallback tokenizers.
 const EXEC_COMMAND_REJECTION_MAX_BYTES: usize = 900;
@@ -125,12 +124,8 @@ impl ExecCommandHandler {
         args: &mut ExecCommandArgs,
         session: &crate::session::session::Session,
         environment: &codex_exec_server::Environment,
-        shell_mode: &codex_tools::UnifiedExecShellMode,
     ) -> Result<Option<Arc<crate::shell::Shell>>, FunctionCallError> {
-        if !self.options.persist_shell_selection
-            || environment.is_remote()
-            || !matches!(shell_mode, codex_tools::UnifiedExecShellMode::Direct)
-        {
+        if !self.options.persist_shell_selection || environment.is_remote() {
             return Ok(None);
         }
 
@@ -318,14 +313,8 @@ impl ExecCommandHandler {
             &turn_environment.selection.environment_id,
         )
         .await;
-        let shell_mode =
-            shell_mode_for_environment(&turn.unified_exec_shell_mode, environment.as_ref());
-        let persistent_shell = self.maybe_persist_local_shell(
-            &mut args,
-            session.as_ref(),
-            environment.as_ref(),
-            &shell_mode,
-        )?;
+        let persistent_shell =
+            self.maybe_persist_local_shell(&mut args, session.as_ref(), environment.as_ref())?;
         // Remote environments may use a different OS and must build commands with their native
         // shell; fall back to the session shell when the environment did not report one.
         let shell = persistent_shell
@@ -349,13 +338,9 @@ impl ExecCommandHandler {
                 )));
             }
         }
-        let resolved_command = get_command(
-            &args,
-            shell,
-            &shell_mode,
-            turn_environment.config().allow_login_shell,
-        )
-        .map_err(FunctionCallError::RespondToModel)?;
+        let resolved_command =
+            get_command(&args, shell, turn_environment.config().allow_login_shell)
+                .map_err(FunctionCallError::RespondToModel)?;
         let command = resolved_command.command;
         let ExecCommandArgs {
             mut tty,
@@ -533,7 +518,6 @@ impl ExecCommandHandler {
             cwd,
             sandbox_cwd: native_environment_cwd,
             turn_environment: turn_environment.clone(),
-            shell_mode,
             network: context.step_context.turn.network.clone(),
             tty,
             sandbox_permissions: effective_additional_permissions.sandbox_permissions,

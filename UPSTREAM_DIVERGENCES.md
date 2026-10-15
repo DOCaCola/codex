@@ -194,3 +194,17 @@ notes are excluded. The original local development branches retain that history.
   every platform.
 - The fork release smoke check expects daemon_auto_start to be true on every
   platform, matching the restored upstream default.
+
+## Stable v0.163.0 integration
+
+- Read-only tool parallelism follows upstream's per-tool scheduling flags.
+  `command_stack` retains its exclusive outer dispatch and bounded, independent
+  child scheduling; patches and dependent steps retain their ordering.
+- Persistent local shell selection now uses upstream's standard shell executor.
+  The retired patched-zsh backend and packaged zsh resources are removed.
+- Managed command completion adopts upstream's remote output-drain policy and
+  output retention, preserving final polling after the child exits.
+- Inbound MCP notifications use the current RMCP client configuration and MCP
+  refresh interfaces. Sandbox metadata follows upstream's dedicated module.
+- Local recompilation still deploys the complete package to the managed daemon.
+  Fork releases use version `0.163.0-doca`.

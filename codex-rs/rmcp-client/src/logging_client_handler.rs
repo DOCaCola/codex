@@ -3,7 +3,7 @@ use std::sync::Arc;
 use rmcp::ClientHandler;
 use rmcp::RoleClient;
 use rmcp::model::CancelledNotificationParam;
-use rmcp::model::ClientInfo;
+use rmcp::model::ClientConfig;
 use rmcp::model::CustomNotification;
 use rmcp::model::ElicitRequestParams;
 use rmcp::model::ElicitResult;
@@ -27,14 +27,14 @@ use crate::rmcp_client::SurfaceNotification;
 
 #[derive(Clone)]
 pub(crate) struct LoggingClientHandler {
-    client_info: ClientInfo,
+    client_info: ClientConfig,
     send_elicitation: Arc<SendElicitation>,
     send_notification: Option<Arc<SendNotification>>,
 }
 
 impl LoggingClientHandler {
     pub(crate) fn new(
-        client_info: ClientInfo,
+        client_info: ClientConfig,
         send_elicitation: SendElicitation,
         send_notification: Option<SendNotification>,
     ) -> Self {
@@ -144,7 +144,7 @@ impl ClientHandler for LoggingClientHandler {
         .await;
     }
 
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         self.client_info.clone()
     }
 

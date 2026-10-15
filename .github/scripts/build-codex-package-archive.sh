@@ -12,8 +12,6 @@ Usage: build-codex-package-archive.sh \
   [--code-mode-host-bin <path>] \
   [--hpatch-bin <path>] \
   [--rg-bin <path>] \
-  [--zsh-bin <path>] \
-  [--zsh-manifest <path>] \
   [--codex-command-runner-bin <path>] \
   [--codex-windows-sandbox-setup-bin <path>] \
   [--voice-release-dir <path> --release-version <release-version>] \
@@ -70,14 +68,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --rg-bin)
       resource_args+=(--rg-bin "${2:?--rg-bin requires a value}")
-      shift 2
-      ;;
-    --zsh-bin)
-      resource_args+=(--zsh-bin "${2:?--zsh-bin requires a value}")
-      shift 2
-      ;;
-    --zsh-manifest)
-      resource_args+=(--zsh-manifest "${2:?--zsh-manifest requires a value}")
       shift 2
       ;;
     --codex-command-runner-bin)

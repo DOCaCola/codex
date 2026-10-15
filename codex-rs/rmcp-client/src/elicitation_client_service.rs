@@ -7,7 +7,7 @@ use std::sync::PoisonError;
 use codex_protocol::mcp::OPENAI_ELICITATION_EXTENSION_ID;
 
 use rmcp::RoleClient;
-use rmcp::model::ClientInfo;
+use rmcp::model::ClientConfig;
 use rmcp::model::ClientResult;
 use rmcp::model::CustomRequest;
 use rmcp::model::CustomResult;
@@ -96,7 +96,7 @@ impl Drop for PendingVerification {
 
 impl ElicitationClientService {
     pub(crate) fn new(
-        client_info: ClientInfo,
+        client_info: ClientConfig,
         send_elicitation: SendElicitation,
         send_notification: Option<SendNotification>,
         pause_state: ElicitationPauseState,
@@ -154,7 +154,14 @@ impl ElicitationClientService {
                 return Ok(ElicitationResponse {
                     action: ElicitationAction::Cancel,
                     content: None,
-                    meta: None,
+                    meta: user_verification.then(|| {
+                        if cancellations.saturated {
+                            crate::UserVerificationReason::ApprovalUnavailable
+                        } else {
+                            crate::UserVerificationReason::Interrupted
+                        }
+                        .into_meta()
+                    }),
                 });
             }
             cancellations.pending.insert(id.clone(), cancel_tx);
@@ -170,14 +177,14 @@ impl ElicitationClientService {
                 return Ok(ElicitationResponse {
                     action: ElicitationAction::Cancel,
                     content: None,
-                    meta: None,
+                    meta: user_verification.then(|| crate::UserVerificationReason::Interrupted.into_meta()),
                 });
             }
             _ = cancel_rx => {
                 return Ok(ElicitationResponse {
                     action: ElicitationAction::Cancel,
                     content: None,
-                    meta: None,
+                    meta: user_verification.then(|| crate::UserVerificationReason::Interrupted.into_meta()),
                 });
             }
             response = (self.send_elicitation)(id, request) => response,
@@ -332,7 +339,7 @@ impl Service<RoleClient> for ElicitationClientService {
         .await
     }
 
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         <LoggingClientHandler as Service<RoleClient>>::get_info(&self.handler)
     }
 }
