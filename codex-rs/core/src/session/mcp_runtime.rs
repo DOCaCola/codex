@@ -398,7 +398,7 @@ impl Session {
             auth_manager: Some(Arc::clone(&self.services.auth_manager)),
             elicitation_reviewer,
             elicitation_lifecycle: Some(self.mcp_elicitation_lifecycle()),
-            mcp_server_notification_sender: self.mcp_server_notification_sender(),
+            mcp_channel_sender: self.mcp_channel_sender(),
         }
     }
 }

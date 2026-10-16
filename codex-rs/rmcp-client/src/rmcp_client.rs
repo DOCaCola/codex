@@ -1,3 +1,4 @@
+use crate::channel::SendChannelMessage;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::ffi::OsString;
@@ -193,7 +194,7 @@ struct InitializeContext {
     timeout: Option<Duration>,
     client_info: InitializeRequestParams,
     send_elicitation: Arc<SendElicitation>,
-    send_notification: Option<Arc<SendNotification>>,
+    send_notification: Option<Arc<SendChannelMessage>>,
 }
 
 #[derive(Clone)]
@@ -379,20 +380,6 @@ impl From<ElicitationResponse> for ElicitResult {
 pub type SendElicitation = Box<
     dyn Fn(RequestId, Elicitation) -> BoxFuture<'static, Result<ElicitationResponse>> + Send + Sync,
 >;
-
-/// Standard inbound MCP notification selected for delivery to a Codex session.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SurfaceNotification {
-    pub method: String,
-    pub source: Option<String>,
-    pub message_id: Option<String>,
-    pub payload: serde_json::Value,
-}
-
-/// Interface for forwarding selected MCP notifications to the owning session.
-pub type SendNotification =
-    Box<dyn Fn(SurfaceNotification) -> BoxFuture<'static, Result<()>> + Send + Sync>;
 
 pub struct ToolWithConnectorId {
     pub tool: Tool,
@@ -655,7 +642,7 @@ impl RmcpClient {
         params: InitializeRequestParams,
         timeout: Option<Duration>,
         send_elicitation: SendElicitation,
-        send_notification: Option<SendNotification>,
+        send_notification: Option<SendChannelMessage>,
     ) -> Result<ServerPeerInfo> {
         let context = InitializeContext {
             timeout,
@@ -1310,7 +1297,7 @@ impl RmcpClient {
         let send_elicitation = Arc::clone(&initialize_context.send_elicitation);
         let send_notification = initialize_context.send_notification.as_ref().map(|sender| {
             let sender = Arc::clone(sender);
-            Box::new(move |notification| sender(notification)) as SendNotification
+            Box::new(move |notification| sender(notification)) as SendChannelMessage
         });
         let client_service = ElicitationClientService::new(
             initialize_context.client_info.clone(),
@@ -1396,6 +1383,24 @@ impl RmcpClient {
                 return Err(error);
             }
         };
+
+        if initialize_context.send_notification.is_some() {
+            let info = service
+                .peer()
+                .peer_info()
+                .ok_or_else(|| anyhow!("channel server information missing"))?;
+            if info.protocol_version >= ProtocolVersion::V_2026_07_28
+                || !info
+                    .capabilities
+                    .experimental
+                    .as_ref()
+                    .is_some_and(|caps| caps.contains_key("claude/channel"))
+            {
+                return Err(anyhow!(
+                    "channel registration requires the claude/channel capability and a protocol revision before 2026-07-28"
+                ));
+            }
+        }
 
         // Preserve Codex's existing snapshot and request-freshness behavior. rmcp 3
         // enables response caching and stale-on-error fallback by default.

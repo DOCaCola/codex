@@ -58,6 +58,7 @@ use tracing::info;
 use tracing::warn;
 
 pub async fn interrupt(sess: &Arc<Session>) {
+    sess.clear_mcp_channels().await;
     sess.interrupt_task().await;
 }
 
@@ -288,6 +289,7 @@ pub async fn set_thread_memory_mode(sess: &Arc<Session>, sub_id: String, mode: T
 }
 
 pub(super) async fn shutdown_session_runtime(sess: &Arc<Session>) {
+    sess.close_mcp_channels().await;
     let startup_prewarm = {
         let mut state = sess.state.lock().await;
         // Stop admission and take the current warmup together so resume cannot replace it.
@@ -459,6 +461,10 @@ pub(super) async fn submission_loop(
                 Ok(sub) => sub,
                 Err(_) => break,
             },
+            _ = sess.mcp_channel_wakeup.notified() => {
+                sess.dispatch_mcp_channels().await;
+                continue;
+            }
             update = async {
                 match &mut mailbox {
                     Some(updates) => updates.changed().await.map(|()| *updates.borrow_and_update()),
@@ -618,6 +624,7 @@ pub(super) async fn submission_loop(
                                 let _ = reply.send(Ok(()));
                             }
                             thread_settings::emit_applied(&sess, sub.id.clone(), snapshot).await;
+                            sess.mcp_channel_wakeup.notify_one();
                         }
                         Err(error) => {
                             let message = format!("invalid thread settings override: {error}");

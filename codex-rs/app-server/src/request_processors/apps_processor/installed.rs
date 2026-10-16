@@ -115,8 +115,8 @@ impl AppsRequestProcessor {
                         auth_manager: codex_apps_auth_manager,
                         elicitation_reviewer: None,
                         elicitation_lifecycle: None,
-                        mcp_server_notification_sender:
-                            codex_mcp::ignore_mcp_server_notifications(),
+                        mcp_channel_sender:
+                            codex_mcp::ignore_mcp_channel_messages(),
                     })
                     .await;
 

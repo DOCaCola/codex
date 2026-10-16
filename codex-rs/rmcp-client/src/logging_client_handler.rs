@@ -20,37 +20,28 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
+use crate::channel::ChannelNotification;
+use crate::channel::SendChannelMessage;
 use crate::rmcp_client::Elicitation;
 use crate::rmcp_client::SendElicitation;
-use crate::rmcp_client::SendNotification;
-use crate::rmcp_client::SurfaceNotification;
 
 #[derive(Clone)]
 pub(crate) struct LoggingClientHandler {
     client_info: ClientConfig,
     send_elicitation: Arc<SendElicitation>,
-    send_notification: Option<Arc<SendNotification>>,
+    send_notification: Option<Arc<SendChannelMessage>>,
 }
 
 impl LoggingClientHandler {
     pub(crate) fn new(
         client_info: ClientConfig,
         send_elicitation: SendElicitation,
-        send_notification: Option<SendNotification>,
+        send_notification: Option<SendChannelMessage>,
     ) -> Self {
         Self {
             client_info,
             send_elicitation: Arc::new(send_elicitation),
             send_notification: send_notification.map(Arc::new),
-        }
-    }
-
-    async fn send_surface_notification(&self, notification: SurfaceNotification) {
-        let Some(send_notification) = self.send_notification.as_ref() else {
-            return;
-        };
-        if let Err(error) = send_notification(notification).await {
-            warn!("failed to surface MCP notification: {error:#}");
         }
     }
 }
@@ -59,12 +50,46 @@ impl ClientHandler for LoggingClientHandler {
     async fn on_custom_notification(
         &self,
         notification: CustomNotification,
-        _context: NotificationContext<RoleClient>,
+        context: NotificationContext<RoleClient>,
     ) {
-        let CustomNotification { method, params, .. } = notification;
-        let payload = params.unwrap_or(serde_json::Value::Null);
-        self.send_surface_notification(surface_notification(method, None, payload))
-            .await;
+        if notification.method != "notifications/claude/channel" {
+            return;
+        }
+        let Some(sender) = &self.send_notification else {
+            return;
+        };
+        let Some(info) = context.peer.peer_info() else {
+            return;
+        };
+        if !info
+            .capabilities
+            .experimental
+            .as_ref()
+            .is_some_and(|caps| caps.contains_key("claude/channel"))
+            || info.protocol_version >= rmcp::model::ProtocolVersion::V_2026_07_28
+        {
+            return;
+        }
+        let params = notification.params.unwrap_or(serde_json::Value::Null);
+        let Ok(mut message) = serde_json::from_value::<ChannelNotification>(params) else {
+            warn!("discarding malformed MCP channel message");
+            return;
+        };
+        if !message.is_bounded() {
+            warn!("discarding oversized MCP channel message");
+            return;
+        }
+        message.instructions = info.instructions.as_ref().map(|text| {
+            let mut bounded = text[..text.floor_char_boundary(2_048)].to_string();
+            if bounded.len() < text.len() {
+                bounded.push_str(" [instructions truncated]");
+            }
+            bounded
+        });
+        message.connection = Some(context.peer);
+        if let Err(error) = sender(message).await {
+            warn!("failed to deliver MCP channel message: {error:#}");
+        }
     }
 
     async fn create_elicitation(
@@ -106,42 +131,18 @@ impl ClientHandler for LoggingClientHandler {
         _context: NotificationContext<RoleClient>,
     ) {
         info!("MCP server resource updated (uri: {})", params.uri);
-        self.send_surface_notification(surface_notification(
-            "notifications/resources/updated".to_string(),
-            None,
-            serde_json::json!({ "uri": params.uri }),
-        ))
-        .await;
     }
 
     async fn on_resource_list_changed(&self, _context: NotificationContext<RoleClient>) {
         info!("MCP server resource list changed");
-        self.send_surface_notification(surface_notification(
-            "notifications/resources/list_changed".to_string(),
-            None,
-            serde_json::json!({}),
-        ))
-        .await;
     }
 
     async fn on_tool_list_changed(&self, _context: NotificationContext<RoleClient>) {
         info!("MCP server tool list changed");
-        self.send_surface_notification(surface_notification(
-            "notifications/tools/list_changed".to_string(),
-            None,
-            serde_json::json!({}),
-        ))
-        .await;
     }
 
     async fn on_prompt_list_changed(&self, _context: NotificationContext<RoleClient>) {
         info!("MCP server prompt list changed");
-        self.send_surface_notification(surface_notification(
-            "notifications/prompts/list_changed".to_string(),
-            None,
-            serde_json::json!({}),
-        ))
-        .await;
     }
 
     fn get_info(&self) -> ClientConfig {
@@ -190,60 +191,5 @@ impl ClientHandler for LoggingClientHandler {
                 );
             }
         }
-
-        let mut notification = surface_notification(
-            "notifications/message".to_string(),
-            logger.map(str::to_string),
-            data.clone(),
-        );
-        notification.payload = serde_json::json!({
-            "level": level,
-            "logger": logger,
-            "data": data,
-        });
-        self.send_surface_notification(notification).await;
     }
 }
-
-fn surface_notification(
-    method: String,
-    fallback_source: Option<String>,
-    payload: serde_json::Value,
-) -> SurfaceNotification {
-    let object = payload.as_object();
-    let source = object
-        .and_then(|object| value_string(object, &["source"]))
-        .or(fallback_source);
-    let message_id = object
-        .and_then(|object| value_string(object, &["msgId", "messageId", "eventId"]))
-        .or_else(|| vsmcp_message_id(object));
-    SurfaceNotification {
-        method,
-        source,
-        message_id,
-        payload,
-    }
-}
-
-fn value_string(
-    object: &serde_json::Map<String, serde_json::Value>,
-    keys: &[&str],
-) -> Option<String> {
-    keys.iter().find_map(|key| {
-        object
-            .get(*key)
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_string)
-    })
-}
-
-fn vsmcp_message_id(object: Option<&serde_json::Map<String, serde_json::Value>>) -> Option<String> {
-    let object = object?;
-    let timestamp = object.get("timestamp")?.as_str()?;
-    let sequence = object.get("sequence")?.as_i64()?;
-    Some(format!("{timestamp}:{sequence}"))
-}
-
-#[cfg(test)]
-#[path = "logging_client_handler_tests.rs"]
-mod tests;

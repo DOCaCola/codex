@@ -152,7 +152,7 @@ async fn refresh_keeps_superseded_mcp_server_alive_for_in_flight_calls() -> anyh
                     required: false,
                     startup_readiness: Default::default(),
                     supports_parallel_tool_calls: false,
-                    surface_notifications: false,
+                    channel: false,
                     tool_input_schema_max_bytes: None,
                     omit_tools_from: None,
                     disabled_reason: None,

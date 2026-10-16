@@ -88,8 +88,9 @@ pub(crate) struct Session {
     pub(super) mcp_prewarm_tx: async_channel::Sender<()>,
     pub(super) mcp_prewarm_shutdown: CancellationToken,
     pub(super) mcp_prewarm_task: std::sync::Mutex<Option<JoinHandle<()>>>,
-    pub(super) mcp_notification_state: Mutex<super::mcp_notifications::McpNotificationState>,
-    pub(super) mcp_notification_sender: OnceLock<codex_mcp::SendMcpServerNotification>,
+    pub(super) mcp_channel_state: Mutex<super::mcp_channels::McpChannelState>,
+    pub(crate) mcp_channel_wakeup: tokio::sync::Notify,
+    pub(super) mcp_channel_sender: OnceLock<codex_mcp::SendMcpChannelMessage>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) realtime_history: Option<Mutex<crate::realtime_history::RealtimeHistoryState>>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
@@ -1844,8 +1845,9 @@ impl Session {
                 mcp_prewarm_tx,
                 mcp_prewarm_shutdown: CancellationToken::new(),
                 mcp_prewarm_task: std::sync::Mutex::new(None),
-                mcp_notification_state: Mutex::new(Default::default()),
-                mcp_notification_sender: OnceLock::new(),
+                mcp_channel_state: Mutex::new(Default::default()),
+                mcp_channel_wakeup: Default::default(),
+                mcp_channel_sender: OnceLock::new(),
                 conversation: Arc::new(RealtimeConversationManager::new()),
                 realtime_history: (session_configuration.history_mode
                     == ThreadHistoryMode::Paginated
@@ -1865,10 +1867,10 @@ impl Session {
                 next_internal_sub_id: AtomicU64::new(0),
             });
             assert!(
-                sess.mcp_notification_sender
-                    .set(sess.new_mcp_server_notification_sender())
+                sess.mcp_channel_sender
+                    .set(sess.new_mcp_channel_sender())
                     .is_ok(),
-                "MCP notification sender should be initialized once"
+                "MCP channel sender should be initialized once"
             );
             if let Some(startup) = &startup {
                 startup.set_session(Arc::clone(&sess));
@@ -1992,7 +1994,6 @@ impl Session {
                 let mut state = sess.state.lock().await;
                 state.queue_pending_session_start_source(session_start_source);
             }
-            sess.enable_mcp_server_notification_delivery().await;
             Ok(sess)
         }
         .await;

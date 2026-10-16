@@ -20,6 +20,7 @@ use super::UserShellCommand;
 use super::world_state::EnvironmentsState;
 
 const CONTEXTUAL_USER_FRAGMENT_MATCHERS: &[fn(&str) -> bool] = &[
+    super::ChannelMessage::matches_text,
     super::CommandCompletion::matches_text,
     super::CommandsStillRunning::matches_text,
     UserInstructions::matches_text,

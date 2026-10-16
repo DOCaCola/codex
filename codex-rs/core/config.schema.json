@@ -3823,6 +3823,10 @@
         "bearer_token_env_var": {
           "type": "string"
         },
+        "channel": {
+          "default": null,
+          "type": "boolean"
+        },
         "command": {
           "type": "string"
         },
@@ -3950,10 +3954,6 @@
           "type": "number"
         },
         "supports_parallel_tool_calls": {
-          "default": null,
-          "type": "boolean"
-        },
-        "surface_notifications": {
           "default": null,
           "type": "boolean"
         },

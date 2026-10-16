@@ -249,10 +249,10 @@ pub struct McpServerConfig {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supports_parallel_tool_calls: bool,
 
-    /// When `true`, selected standard inbound notifications from this server may be surfaced to
-    /// the active Codex session as externally attributed model-visible context.
+    /// Opt this server into Claude-compatible channel delivery. Requires stdio and the
+    /// experimental `claude/channel` server capability. Events may start idle turns.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub surface_notifications: bool,
+    pub channel: bool,
     /// UTF-8 byte threshold for compacting each ordinary MCP tool input schema. Defaults to 5,000 bytes.
     /// Code Mode also uses an explicitly configured limit when rendering each tool's input type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -418,7 +418,7 @@ pub struct RawMcpServerConfig {
     #[schemars(range(min = 1))]
     pub tool_input_schema_max_bytes: Option<NonZeroUsize>,
     #[serde(default)]
-    pub surface_notifications: Option<bool>,
+    pub channel: Option<bool>,
     #[serde(default)]
     pub omit_tools_from: Option<Vec<ToolExposureSurface>>,
     #[serde(default)]
@@ -466,7 +466,7 @@ impl TryFrom<RawMcpServerConfig> for McpServerConfig {
             startup_readiness,
             supports_parallel_tool_calls,
 
-            surface_notifications,
+            channel,
             tool_input_schema_max_bytes,
             omit_tools_from,
             default_tools_approval_mode,
@@ -589,7 +589,7 @@ impl TryFrom<RawMcpServerConfig> for McpServerConfig {
             startup_readiness: startup_readiness.unwrap_or_default(),
             supports_parallel_tool_calls: supports_parallel_tool_calls.unwrap_or_default(),
 
-            surface_notifications: surface_notifications.unwrap_or_default(),
+            channel: channel.unwrap_or_default(),
             tool_input_schema_max_bytes,
             omit_tools_from,
             disabled_reason: None,

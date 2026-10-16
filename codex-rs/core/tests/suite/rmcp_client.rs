@@ -1,3 +1,6 @@
+#[path = "mcp_channels_tests.rs"]
+mod channels_tests;
+
 use anyhow::Context as _;
 use anyhow::ensure;
 use base64::Engine;
@@ -387,7 +390,7 @@ fn insert_mcp_server(
             required: false,
             startup_readiness: Default::default(),
             supports_parallel_tool_calls: options.supports_parallel_tool_calls,
-            surface_notifications: false,
+            channel: false,
             tool_input_schema_max_bytes: None,
             omit_tools_from: None,
             disabled_reason: None,

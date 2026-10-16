@@ -266,7 +266,7 @@ impl McpConnectionSet {
             auth_manager,
             elicitation_reviewer,
             elicitation_lifecycle,
-            mcp_server_notification_sender,
+            mcp_channel_sender,
         } = input;
         let store_mode = config.mcp_oauth_credentials_store_mode;
         let keyring_backend_kind = config.auth_keyring_backend_kind;
@@ -636,7 +636,7 @@ impl McpConnectionSet {
                 runtime_auth_provider,
                 client_elicitation_capability.clone(),
                 client_mcp_extensions.clone(),
-                Arc::clone(&mcp_server_notification_sender),
+                Arc::clone(&mcp_channel_sender),
                 auth_manager
                     .as_ref()
                     .filter(|_| {
@@ -650,6 +650,8 @@ impl McpConnectionSet {
                 catalog_item_limit,
             );
             let defer_startup = allow_deferred_startup
+                // Channels need a live listener even when their tool catalog is cached.
+                && !configured_config.channel
                 && !tool_plugin_context.is_selected_plugin_mcp_server(&server_name)
                 && async_managed_client
                     .tool_catalog_cache_context
@@ -878,6 +880,15 @@ impl McpConnectionSet {
 
     pub(crate) fn contains_server(&self, server_name: &str) -> bool {
         self.servers.contains_key(server_name)
+    }
+
+    pub(crate) fn accepts_channel_message(&self, message: &crate::McpChannelMessage) -> bool {
+        self.servers.get(&message.server_name).is_some_and(|view| {
+            Arc::ptr_eq(
+                &view.connection.client.channel_registration,
+                &message.registration,
+            )
+        })
     }
 
     pub(crate) async fn authentication_failed_servers(&self) -> Vec<String> {

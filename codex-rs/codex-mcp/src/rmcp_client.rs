@@ -65,6 +65,7 @@ use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::McpStartupStatus;
 use codex_protocol::protocol::McpStartupUpdateEvent;
+use codex_rmcp_client::ChannelNotification;
 use codex_rmcp_client::ExecutorStdioServerLauncher;
 use codex_rmcp_client::LocalStdioServerLauncher;
 use codex_rmcp_client::McpOAuthRefreshMode;
@@ -73,7 +74,6 @@ use codex_rmcp_client::RmcpClient;
 use codex_rmcp_client::StdioServerLauncher;
 use codex_rmcp_client::StreamableHttpBearerToken;
 use codex_rmcp_client::StreamableHttpRedirectMode;
-use codex_rmcp_client::SurfaceNotification;
 use codex_rmcp_client::ToolWithConnectorId;
 use codex_rmcp_client::is_authentication_required_error;
 use futures::future::BoxFuture;
@@ -116,16 +116,17 @@ const UNTRUSTED_CONNECTOR_META_KEYS: &[&str] = &[
     "connectorDescription",
 ];
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct McpServerNotification {
+#[derive(Debug, Clone)]
+pub struct McpChannelMessage {
     pub server_name: String,
-    pub notification: SurfaceNotification,
+    pub notification: ChannelNotification,
+    pub registration: Arc<()>,
 }
 
-pub type SendMcpServerNotification =
-    Arc<dyn Fn(McpServerNotification) -> BoxFuture<'static, Result<()>> + Send + Sync>;
+pub type SendMcpChannelMessage =
+    Arc<dyn Fn(McpChannelMessage) -> BoxFuture<'static, Result<()>> + Send + Sync>;
 
-pub fn ignore_mcp_server_notifications() -> SendMcpServerNotification {
+pub fn ignore_mcp_channel_messages() -> SendMcpChannelMessage {
     Arc::new(|_| async { Ok(()) }.boxed())
 }
 
@@ -305,6 +306,7 @@ fn codex_apps_reconnect_backoff(consecutive_failures: u32) -> Duration {
 
 #[derive(Clone)]
 struct ManagedClientStartup {
+    channel_registration: Arc<()>,
     originator: AuthStorageOriginator,
     server_name: String,
     server: EffectiveMcpServer,
@@ -320,7 +322,7 @@ struct ManagedClientStartup {
     runtime_auth_provider: Option<SharedAuthProvider>,
     client_elicitation_capability: ElicitationCapability,
     client_mcp_extensions: ClientMcpExtensions,
-    mcp_server_notification_sender: SendMcpServerNotification,
+    mcp_channel_sender: SendMcpChannelMessage,
     auth_changes: Option<watch::Receiver<AuthChangeState>>,
     protocol_mode: McpProtocolMode,
     catalog_item_limit: usize,
@@ -337,6 +339,7 @@ impl ManagedClientStartup {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
         let Self {
+            channel_registration,
             originator,
             server_name,
             server,
@@ -352,7 +355,7 @@ impl ManagedClientStartup {
             runtime_auth_provider,
             client_elicitation_capability,
             client_mcp_extensions,
-            mcp_server_notification_sender,
+            mcp_channel_sender,
             auth_changes,
             protocol_mode,
             catalog_item_limit,
@@ -405,6 +408,7 @@ impl ManagedClientStartup {
                     server_name.clone(),
                     client,
                     StartServerTaskParams {
+                        channel_registration,
                         is_codex_apps_mcp_server,
                         startup_timeout: Some(startup_timeout),
                         tx_event,
@@ -414,8 +418,8 @@ impl ManagedClientStartup {
                         tool_catalog_fetch_ticket,
                         client_elicitation_capability,
                         client_mcp_extensions,
-                        surface_notifications: server.config().surface_notifications,
-                        mcp_server_notification_sender,
+                        channel: server.config().channel,
+                        mcp_channel_sender,
                         auth_changes,
                         catalog_item_limit,
                         server_capabilities,
@@ -456,6 +460,7 @@ impl ManagedClientStartup {
 
 #[derive(Clone)]
 pub(crate) struct AsyncManagedClient {
+    pub(crate) channel_registration: Arc<()>,
     pub(crate) client: ManagedClientFuture,
     pub(crate) is_codex_apps_mcp_server: bool,
     pub(crate) cached_server_info: Option<McpServerInfo>,
@@ -490,7 +495,7 @@ impl AsyncManagedClient {
         runtime_auth_provider: Option<SharedAuthProvider>,
         client_elicitation_capability: ElicitationCapability,
         client_mcp_extensions: ClientMcpExtensions,
-        mcp_server_notification_sender: SendMcpServerNotification,
+        mcp_channel_sender: SendMcpChannelMessage,
         auth_changes: Option<watch::Receiver<AuthChangeState>>,
         protocol_mode: McpProtocolMode,
         catalog_item_limit: usize,
@@ -506,8 +511,10 @@ impl AsyncManagedClient {
             None
         };
         let startup_complete = Arc::new(AtomicBool::new(false));
+        let channel_registration = Arc::new(());
         let server_capabilities = Arc::new(StdMutex::new(None));
         let startup = Arc::new(ManagedClientStartup {
+            channel_registration: Arc::clone(&channel_registration),
             originator: AuthStorageOriginator::current(),
             server_name,
             server,
@@ -523,7 +530,7 @@ impl AsyncManagedClient {
             runtime_auth_provider,
             client_elicitation_capability,
             client_mcp_extensions,
-            mcp_server_notification_sender,
+            mcp_channel_sender,
             auth_changes,
             protocol_mode,
             catalog_item_limit,
@@ -544,6 +551,7 @@ impl AsyncManagedClient {
             )
         });
         Self {
+            channel_registration,
             client,
             is_codex_apps_mcp_server,
             cached_server_info,
@@ -946,6 +954,7 @@ async fn start_server_task(
     params: StartServerTaskParams,
 ) -> Result<ManagedClient, StartupOutcomeError> {
     let StartServerTaskParams {
+        channel_registration,
         is_codex_apps_mcp_server,
         startup_timeout,
         tx_event,
@@ -955,8 +964,8 @@ async fn start_server_task(
         tool_catalog_fetch_ticket,
         client_elicitation_capability,
         client_mcp_extensions,
-        surface_notifications,
-        mcp_server_notification_sender,
+        channel,
+        mcp_channel_sender,
         auth_changes,
         catalog_item_limit,
         server_capabilities,
@@ -965,21 +974,23 @@ async fn start_server_task(
         elicitation_requests.make_sender(server_name.clone(), tx_event, &client_mcp_extensions);
     let mut params =
         mcp_initialize_request_params(client_elicitation_capability, client_mcp_extensions);
-    let send_notification = surface_notifications.then(|| {
-        let sender = Arc::clone(&mcp_server_notification_sender);
+    let send_notification = channel.then(|| {
+        let sender = Arc::clone(&mcp_channel_sender);
         let server_name = server_name.clone();
         Box::new(move |notification| {
+            let registration = Arc::clone(&channel_registration);
             let sender = Arc::clone(&sender);
             let server_name = server_name.clone();
             async move {
-                sender(McpServerNotification {
+                sender(McpChannelMessage {
+                    registration,
                     server_name,
                     notification,
                 })
                 .await
             }
             .boxed()
-        }) as codex_rmcp_client::SendNotification
+        }) as codex_rmcp_client::SendChannelMessage
     });
     if auth_changes.is_some() {
         params
@@ -1061,17 +1072,21 @@ async fn start_server_task(
     let fetch_ticket = codex_apps_tools_cache_context
         .as_ref()
         .map(|context| context.begin_fetch(ConnectorRuntimeFetchSource::Startup));
-    let tools = list_tools_for_client_uncached(
-        &server_name,
-        is_codex_apps_mcp_server,
-        /*codex_apps_refresh_trigger*/ "initial",
-        &client,
-        startup_timeout,
-        catalog_item_limit,
-        initialize_result.instructions.as_deref(),
-    )
-    .await
-    .map_err(StartupOutcomeError::from)?;
+    let tools = if initialize_result.capabilities.tools.is_some() {
+        list_tools_for_client_uncached(
+            &server_name,
+            is_codex_apps_mcp_server,
+            /*codex_apps_refresh_trigger*/ "initial",
+            &client,
+            startup_timeout,
+            catalog_item_limit,
+            initialize_result.instructions.as_deref(),
+        )
+        .await
+        .map_err(StartupOutcomeError::from)?
+    } else {
+        Vec::new()
+    };
     let client_tools: Arc<[ToolInfo]> =
         match (codex_apps_tools_cache_context.as_ref(), fetch_ticket) {
             (Some(context), Some(ticket)) if server_disables_tool_catalog_cache => {
@@ -1193,6 +1208,7 @@ fn mcp_server_info_from_implementation(
 }
 
 struct StartServerTaskParams {
+    channel_registration: Arc<()>,
     server_capabilities: Arc<StdMutex<Option<serde_json::Value>>>,
     is_codex_apps_mcp_server: bool,
     startup_timeout: Option<Duration>, // TODO: cancel_token should handle this.
@@ -1203,8 +1219,8 @@ struct StartServerTaskParams {
     tool_catalog_fetch_ticket: Option<McpToolCatalogFetchTicket>,
     client_elicitation_capability: ElicitationCapability,
     client_mcp_extensions: ClientMcpExtensions,
-    surface_notifications: bool,
-    mcp_server_notification_sender: SendMcpServerNotification,
+    channel: bool,
+    mcp_channel_sender: SendMcpChannelMessage,
     auth_changes: Option<watch::Receiver<AuthChangeState>>,
     catalog_item_limit: usize,
 }
@@ -1223,6 +1239,12 @@ pub(crate) async fn make_rmcp_client(
     protocol_mode: McpProtocolMode,
 ) -> Result<RmcpClient, StartupOutcomeError> {
     let config = server.config().clone();
+    if config.channel && !matches!(&config.transport, McpServerTransportConfig::Stdio { .. }) {
+        return Err(StartupOutcomeError::from(anyhow!(
+            "channels currently require stdio transport"
+        )));
+    }
+
     if server.credential_policy() == McpCredentialPolicy::ExecutorOnly {
         // Executor HTTP declarations cannot acquire host header helpers through
         // cached registration materialization.

@@ -96,6 +96,9 @@ use tokio::io::DuplexStream;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+#[path = "channel_startup_tests.rs"]
+mod channel_startup_tests;
+
 impl McpConnectionSet {
     fn new_uninitialized(
         approval_policy: &Constrained<AskForApproval>,
@@ -553,6 +556,7 @@ async fn prepared_call_timeout_includes_trusted_access_lookup() {
 
 pub(crate) async fn create_ready_async_managed_client(tools: Vec<ToolInfo>) -> AsyncManagedClient {
     AsyncManagedClient {
+        channel_registration: Arc::new(()),
         client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Ok(
             create_test_managed_client(tools).await,
         ))
@@ -723,6 +727,7 @@ fn create_gated_async_managed_client(
 
     (
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client,
             is_codex_apps_mcp_server: false,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -788,6 +793,7 @@ pub(crate) async fn create_test_manager_with_ready_apps_client(
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Ok(
                 managed_client,
             ))
@@ -844,6 +850,7 @@ fn create_test_manager_with_failed_apps_startup(
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2048,8 +2055,7 @@ async fn read_only_apps_discovery_never_uses_a_shared_writable_catalog() -> anyh
                 codex_apps_tools_cache: cache.clone(),
                 tool_catalog_cache: McpToolCatalogCache::default(),
                 codex_apps_tools_cache_key: cache_key.clone(),
-                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
-                ),
+                mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
                 client_mcp_extensions: ClientMcpExtensions::default(),
                 auth: None,
                 auth_manager: None,
@@ -2139,8 +2145,7 @@ async fn hosted_apps_protocol_mode_is_independent_of_generic_mode() -> anyhow::R
                 auth_manager: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
-                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
-                ),
+                mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
             },
             ElicitationRequestRouter::default(),
         )
@@ -2239,8 +2244,7 @@ async fn codex_apps_extension_does_not_share_host_owned_tools_cache() -> anyhow:
                 auth_manager: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
-                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
-                ),
+                mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
             },
             ElicitationRequestRouter::default(),
         )
@@ -2292,6 +2296,7 @@ async fn list_all_tools_uses_shared_codex_apps_cache_while_client_is_pending() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2363,6 +2368,7 @@ async fn capture_binding_preserves_ready_client_catalog_and_shares_prepared_meta
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: futures::future::ready(Ok(ready_client)).boxed().shared(),
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2741,6 +2747,7 @@ async fn list_available_server_infos_uses_cache_while_client_is_pending() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2838,6 +2845,7 @@ async fn capture_binding_exposes_cached_tools_before_startup() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2938,6 +2946,7 @@ async fn capture_binding_skips_pending_optional_servers_after_configured_shared_
         manager.insert_test_client(
             server_name.to_string(),
             AsyncManagedClient {
+                channel_registration: Arc::new(()),
                 client: futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
                     .boxed()
                     .shared(),
@@ -3190,6 +3199,7 @@ async fn capture_binding_shares_optional_startup_grace_across_connection_sets() 
         manager.insert_test_client(
             "pending",
             AsyncManagedClient {
+                channel_registration: Arc::new(()),
                 client: futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
                     .boxed()
                     .shared(),
@@ -3826,6 +3836,7 @@ async fn list_all_tools_blocks_while_client_is_pending_without_cached_tools() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -3884,6 +3895,7 @@ async fn shutdown_cancels_pending_tool_listing() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -3931,6 +3943,7 @@ async fn shutdown_continues_after_caller_is_aborted() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: blocking_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -3984,6 +3997,7 @@ async fn list_all_tools_does_not_block_when_shared_codex_apps_cache_is_empty() {
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -4037,6 +4051,7 @@ async fn list_all_tools_uses_shared_codex_apps_cache_when_client_startup_fails()
     manager.insert_test_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: failed_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -4742,8 +4757,7 @@ async fn executor_owned_chatgpt_mcp_accepts_only_safe_explicit_authorization() -
                 auth_manager: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
-                mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(
-                ),
+                mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
             },
             ElicitationRequestRouter::default(),
         )
@@ -4794,7 +4808,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
                 supports_parallel_tool_calls: false,
                 tool_input_schema_max_bytes: None,
                 omit_tools_from: None,
-                surface_notifications: false,
+                channel: false,
 
                 disabled_reason: None,
                 startup_timeout_sec: None,
@@ -4826,7 +4840,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
                 supports_parallel_tool_calls: false,
                 tool_input_schema_max_bytes: None,
                 omit_tools_from: None,
-                surface_notifications: false,
+                channel: false,
 
                 disabled_reason: None,
                 startup_timeout_sec: None,
@@ -4871,7 +4885,7 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
-            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
+            mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -4942,7 +4956,7 @@ fn mcp_init_error_display_prompts_for_github_pat() {
         supports_parallel_tool_calls: false,
         tool_input_schema_max_bytes: None,
         omit_tools_from: None,
-        surface_notifications: false,
+        channel: false,
 
         disabled_reason: None,
         startup_timeout_sec: None,
@@ -5106,7 +5120,7 @@ fn mcp_init_error_display_reports_generic_errors() {
         supports_parallel_tool_calls: false,
         tool_input_schema_max_bytes: None,
         omit_tools_from: None,
-        surface_notifications: false,
+        channel: false,
 
         disabled_reason: None,
         startup_timeout_sec: None,
@@ -5189,7 +5203,7 @@ fn reusable_server_config(url: &str) -> McpServerConfig {
         supports_parallel_tool_calls: false,
         tool_input_schema_max_bytes: None,
         omit_tools_from: None,
-        surface_notifications: false,
+        channel: false,
 
         disabled_reason: None,
         startup_timeout_sec: None,
@@ -5322,7 +5336,7 @@ async fn reconcile_reusable_server_with_mcp_config(
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
-            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
+            mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -5685,6 +5699,7 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
             connection: Arc::new(McpServerConnection {
                 identity: Some(reusable_server_identity("docs", &config, &runtime_context)),
                 client: AsyncManagedClient {
+                    channel_registration: Arc::new(()),
                     client: futures::future::ready(Ok(managed_client)).boxed().shared(),
                     is_codex_apps_mcp_server: false,
                     server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -6156,7 +6171,7 @@ async fn reconciliation_replaces_connection_when_protocol_mode_changes() {
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
-            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
+            mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -6215,7 +6230,7 @@ async fn reconciliation_reuses_legacy_stdio_server_when_modern_protocol_is_enabl
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
-            mcp_server_notification_sender: crate::rmcp_client::ignore_mcp_server_notifications(),
+            mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
         },
         ElicitationRequestRouter::default(),
     )
@@ -6391,6 +6406,7 @@ async fn reconciliation_replaces_closed_connections() -> anyhow::Result<()> {
     view.connection = Arc::new(McpServerConnection {
         identity: Some(reusable_server_identity("docs", &config, &runtime_context)),
         client: AsyncManagedClient {
+            channel_registration: Arc::new(()),
             client: futures::future::ready(Ok(connected_client))
                 .boxed()
                 .shared(),

@@ -255,7 +255,7 @@ pub(crate) use reasoning_effort::RequestEffortUsage;
 pub(crate) use submission::Submission;
 mod input_queue;
 mod mcp;
-mod mcp_notifications;
+mod mcp_channels;
 mod mcp_prewarm;
 mod mcp_refresh;
 mod mcp_runtime;

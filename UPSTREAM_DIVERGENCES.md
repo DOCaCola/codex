@@ -34,12 +34,18 @@ maintaining parallel logic or compatibility fallbacks.
   `core/src/tools/handlers/command_stack.rs`, and `core/src/environment_selection.rs`
   under `codex-rs`.
 
-## Inbound MCP notifications
+## Claude-compatible MCP channels
 
-- Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
-- The v0.159.0 merge retains this independently of upstream's per-server
-  tool input schema size limit; both settings round-trip through config.
-- Remove when: upstream provides an official MCP notification or session-ingress surface.
+- Local behavior: per-server `channel = true` opts stdio servers into the
+  `claude/channel` capability and `notifications/claude/channel` contract.
+  Bounded session queues start idle automatic turns and batch busy arrivals.
+  Reply tools use normal MCP discovery; one-way channels also receive server
+  instructions without requiring a tool catalog.
+- This replaces `surface_notifications`, generic notification context, and
+  VSMCP-specific parsing completely. No configuration alias or legacy ingress.
+  VSMCP's server migration is deferred; its logging messages no longer enter model context.
+- Permission relay and HTTP channel delivery are outside this implementation.
+- Remove when: upstream provides equivalent channel ingress and scheduling.
 
 ## Optional finite command completion delivery
 

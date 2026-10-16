@@ -479,7 +479,7 @@ pub async fn read_mcp_resource(
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
-            mcp_server_notification_sender: crate::ignore_mcp_server_notifications(),
+            mcp_channel_sender: crate::ignore_mcp_channel_messages(),
         },
         crate::elicitation::ElicitationRequestRouter::default(),
     )
@@ -560,7 +560,7 @@ pub async fn collect_mcp_server_status_snapshot_with_detail(
             auth_manager: None,
             elicitation_reviewer: None,
             elicitation_lifecycle: None,
-            mcp_server_notification_sender: crate::ignore_mcp_server_notifications(),
+            mcp_channel_sender: crate::ignore_mcp_channel_messages(),
         },
         crate::elicitation::ElicitationRequestRouter::default(),
     )
@@ -679,7 +679,7 @@ fn mcp_server_config_for_url(
         required: false,
         startup_readiness: Default::default(),
         supports_parallel_tool_calls: false,
-        surface_notifications: false,
+        channel: false,
         tool_input_schema_max_bytes: None,
         omit_tools_from: None,
         disabled_reason: None,

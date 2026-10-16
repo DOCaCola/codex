@@ -5,6 +5,17 @@ use std::collections::HashMap;
 use std::path::Path;
 
 #[test]
+fn channel_opt_in_round_trips_without_affecting_tool_settings() {
+    let config: McpServerConfig = toml::from_str("command = \"channel-server\"\nchannel = true\n")
+        .expect("channel configuration");
+    assert!(config.channel);
+    let restored: McpServerConfig =
+        toml::from_str(&toml::to_string(&config).expect("serialize channel configuration"))
+            .expect("deserialize channel configuration");
+    assert_eq!(restored, config);
+}
+
+#[test]
 fn app_tool_approval_restrictions_never_weaken_either_policy() {
     use AppToolApproval::Approve;
     use AppToolApproval::Auto;
@@ -642,7 +653,7 @@ fn deserialize_ignores_unknown_server_fields() {
             required: false,
             startup_readiness: Default::default(),
             supports_parallel_tool_calls: false,
-            surface_notifications: false,
+            channel: false,
             tool_input_schema_max_bytes: None,
             omit_tools_from: None,
             disabled_reason: None,

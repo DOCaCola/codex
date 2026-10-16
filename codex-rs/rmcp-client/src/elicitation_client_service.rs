@@ -29,12 +29,12 @@ use serde_json::Map;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
+use crate::channel::SendChannelMessage;
 use crate::logging_client_handler::LoggingClientHandler;
 use crate::rmcp_client::Elicitation;
 use crate::rmcp_client::ElicitationPauseState;
 use crate::rmcp_client::ElicitationResponse;
 use crate::rmcp_client::SendElicitation;
-use crate::rmcp_client::SendNotification;
 
 const MCP_PROGRESS_TOKEN_META_KEY: &str = "progressToken";
 const MCP_ELICITATION_CREATE_METHOD: &str = "elicitation/create";
@@ -98,7 +98,7 @@ impl ElicitationClientService {
     pub(crate) fn new(
         client_info: ClientConfig,
         send_elicitation: SendElicitation,
-        send_notification: Option<SendNotification>,
+        send_notification: Option<SendChannelMessage>,
         pause_state: ElicitationPauseState,
     ) -> Self {
         let supports_openai_form = client_info

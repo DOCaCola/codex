@@ -58,7 +58,7 @@ use crate::event_stream::McpEventStreamOpener;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::resource_client::McpResourceServerCacheKey;
 use crate::resource_origin::ResourceOrigins;
-use crate::rmcp_client::SendMcpServerNotification;
+use crate::rmcp_client::SendMcpChannelMessage;
 use crate::server::EffectiveMcpServer;
 use crate::tool_catalog_cache::McpToolCatalogCache;
 use crate::tools::ToolInfo;
@@ -92,7 +92,7 @@ pub struct McpRuntimeInput {
     pub auth_manager: Option<Arc<AuthManager>>,
     pub elicitation_reviewer: Option<ElicitationReviewerHandle>,
     pub elicitation_lifecycle: Option<ElicitationLifecycle>,
-    pub mcp_server_notification_sender: SendMcpServerNotification,
+    pub mcp_channel_sender: SendMcpChannelMessage,
 }
 
 /// Owns all mutable MCP state for one Codex thread.
@@ -567,6 +567,15 @@ impl McpRuntime {
         self.current.load().config.clone()
     }
 
+    /// Rejects queued events from removed or replaced registrations, even if a tool
+    /// binding still retains the old connection for an in-flight call.
+    pub fn accepts_channel_message(&self, message: &crate::McpChannelMessage) -> bool {
+        self.current
+            .load()
+            .connections
+            .accepts_channel_message(message)
+    }
+
     pub fn current_ready_selected_capability_roots(&self) -> Vec<SelectedCapabilityRoot> {
         self.current.load().ready_selected_capability_roots.clone()
     }
@@ -955,7 +964,7 @@ mod tests {
             required: false,
             startup_readiness: Default::default(),
             supports_parallel_tool_calls: false,
-            surface_notifications: false,
+            channel: false,
             tool_input_schema_max_bytes: None,
             omit_tools_from: None,
             disabled_reason: None,
