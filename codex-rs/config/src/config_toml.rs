@@ -346,6 +346,12 @@ pub struct ConfigToml {
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: Option<u64>,
 
+    /// With `background_command_delivery`, the longest time in milliseconds a turn
+    /// stays open waiting for its running commands without any of them finishing.
+    /// The model is then told which commands are still running, and they stop
+    /// delivering results automatically. Default: `600000` (10 minutes).
+    pub background_command_turn_wait_ms: Option<u64>,
+
     /// Seconds a thread must have no subscribers and no activity before app-server
     /// unloads it. Defaults to 1800 (30 minutes); zero unloads immediately.
     /// Changes require a server restart.

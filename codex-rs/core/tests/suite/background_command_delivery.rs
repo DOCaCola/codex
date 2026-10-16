@@ -179,6 +179,140 @@ async fn background_delivery_foreground_returns_final_result_directly() -> Resul
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn background_delivery_interrupt_releases_commands_for_later_turns() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let harness = managed_harness().await?;
+    let log = mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(vec![
+                ev_function_call(
+                    "launch",
+                    "exec_command",
+                    &json!({
+                        "cmd": gated_command(), "execution_mode": "background", "timeout_ms": 30000,
+                    })
+                    .to_string(),
+                ),
+                ev_completed("r1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("waiting", "waiting-for-command"),
+                ev_completed("r2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("report", "final-report"),
+                ev_completed("r3"),
+            ]),
+            sse(vec![
+                ev_function_call(
+                    "read",
+                    "write_stdin",
+                    &json!({"session_id": 1000, "chars": "", "wait_mode": "completion"})
+                        .to_string(),
+                ),
+                ev_completed("r4"),
+            ]),
+            sse(vec![
+                ev_assistant_message("done", "finished"),
+                ev_completed("r5"),
+            ]),
+        ],
+    )
+    .await;
+    let test = harness.test();
+    submit_unified_exec_turn(test, "run", PermissionProfile::Disabled).await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::AgentMessage(message) if message.message == "waiting-for-command")
+    })
+    .await;
+    test.codex.submit(Op::Interrupt).await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnAborted(_))
+    })
+    .await;
+
+    // The command is still running, but it belongs to the interrupted turn.
+    submit_unified_exec_turn(test, "report", PermissionProfile::Disabled).await?;
+    wait_for_event_with_timeout(
+        &test.codex,
+        |event| matches!(event, EventMsg::TurnComplete(_)),
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(log.requests().len(), 3);
+
+    harness.write_file("release", "go").await?;
+    submit_unified_exec_turn(test, "read", PermissionProfile::Disabled).await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert_eq!(log.requests().len(), 5);
+    let read = log.function_call_output_text("read").unwrap();
+    assert!(read.contains("completed-marker"), "{read}");
+    let input = log.last_request().unwrap().body_json()["input"].to_string();
+    assert!(!input.contains("<command_completion>"));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn background_delivery_turn_wait_limit_releases_running_commands() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let harness = TestCodexHarness::with_auto_env_builder(
+        test_codex().with_model("gpt-5.5").with_config(|config| {
+            config.features.enable(Feature::UnifiedExec).unwrap();
+            config
+                .features
+                .enable(Feature::BackgroundCommandDelivery)
+                .unwrap();
+            config.features.disable(Feature::CommandStack).unwrap();
+            config.features.disable(Feature::CodeMode).unwrap();
+            config.background_command_turn_wait = Duration::from_millis(500);
+        }),
+    )
+    .await?;
+    let log = mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(vec![
+                ev_function_call(
+                    "launch",
+                    "exec_command",
+                    &json!({
+                        "cmd": gated_command(), "execution_mode": "background", "timeout_ms": 30000,
+                    })
+                    .to_string(),
+                ),
+                ev_completed("r1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("waiting", "waiting-for-command"),
+                ev_completed("r2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("report", "final-report"),
+                ev_completed("r3"),
+            ]),
+        ],
+    )
+    .await;
+    submit_unified_exec_turn(harness.test(), "run", PermissionProfile::Disabled).await?;
+    wait_for_event_with_timeout(
+        &harness.test().codex,
+        |event| matches!(event, EventMsg::TurnComplete(_)),
+        Duration::from_secs(20),
+    )
+    .await;
+    assert_eq!(log.requests().len(), 3);
+    let input = log.last_request().unwrap().body_json()["input"].to_string();
+    assert_eq!(input.matches("<commands_still_running>").count(), 1);
+    assert!(input.contains("session 1000"), "{input}");
+    assert!(!input.contains("<command_completion>"));
+    Ok(())
+}
+
 #[test_case::test_case("gpt-5.5"; "direct")]
 #[test_case::test_case("gpt-5.6-sol"; "responses_lite_code_mode")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

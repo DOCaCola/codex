@@ -2,7 +2,9 @@
 //!
 //! The model loop consumes completions between sampling requests and parks before
 //! ending a turn. Keeping that turn open preserves existing desktop/exec lifecycle
-//! semantics without adding a client protocol.
+//! semantics without adding a client protocol. Only the launching turn parks on or
+//! automatically receives a command; ending that turn, or parking without progress
+//! for the configured limit, releases the command to explicit reads.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -29,6 +31,8 @@ use crate::tools::context::ExecCommandToolOutput;
 
 #[path = "managed_delivery.rs"]
 mod delivery;
+#[path = "managed_release.rs"]
+mod release;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -74,10 +78,22 @@ impl Default for ManagedCommands {
 struct Job {
     _slot: Arc<OwnedSemaphorePermit>,
     process: Arc<UnifiedExecProcess>,
+    owner_turn: String,
+    command: String,
+    started: Instant,
     initial_response_done: CancellationToken,
     initial_response_consumed: AtomicBool,
+    /// Set when the owning turn stops waiting; the job then neither parks a turn
+    /// nor delivers automatically, but explicit reads still accept its result.
+    released: AtomicBool,
     revoked: CancellationToken,
     state: Arc<Mutex<JobState>>,
+}
+
+impl Job {
+    fn delivers_to(&self, turn_id: &str) -> bool {
+        !self.released.load(Ordering::Acquire) && self.owner_turn == turn_id
+    }
 }
 
 #[derive(Default)]
@@ -146,7 +162,8 @@ impl UnifiedExecProcessManager {
                 job.state.try_lock().ok().and_then(|state| {
                     (state.acknowledged
                         || job.revoked.is_cancelled()
-                        || job.initial_response_consumed.load(Ordering::Acquire))
+                        || job.initial_response_consumed.load(Ordering::Acquire)
+                        || (job.released.load(Ordering::Acquire) && job.process.has_exited()))
                     .then_some(*id)
                 })
             });
@@ -162,14 +179,20 @@ impl UnifiedExecProcessManager {
     pub(super) async fn track_managed_command(
         &self,
         process_id: i32,
+        context: &UnifiedExecContext,
+        command: String,
         process: Arc<UnifiedExecProcess>,
         slot: Arc<OwnedSemaphorePermit>,
     ) -> LaunchGuard {
         let job = Arc::new(Job {
             _slot: slot,
             process,
+            owner_turn: context.step_context.turn.sub_id.clone(),
+            command,
+            started: Instant::now(),
             initial_response_done: CancellationToken::new(),
             initial_response_consumed: AtomicBool::new(false),
+            released: AtomicBool::new(false),
             revoked: CancellationToken::new(),
             state: Arc::new(Mutex::new(JobState::default())),
         });
@@ -297,6 +320,7 @@ impl UnifiedExecProcessManager {
 
     /// Park the current logical turn; wake only for completion, input or cleanup.
     async fn wait_for_managed_commands(&self, context: &UnifiedExecContext) -> bool {
+        let turn_id = &context.step_context.turn.sub_id;
         loop {
             let changed = self.managed.changed.notified();
             tokio::pin!(changed);
@@ -312,7 +336,7 @@ impl UnifiedExecProcessManager {
             let mut exits = FuturesUnordered::new();
             let mut waiting_reader = false;
             for job in jobs {
-                if job.revoked.is_cancelled() {
+                if job.revoked.is_cancelled() || !job.delivers_to(turn_id) {
                     continue;
                 }
                 if job.initial_response_consumed.load(Ordering::Acquire) {
@@ -373,6 +397,12 @@ impl UnifiedExecProcessManager {
         if delivered || model_needs_follow_up {
             return delivered;
         }
+        let limit = context
+            .step_context
+            .turn
+            .config
+            .background_command_turn_wait;
+        let deadline = Instant::now() + limit;
         loop {
             if context
                 .session
@@ -382,8 +412,13 @@ impl UnifiedExecProcessManager {
             {
                 return true;
             }
-            if !self.wait_for_managed_commands(context).await {
-                return false;
+            match tokio::time::timeout_at(deadline, self.wait_for_managed_commands(context)).await {
+                Ok(true) => {}
+                Ok(false) => return false,
+                Err(_) => {
+                    return self.record_command_completions(context).await
+                        || self.release_stalled_commands(context, limit).await;
+                }
             }
             if self.record_command_completions(context).await {
                 return true;

@@ -1123,6 +1123,9 @@ pub struct Config {
     /// Default: `300000` (5 minutes).
     pub background_terminal_max_timeout: u64,
 
+    /// Longest time a turn waits for its running commands without any of them finishing.
+    pub background_command_turn_wait: Duration,
+
     /// Idle timeout for unsubscribed app-server threads, resolved at server startup.
     pub thread_unload_delay: Duration,
 
@@ -4039,6 +4042,19 @@ impl Config {
                 "thread_unload_delay_secs is too large",
             ));
         }
+        let background_command_turn_wait = Duration::from_millis(
+            cfg.background_command_turn_wait_ms
+                .unwrap_or(/*default*/ 600_000),
+        );
+        if std::time::Instant::now()
+            .checked_add(background_command_turn_wait)
+            .is_none()
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "background_command_turn_wait_ms is too large",
+            ));
+        }
 
         let ghost_snapshot = {
             let mut config = GhostSnapshotConfig::default();
@@ -4594,6 +4610,7 @@ impl Config {
             tool_registry,
             code_mode,
             background_terminal_max_timeout,
+            background_command_turn_wait,
             thread_unload_delay,
             ghost_snapshot,
             multi_agent_v2,

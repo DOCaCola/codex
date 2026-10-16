@@ -662,6 +662,10 @@ impl Session {
 
         let finishing = CancellationToken::new();
         let finish_recording = finishing.clone().drop_guard();
+        self.services
+            .unified_exec_manager
+            .release_turn_commands(&turn_context.sub_id)
+            .await;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             active.as_mut().and_then(|active_turn| {
@@ -969,6 +973,11 @@ impl Session {
         }
 
         task.handle.abort();
+        // After the task stops parking, so a later turn never waits on its commands.
+        self.services
+            .unified_exec_manager
+            .release_turn_commands(&sub_id)
+            .await;
 
         session_task
             .abort(Arc::clone(self), Arc::clone(&task.turn_context))

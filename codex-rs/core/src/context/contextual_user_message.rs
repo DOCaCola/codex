@@ -21,6 +21,7 @@ use super::world_state::EnvironmentsState;
 
 const CONTEXTUAL_USER_FRAGMENT_MATCHERS: &[fn(&str) -> bool] = &[
     super::CommandCompletion::matches_text,
+    super::CommandsStillRunning::matches_text,
     UserInstructions::matches_text,
     EnvironmentsState::matches_text,
     AdditionalContextUserFragment::matches_text,

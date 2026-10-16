@@ -9,8 +9,9 @@ pub(super) fn configure_exec(tool: &mut ToolSpec) {
     tool.description.push_str(
         "\nFinite commands deliver completion automatically. Continue independent work without polling. \
          When blocked, use write_stdin with wait_mode=\"completion\". The runtime keeps the turn open \
-         while commands run. A started command is not a completed task. Use execution_mode=\"interactive\" \
-         for servers, watchers, REPLs and other persistent work.",
+         while commands run, until a time limit passes without any finishing; ending or interrupting \
+         the turn also stops automatic delivery. A started command is not a completed task. Use \
+         execution_mode=\"interactive\" for servers, watchers, REPLs and other persistent work.",
     );
     let properties = tool.parameters.properties.get_or_insert_default();
     properties.insert("execution_mode".into(), JsonSchema::string_enum(

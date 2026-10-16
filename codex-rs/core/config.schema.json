@@ -6978,6 +6978,12 @@
       "default": null,
       "description": "Optional policy instructions for the guardian auto-reviewer."
     },
+    "background_command_turn_wait_ms": {
+      "description": "With `background_command_delivery`, the longest time in milliseconds a turn stays open waiting for its running commands without any of them finishing. The model is then told which commands are still running, and they stop delivering results automatically. Default: `600000` (10 minutes).",
+      "format": "uint64",
+      "minimum": 0.0,
+      "type": "integer"
+    },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
       "format": "uint64",

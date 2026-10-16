@@ -15,6 +15,7 @@ use crate::unified_exec::WriteStdinRequest;
 impl UnifiedExecProcessManager {
     /// Append at most four bounded completion fragments at a sampling boundary.
     pub(crate) async fn record_command_completions(&self, context: &UnifiedExecContext) -> bool {
+        let turn_id = &context.step_context.turn.sub_id;
         let jobs = self
             .managed
             .jobs
@@ -26,6 +27,7 @@ impl UnifiedExecProcessManager {
         let mut items = Vec::new();
         for (id, job) in jobs {
             if job.revoked.is_cancelled()
+                || !job.delivers_to(turn_id)
                 || !job.initial_response_done.is_cancelled()
                 || job.initial_response_consumed.load(Ordering::Acquire)
                 || !job.process.has_exited()

@@ -685,8 +685,14 @@ impl UnifiedExecProcessManager {
 
         let managed_launch = if process_stored && let Some(slot) = managed_slot {
             Some(
-                self.track_managed_command(request.process_id, Arc::clone(&process), slot)
-                    .await,
+                self.track_managed_command(
+                    request.process_id,
+                    context,
+                    request.hook_command.clone(),
+                    Arc::clone(&process),
+                    slot,
+                )
+                .await,
             )
         } else {
             None

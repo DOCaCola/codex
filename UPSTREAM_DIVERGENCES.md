@@ -56,14 +56,24 @@ maintaining parallel logic or compatibility fallbacks.
 - Lifecycle: reuse the active turn and existing cleanup/interrupt behavior.
   No desktop changes or new app-server wire events; no restart-durable jobs.
   A live turn waiting for a command is intentionally still shown as active.
+- Ownership: only the launching turn parks on or automatically receives a
+  command. Turn completion and interruption release the turn's unfinished
+  commands, so a later turn never waits on them. Parking without any
+  completion for `background_command_turn_wait_ms` (default 10 minutes)
+  releases them and gives the model one bounded `<commands_still_running>`
+  notice. Released commands keep running and stay readable, including
+  through completion waits. Added 2026-10-16 after a subagent's final report
+  was withheld indefinitely by hung SSH commands from earlier work.
 - The v0.159.0 merge uses upstream's shared output buffers and sandbox
   attribution while retaining the fork's completion ownership and result cache.
 - Remove when: upstream provides equivalent completion consumption, runtime
   waiting, and stack dependency semantics.
 - Review stages: gated execution contract; coordinator/context/turn waiting;
   stack and hook integration; lifecycle/request-count regression tests.
-- Local code: `codex-rs/core/src/unified_exec/managed.rs`,
+- Local code: `codex-rs/core/src/unified_exec/managed*.rs`,
   `codex-rs/core/src/context/command_completion.rs`,
+  `codex-rs/core/src/context/commands_still_running.rs`, turn teardown in
+  `codex-rs/core/src/tasks/mod.rs`, the `background_command_turn_wait_ms` config,
   `codex-rs/core/src/tools/handlers/command_stack_managed.rs`,
   unified-exec handlers, feature registry, and `core/src/session/turn.rs`.
 
