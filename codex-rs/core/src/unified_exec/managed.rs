@@ -2,7 +2,9 @@
 //!
 //! The model loop consumes completions between sampling requests and parks before
 //! ending a turn. Keeping that turn open preserves existing desktop/exec lifecycle
-//! semantics without adding a client protocol.
+//! semantics without adding a client protocol. Delivery-only commands belong to
+//! their launching turn and release to explicit reads when it stops waiting.
+//! Opted-in background jobs instead retain their session-owned completion queue.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -35,6 +37,8 @@ mod listing;
 mod queue_delivery;
 #[path = "managed_registry.rs"]
 mod registry;
+#[path = "managed_release.rs"]
+mod release;
 
 #[derive(Clone, Copy, Debug, Deserialize, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -111,8 +115,17 @@ struct Job {
     initial_response_done: CancellationToken,
     initial_response_consumed: AtomicBool,
     acknowledged: AtomicBool,
+    /// Delivery-only records release to explicit reads when their turn stops waiting.
+    released: AtomicBool,
     revoked: CancellationToken,
     state: Arc<Mutex<JobState>>,
+}
+
+impl Job {
+    fn delivers_to(&self, turn_id: &str) -> bool {
+        self.background_jobs
+            || (!self.released.load(Ordering::Acquire) && self.origin.turn.sub_id == turn_id)
+    }
 }
 
 #[derive(Default)]
@@ -190,7 +203,8 @@ impl UnifiedExecProcessManager {
                     !job.process.has_exited()
                         || !(job.acknowledged.load(Ordering::Acquire)
                             || job.revoked.is_cancelled()
-                            || job.initial_response_consumed.load(Ordering::Acquire))
+                            || job.initial_response_consumed.load(Ordering::Acquire)
+                            || job.released.load(Ordering::Acquire))
                 });
             }
         }
@@ -216,6 +230,7 @@ impl UnifiedExecProcessManager {
             initial_response_done: CancellationToken::new(),
             initial_response_consumed: AtomicBool::new(false),
             acknowledged: AtomicBool::new(false),
+            released: AtomicBool::new(false),
             revoked: CancellationToken::new(),
             state: Arc::new(Mutex::new(JobState::default())),
         });
@@ -376,18 +391,13 @@ impl UnifiedExecProcessManager {
 
     /// Park the current logical turn; wake only for completion, input or cleanup.
     async fn wait_for_managed_commands(&self, context: &UnifiedExecContext) -> bool {
+        let turn_id = &context.step_context.turn.sub_id;
         loop {
             let changed = self.managed.changed.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
             let jobs = self.managed.records().await;
-            let queued_ready = if context
-                .step_context
-                .turn
-                .config
-                .features
-                .enabled(codex_features::Feature::BackgroundJobs)
-            {
+            let queued_ready = if context.session.background_jobs.enabled {
                 Some(self.managed.registry.has_ready_completion().await)
             } else {
                 None
@@ -395,7 +405,7 @@ impl UnifiedExecProcessManager {
             let mut exits = FuturesUnordered::new();
             let mut waiting_reader = false;
             for (_, job) in jobs {
-                if job.revoked.is_cancelled() {
+                if job.revoked.is_cancelled() || !job.delivers_to(turn_id) {
                     continue;
                 }
                 if job.initial_response_consumed.load(Ordering::Acquire) {
@@ -460,6 +470,12 @@ impl UnifiedExecProcessManager {
         if delivered || model_needs_follow_up || context.session.background_continuation.enabled {
             return delivered;
         }
+        let limit = context
+            .step_context
+            .turn
+            .config
+            .background_command_turn_wait;
+        let deadline = (!context.session.background_jobs.enabled).then(|| Instant::now() + limit);
         loop {
             if context
                 .session
@@ -469,7 +485,16 @@ impl UnifiedExecProcessManager {
             {
                 return true;
             }
-            if !self.wait_for_managed_commands(context).await {
+            if let Some(deadline) = deadline {
+                match tokio::time::timeout_at(deadline, self.wait_for_managed_commands(context)).await {
+                    Ok(true) => {}
+                    Ok(false) => return false,
+                    Err(_) => {
+                        return self.record_command_completions(context).await
+                            || self.release_stalled_commands(context, limit).await;
+                    }
+                }
+            } else if !self.wait_for_managed_commands(context).await {
                 return false;
             }
             if self.record_command_completions(context).await {

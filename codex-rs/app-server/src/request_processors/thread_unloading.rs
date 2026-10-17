@@ -149,6 +149,7 @@ impl UnloadingState {
             if let Some(target) = unloading_target
                 && target <= Instant::now()
             {
+                tokio::task::yield_now().await;
                 return true;
             }
             let unloading_sleep = async {

@@ -19,10 +19,12 @@ impl UnifiedExecProcessManager {
         if context.session.background_jobs.enabled {
             return self.record_queued_completions(context).await;
         }
+        let turn_id = &context.step_context.turn.sub_id;
         let jobs = self.managed.records().await;
         let mut items = Vec::new();
         for (id, job) in jobs {
             if job.revoked.is_cancelled()
+                || !job.delivers_to(turn_id)
                 || job.initial_response_consumed.load(Ordering::Acquire)
                 || job.acknowledged.load(Ordering::Acquire)
             {

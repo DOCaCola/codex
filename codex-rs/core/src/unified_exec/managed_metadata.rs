@@ -50,7 +50,7 @@ pub(crate) struct JobMetadata {
     pub deadline_fired: bool,
     pub stopped: bool,
     #[serde(skip)]
-    clock_started_at: Instant,
+    pub(super) clock_started_at: Instant,
 }
 
 impl JobMetadata {

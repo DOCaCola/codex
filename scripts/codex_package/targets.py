@@ -47,7 +47,6 @@ class PackageInputs:
     code_mode_host_bin: Path
     hpatch_bin: Path
     rg_bin: Path
-    zsh_bin: Path | None
     bwrap_bin: Path | None
     codex_command_runner_bin: Path | None
     codex_windows_sandbox_setup_bin: Path | None

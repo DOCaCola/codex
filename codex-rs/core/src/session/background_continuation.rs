@@ -26,7 +26,11 @@ pub(crate) struct BackgroundWakeReservation(pub Arc<Mutex<crate::state::TurnStat
 
 impl BackgroundWakeReservation {
     pub(crate) fn matches(&self, active: Option<&crate::state::ActiveTurn>) -> bool {
-        active.is_some_and(|turn| Arc::ptr_eq(&turn.turn_state, &self.0))
+        active.is_some_and(|turn| {
+            turn.task.is_none()
+                && turn.finishing.is_none()
+                && Arc::ptr_eq(&turn.turn_state, &self.0)
+        })
     }
 }
 

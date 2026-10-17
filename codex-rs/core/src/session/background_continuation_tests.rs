@@ -11,6 +11,18 @@ fn background_wake_cannot_recreate_a_removed_or_replaced_reservation() {
     assert!(!reservation.matches(Some(&crate::state::ActiveTurn::default())));
 }
 
+#[test]
+fn background_wake_reservation_rejects_a_finishing_turn() {
+    let mut active = crate::state::ActiveTurn::default();
+    let reservation = BackgroundWakeReservation(Arc::clone(&active.turn_state));
+    active.finishing = Some(CancellationToken::new());
+    assert!(!reservation.matches(Some(&active)));
+    active.finishing.as_ref().unwrap().cancel();
+    assert!(!reservation.matches(Some(&active)));
+    active.finishing = None;
+    assert!(reservation.matches(Some(&active)));
+}
+
 #[tokio::test]
 async fn interruption_guard_releases_on_drop_and_signals_existing_channel() {
     let (mut session, _) = crate::session::tests::make_session_and_context().await;

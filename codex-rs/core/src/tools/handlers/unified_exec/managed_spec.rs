@@ -17,12 +17,20 @@ pub(super) fn configure_exec(
              when results wait for user input. Use interactive for persistent work and foreground \
              when final results are required now.",
         );
-    } else {
+    } else if policy.is_some() {
         tool.description.push_str(
             "\nFinite commands deliver completion automatically. Continue independent work without polling. \
              When blocked, use write_stdin with wait_mode=\"completion\". The runtime keeps the turn open \
              while commands run. A started command is not a completed task. Use execution_mode=\"interactive\" \
              for servers, watchers, REPLs and other persistent work.",
+        );
+    } else {
+        tool.description.push_str(
+            "\nFinite commands deliver completion automatically. Continue independent work without polling. \
+             When blocked, use write_stdin with wait_mode=\"completion\". The runtime keeps the turn open \
+             while commands run, until a time limit passes without any finishing; ending or interrupting \
+             the turn also stops automatic delivery. A started command is not a completed task. Use \
+             execution_mode=\"interactive\" for servers, watchers, REPLs and other persistent work.",
         );
     }
     let properties = tool.parameters.properties.get_or_insert_default();

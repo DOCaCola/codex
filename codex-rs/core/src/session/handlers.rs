@@ -58,6 +58,7 @@ use tracing::info;
 use tracing::warn;
 
 pub async fn interrupt(sess: &Arc<Session>) {
+    sess.clear_mcp_channels().await;
     sess.interrupt_task().await;
 }
 
@@ -289,6 +290,7 @@ pub async fn set_thread_memory_mode(sess: &Arc<Session>, sub_id: String, mode: T
 
 pub(super) async fn shutdown_session_runtime(sess: &Arc<Session>) {
     sess.background_continuation.stop.cancel();
+    sess.close_mcp_channels().await;
     let startup_prewarm = {
         let mut state = sess.state.lock().await;
         // Stop admission and take the current warmup together so resume cannot replace it.
@@ -300,6 +302,7 @@ pub(super) async fn shutdown_session_runtime(sess: &Arc<Session>) {
     }
     let _ = sess.conversation.shutdown().await;
     sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
+    super::async_compaction::shutdown(sess).await;
     let shell_snapshot_prewarm = sess.state.lock().await.shell_snapshot_prewarm.take();
     if let Some(shell_snapshot_prewarm) = shell_snapshot_prewarm {
         shell_snapshot_prewarm.abort();
@@ -459,6 +462,10 @@ pub(super) async fn submission_loop(
                 Ok(sub) => sub,
                 Err(_) => break,
             },
+            _ = sess.mcp_channel_wakeup.notified() => {
+                sess.dispatch_mcp_channels().await;
+                continue;
+            }
             update = async {
                 match &mut mailbox {
                     Some(updates) => updates.changed().await.map(|()| *updates.borrow_and_update()),
@@ -517,6 +524,25 @@ pub(super) async fn submission_loop(
                         })
                         .await;
                     }
+                    false
+                }
+                Op::RealtimeConversationAttach { params, reply } => {
+                    let result =
+                        crate::realtime_conversation::handle_attach(&sess, sub.id, params).await;
+                    let _ = reply.send(result);
+                    false
+                }
+                Op::RealtimeConversationDetach {
+                    realtime_session_id,
+                    reply,
+                } => {
+                    crate::realtime_conversation::handle_detach(
+                        &sess,
+                        Some(&realtime_session_id),
+                        &sub.id,
+                    )
+                    .await;
+                    let _ = reply.send(Ok(()));
                     false
                 }
                 Op::RealtimeConversationAudio(params) => {
@@ -599,6 +625,7 @@ pub(super) async fn submission_loop(
                                 let _ = reply.send(Ok(()));
                             }
                             thread_settings::emit_applied(&sess, sub.id.clone(), snapshot).await;
+                            sess.mcp_channel_wakeup.notify_one();
                         }
                         Err(error) => {
                             let message = format!("invalid thread settings override: {error}");

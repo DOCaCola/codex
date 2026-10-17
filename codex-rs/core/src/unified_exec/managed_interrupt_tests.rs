@@ -29,7 +29,6 @@ async fn older_running_job_is_suppressed_by_later_turn_and_idle_interrupts() {
             UnifiedExecProcess::from_spawned(
                 spawned,
                 codex_sandboxing::SandboxType::None,
-                Box::new(crate::unified_exec::NoopSpawnLifecycle),
             )
             .await
             .unwrap(),

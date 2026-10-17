@@ -38,6 +38,7 @@ pub(crate) struct EventProcessorWithHumanOutput {
     final_message_rendered: bool,
     emit_final_message_on_shutdown: bool,
     last_total_token_usage: Option<ThreadTokenUsage>,
+    last_turn_diff: String,
 }
 
 impl EventProcessorWithHumanOutput {
@@ -64,6 +65,7 @@ impl EventProcessorWithHumanOutput {
             final_message_rendered: false,
             emit_final_message_on_shutdown: false,
             last_total_token_usage: None,
+            last_turn_diff: String::new(),
         }
     }
 
@@ -351,9 +353,12 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 TurnStatus::InProgress => CodexStatus::Running,
             },
             ServerNotification::TurnDiffUpdated(notification) => {
-                if !notification.diff.trim().is_empty() {
+                if notification.diff != self.last_turn_diff && !notification.diff.trim().is_empty()
+                {
                     eprintln!("{}", notification.diff);
                 }
+                // Remember empty updates too, so a restored diff is rendered again.
+                self.last_turn_diff = notification.diff;
                 CodexStatus::Running
             }
             ServerNotification::TurnPlanUpdated(notification) => {
@@ -385,6 +390,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     self.final_message_rendered = false;
                     self.emit_final_message_on_shutdown = false;
                 }
+                self.last_turn_diff.clear();
                 CodexStatus::Running
             }
             _ => CodexStatus::Running,

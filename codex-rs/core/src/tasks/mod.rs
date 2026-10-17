@@ -336,6 +336,7 @@ impl Session {
             .await;
             let turn = active.get_or_insert_with(ActiveTurn::default);
             debug_assert!(turn.task.is_none());
+            turn.finishing = None;
             Arc::clone(&turn.turn_state)
         };
         turn_state.lock().await.token_usage_at_turn_start = token_usage_at_turn_start.clone();
@@ -707,11 +708,18 @@ impl Session {
         let _background_interrupt = self
             .begin_background_interrupt(abort_reason.as_ref(), Some(&turn_context.sub_id))
             .await;
+        let finishing = CancellationToken::new();
+        let finish_recording = finishing.clone().drop_guard();
+        self.services
+            .unified_exec_manager
+            .release_turn_commands(&turn_context.sub_id)
+            .await;
         let turn_state = {
             let mut active = self.active_turn.lock().await;
             active.as_mut().and_then(|active_turn| {
                 let task = active_turn.task.take()?;
                 task.handle.detach();
+                active_turn.finishing = Some(finishing);
                 Some(Arc::clone(&active_turn.turn_state))
             })
         };
@@ -744,6 +752,7 @@ impl Session {
             PersistContext::Standard,
         )
         .await;
+        drop(finish_recording);
         let turn_telemetry = &turn_context.session_telemetry;
         // Emit token usage metrics.
         {
@@ -935,6 +944,7 @@ impl Session {
         }
         if cleared_active_turn {
             self.maybe_start_turn_for_pending_work().await;
+            self.mcp_channel_wakeup.notify_one();
         }
     }
 
@@ -1012,6 +1022,11 @@ impl Session {
         }
 
         task.handle.abort();
+        // After the task stops parking, so a later turn never waits on its commands.
+        self.services
+            .unified_exec_manager
+            .release_turn_commands(&sub_id)
+            .await;
 
         session_task
             .abort(Arc::clone(self), Arc::clone(&task.turn_context))

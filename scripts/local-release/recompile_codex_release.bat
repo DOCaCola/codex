@@ -76,4 +76,10 @@ if not "%BUILD_EXIT%"=="0" (
 
 echo Assembling complete Codex package...
 python "%SCRIPT_DIR%package_codex_release.py" --build-dir "%CODEX_CARGO_TARGET_DIR%\%CODEX_BUILD_PROFILE%" --hpatch-bin "%HPATCH_BUILD_OUTPUT%"
+if errorlevel 1 (
+  echo Packaging failed; daemon deployment skipped.
+  exit /b 1
+)
+
+python "%SCRIPT_DIR%deploy_codex_daemon.py"
 exit /b %ERRORLEVEL%

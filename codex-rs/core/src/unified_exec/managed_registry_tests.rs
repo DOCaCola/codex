@@ -40,7 +40,6 @@ async fn exited_process() -> Arc<UnifiedExecProcess> {
         UnifiedExecProcess::from_spawned(
             spawned,
             codex_sandboxing::SandboxType::None,
-            Box::new(crate::unified_exec::NoopSpawnLifecycle),
         )
         .await
         .unwrap(),
@@ -110,9 +109,31 @@ fn job(context: &UnifiedExecContext, process: Arc<UnifiedExecProcess>) -> Arc<Jo
         initial_response_done: CancellationToken::new(),
         initial_response_consumed: AtomicBool::new(false),
         acknowledged: AtomicBool::new(false),
+        released: AtomicBool::new(false),
         revoked: CancellationToken::new(),
         state: Arc::new(Mutex::new(JobState::default())),
     })
+}
+
+#[tokio::test]
+async fn turn_release_preserves_session_owned_completions() {
+    let context = background_context().await;
+    let manager = &context.session.services.unified_exec_manager;
+    let mut legacy = job(&context, exited_process().await);
+    Arc::get_mut(&mut legacy).unwrap().background_jobs = false;
+    let background = job(&context, exited_process().await);
+    background.initial_response_done.cancel();
+    let background_id = background.metadata.lock().await.job_id;
+    manager.managed.jobs.lock().await.insert(1000, Arc::clone(&legacy));
+    manager.managed.registry.insert(1001, background_id, Arc::clone(&background)).await;
+    manager.managed.registry.enqueue(background_id).await;
+
+    manager.release_turn_commands(&context.step_context.turn.sub_id).await;
+
+    assert!(legacy.released.load(Ordering::Acquire));
+    assert!(!background.released.load(Ordering::Acquire));
+    assert_eq!(manager.background_wake_candidates().await[0].job_id, background_id);
+    assert!(manager.has_live_background_work().await);
 }
 
 async fn background_context() -> UnifiedExecContext {

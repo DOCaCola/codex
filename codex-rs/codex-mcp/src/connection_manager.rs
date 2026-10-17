@@ -138,6 +138,21 @@ impl McpServerConnection {
         self.client.client().await
     }
 
+    async fn client_for_call(&self) -> Result<ManagedClient, StartupOutcomeError> {
+        let result = self.client().await;
+        if matches!(result, Err(StartupOutcomeError::Failed { .. }))
+            && !self.client.cancel_token.is_cancelled()
+            && let Some(reconnect) = &self.client.startup_reconnect
+        {
+            if let Some(attempt) = reconnect.reconnect_in_background() {
+                return attempt.await;
+            }
+            // Recovery may have finished between reading the client and joining it.
+            return self.client().await;
+        }
+        result
+    }
+
     async fn shutdown(&self) {
         self.client.shutdown().await;
     }
@@ -251,7 +266,7 @@ impl McpConnectionSet {
             auth_manager,
             elicitation_reviewer,
             elicitation_lifecycle,
-            mcp_server_notification_sender,
+            mcp_channel_sender,
         } = input;
         let store_mode = config.mcp_oauth_credentials_store_mode;
         let keyring_backend_kind = config.auth_keyring_backend_kind;
@@ -621,7 +636,7 @@ impl McpConnectionSet {
                 runtime_auth_provider,
                 client_elicitation_capability.clone(),
                 client_mcp_extensions.clone(),
-                Arc::clone(&mcp_server_notification_sender),
+                Arc::clone(&mcp_channel_sender),
                 auth_manager
                     .as_ref()
                     .filter(|_| {
@@ -635,6 +650,8 @@ impl McpConnectionSet {
                 catalog_item_limit,
             );
             let defer_startup = allow_deferred_startup
+                // Channels need a live listener even when their tool catalog is cached.
+                && !configured_config.channel
                 && !tool_plugin_context.is_selected_plugin_mcp_server(&server_name)
                 && async_managed_client
                     .tool_catalog_cache_context
@@ -865,6 +882,15 @@ impl McpConnectionSet {
         self.servers.contains_key(server_name)
     }
 
+    pub(crate) fn accepts_channel_message(&self, message: &crate::McpChannelMessage) -> bool {
+        self.servers.get(&message.server_name).is_some_and(|view| {
+            Arc::ptr_eq(
+                &view.connection.client.channel_registration,
+                &message.registration,
+            )
+        })
+    }
+
     pub(crate) async fn authentication_failed_servers(&self) -> Vec<String> {
         let mut failed_servers = Vec::new();
         for (server_name, view) in &self.servers {
@@ -926,7 +952,8 @@ impl McpConnectionSet {
         let Some(view) = self.servers.get(server_name) else {
             return false;
         };
-        view.connection.client.ready_transport().is_some() || view.connection.client().await.is_ok()
+        view.connection.client.ready_transport().is_some()
+            || view.connection.client_for_call().await.is_ok()
     }
 
     /// Stop all MCP clients owned by this manager and terminate stdio server processes.

@@ -7,7 +7,7 @@ use std::sync::PoisonError;
 use codex_protocol::mcp::OPENAI_ELICITATION_EXTENSION_ID;
 
 use rmcp::RoleClient;
-use rmcp::model::ClientInfo;
+use rmcp::model::ClientConfig;
 use rmcp::model::ClientResult;
 use rmcp::model::CustomRequest;
 use rmcp::model::CustomResult;
@@ -29,12 +29,12 @@ use serde_json::Map;
 use serde_json::Value;
 use tokio::sync::oneshot;
 
+use crate::channel::SendChannelMessage;
 use crate::logging_client_handler::LoggingClientHandler;
 use crate::rmcp_client::Elicitation;
 use crate::rmcp_client::ElicitationPauseState;
 use crate::rmcp_client::ElicitationResponse;
 use crate::rmcp_client::SendElicitation;
-use crate::rmcp_client::SendNotification;
 
 const MCP_PROGRESS_TOKEN_META_KEY: &str = "progressToken";
 const MCP_ELICITATION_CREATE_METHOD: &str = "elicitation/create";
@@ -96,9 +96,9 @@ impl Drop for PendingVerification {
 
 impl ElicitationClientService {
     pub(crate) fn new(
-        client_info: ClientInfo,
+        client_info: ClientConfig,
         send_elicitation: SendElicitation,
-        send_notification: Option<SendNotification>,
+        send_notification: Option<SendChannelMessage>,
         pause_state: ElicitationPauseState,
     ) -> Self {
         let supports_openai_form = client_info
@@ -154,7 +154,14 @@ impl ElicitationClientService {
                 return Ok(ElicitationResponse {
                     action: ElicitationAction::Cancel,
                     content: None,
-                    meta: None,
+                    meta: user_verification.then(|| {
+                        if cancellations.saturated {
+                            crate::UserVerificationReason::ApprovalUnavailable
+                        } else {
+                            crate::UserVerificationReason::Interrupted
+                        }
+                        .into_meta()
+                    }),
                 });
             }
             cancellations.pending.insert(id.clone(), cancel_tx);
@@ -170,14 +177,14 @@ impl ElicitationClientService {
                 return Ok(ElicitationResponse {
                     action: ElicitationAction::Cancel,
                     content: None,
-                    meta: None,
+                    meta: user_verification.then(|| crate::UserVerificationReason::Interrupted.into_meta()),
                 });
             }
             _ = cancel_rx => {
                 return Ok(ElicitationResponse {
                     action: ElicitationAction::Cancel,
                     content: None,
-                    meta: None,
+                    meta: user_verification.then(|| crate::UserVerificationReason::Interrupted.into_meta()),
                 });
             }
             response = (self.send_elicitation)(id, request) => response,
@@ -332,7 +339,7 @@ impl Service<RoleClient> for ElicitationClientService {
         .await
     }
 
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         <LoggingClientHandler as Service<RoleClient>>::get_info(&self.handler)
     }
 }

@@ -138,6 +138,11 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
     )
     .await;
     launch(&harness, ModeKind::Default).await?;
+    let EventMsg::TurnStarted(initial) = wait_for_event(&harness.test().codex, |event| {
+        matches!(event, EventMsg::TurnStarted(_))
+    }).await else {
+        unreachable!()
+    };
     finished(&harness).await;
     assert_eq!(
         log.requests().len(),
@@ -158,6 +163,12 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
         .await?;
     }
     gate.release.notify_one();
+    let EventMsg::TurnStarted(continued) = wait_for_event(&harness.test().codex, |event| {
+        matches!(event, EventMsg::TurnStarted(_))
+    }).await else {
+        unreachable!()
+    };
+    assert_ne!(initial.turn_id, continued.turn_id);
     finished(&harness).await;
     assert_eq!(
         log.requests().len(),

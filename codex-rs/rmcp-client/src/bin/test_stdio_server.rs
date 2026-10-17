@@ -1,3 +1,6 @@
+#[path = "test_stdio_server/channels.rs"]
+mod channels;
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -20,8 +23,6 @@ use rmcp::model::JsonObject;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::ListToolsResult;
-use rmcp::model::LoggingLevel;
-use rmcp::model::LoggingMessageNotificationParam;
 
 use rmcp::model::MetaObject;
 use rmcp::model::PaginatedRequestParams;
@@ -31,7 +32,7 @@ use rmcp::model::Resource;
 use rmcp::model::ResourceContents;
 use rmcp::model::ResourceTemplate;
 use rmcp::model::ServerCapabilities;
-use rmcp::model::ServerInfo;
+use rmcp::model::ServerConfig;
 use rmcp::model::Tool;
 use rmcp::model::ToolAnnotations;
 use serde::Deserialize;
@@ -50,7 +51,7 @@ struct TestToolServer {
 
 const MEMO_URI: &str = "memo://codex/example-note";
 const MEMO_CONTENT: &str = "This is a sample MCP resource served by the rmcp test server.";
-const SANDBOX_STATE_META_CAPABILITY: &str = "codex/sandbox-state-meta";
+const SANDBOX_STATE_CAPABILITY: &str = "codex/sandbox-state";
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
 const APP_ONLY_CWD_MARKER_FILE_ENV: &str = "MCP_TEST_APP_ONLY_CWD_MARKER_FILE";
 const DYNAMIC_SERVER_METADATA_ENV: &str = "MCP_TEST_DYNAMIC_SERVER_METADATA";
@@ -508,6 +509,13 @@ struct ImageScenarioArgs {
 }
 
 impl ServerHandler for TestToolServer {
+    async fn on_initialized(
+        &self,
+        context: rmcp::service::NotificationContext<rmcp::service::RoleServer>,
+    ) {
+        channels::listen(context);
+    }
+
     async fn initialize(
         &self,
         request: InitializeRequestParams,
@@ -530,18 +538,18 @@ impl ServerHandler for TestToolServer {
         Ok(self.get_info())
     }
 
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let mut capabilities = ServerCapabilities::builder()
             .enable_tools()
             .enable_tool_list_changed()
             .enable_resources()
             .build();
         capabilities.experimental = Some(BTreeMap::from([(
-            SANDBOX_STATE_META_CAPABILITY.to_string(),
+            SANDBOX_STATE_CAPABILITY.to_string(),
             JsonObject::new(),
         )]));
 
-        let server_info = ServerInfo::new(capabilities);
+        let server_info = ServerConfig::new(capabilities);
         let server_info = match dynamic_server_process_label() {
             Some(process_label) => server_info
                 .with_server_info(
@@ -553,10 +561,10 @@ impl ServerHandler for TestToolServer {
                 server_info.with_instructions("Use these tools to exercise the rmcp test server.")
             }
         };
-        match std::env::var(SERVER_INSTRUCTIONS_ENV) {
+        channels::configure(match std::env::var(SERVER_INSTRUCTIONS_ENV) {
             Ok(instructions) => server_info.with_instructions(instructions),
             Err(_) => server_info,
-        }
+        })
     }
 
     fn list_tools(
@@ -566,6 +574,11 @@ impl ServerHandler for TestToolServer {
     ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
         let tools = self.tools.clone();
         async move {
+            if std::env::var_os("MCP_TEST_CHANNEL_NO_TOOLS").is_some() {
+                return Err(McpError::method_not_found::<
+                    rmcp::model::ListToolsRequestMethod,
+                >());
+            }
             let mut tools = (*tools).clone();
             if let Some(marker_file) = std::env::var_os(APP_ONLY_CWD_MARKER_FILE_ENV)
                 && std::path::Path::new(&marker_file).is_file()
@@ -1054,20 +1067,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // bubble up the error so the process exits.
     let service = TestToolServer::new();
     let running = service.serve(stdio()).await?;
-
-    if let Ok(notification_data) = std::env::var("MCP_TEST_LOGGING_NOTIFICATION") {
-        #[allow(deprecated)]
-        running
-            .peer()
-            .notify_logging_message(
-                LoggingMessageNotificationParam::new(
-                    LoggingLevel::Info,
-                    serde_json::from_str(&notification_data)?,
-                )
-                .with_logger("codex.test"),
-            )
-            .await?;
-    }
 
     // A test can close an initialized transport without killing an arbitrary PID.
     let exit_file = std::env::var_os("MCP_TEST_EXIT_FILE");

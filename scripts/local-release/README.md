@@ -19,6 +19,13 @@ Add `../output/bin` to PATH, not `../output`. Daemon startup requires the comple
 package, including `codex-package.json`, `codex-resources`, and `codex-path`.
 Copying only `codex.exe` is insufficient.
 
-The daemon keeps its own installed package. After rebuilding, use
-`codex app-server daemon update --from-cli` to select the new local package.
-This asks for confirmation and can interrupt work in a running daemon.
+After successful packaging, both recompile scripts deploy the new package with
+`output/bin/codex.exe app-server daemon update --from-cli --yes`. This selects
+and pins the fork package in the daemon's separate installation. A running daemon
+restarts automatically, which can interrupt active or queued work. A stopped daemon
+stays stopped and uses the new package on its next start. The scripts verify the
+selected and running versions and fail if deployment or verification fails.
+
+The daemon must already have an installation selected. For a first installation,
+run `output/bin/codex.exe app-server daemon start` before using the recompile workflow.
+Packaging alone with `copy_codex_release_to_output.sh` does not deploy the daemon.

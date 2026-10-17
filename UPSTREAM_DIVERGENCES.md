@@ -11,6 +11,10 @@ maintaining parallel logic or compatibility fallbacks.
   The CLI PATH entry is `../output/bin`; complete packages support daemon startup.
   Successful packaging removes all `output.previous-*` backups, retaining only the
   latest package; a failed replacement restores the previous output.
+  Both recompile scripts then deploy and pin that package through
+  `app-server daemon update --from-cli --yes`, restarting a running daemon and
+  verifying the selected and running versions. Packaging alone leaves daemon
+  deployment to the caller.
 - Remove when: an upstream local build workflow covers the fork companion and local
   output installation.
 
@@ -30,12 +34,18 @@ maintaining parallel logic or compatibility fallbacks.
   `core/src/tools/handlers/command_stack.rs`, and `core/src/environment_selection.rs`
   under `codex-rs`.
 
-## Inbound MCP notifications
+## Claude-compatible MCP channels
 
-- Local behavior: an opt-in path surfaces standard inbound MCP notifications to Codex sessions.
-- The v0.159.0 merge retains this independently of upstream's per-server
-  tool input schema size limit; both settings round-trip through config.
-- Remove when: upstream provides an official MCP notification or session-ingress surface.
+- Local behavior: per-server `channel = true` opts stdio servers into the
+  `claude/channel` capability and `notifications/claude/channel` contract.
+  Bounded session queues start idle automatic turns and batch busy arrivals.
+  Reply tools use normal MCP discovery; one-way channels also receive server
+  instructions without requiring a tool catalog.
+- This replaces `surface_notifications`, generic notification context, and
+  VSMCP-specific parsing completely. No configuration alias or legacy ingress.
+  VSMCP's server migration is deferred; its logging messages no longer enter model context.
+- Permission relay and HTTP channel delivery are outside this implementation.
+- Remove when: upstream provides equivalent channel ingress and scheduling.
 
 ## Optional finite command completion delivery
 
@@ -52,14 +62,27 @@ maintaining parallel logic or compatibility fallbacks.
 - Lifecycle: reuse the active turn and existing cleanup/interrupt behavior.
   No desktop changes or new app-server wire events; no restart-durable jobs.
   A live turn waiting for a command is intentionally still shown as active.
+- Without `background_jobs`, only the launching turn parks on or automatically receives a
+  command. Turn completion and interruption release the turn's unfinished
+  commands, so a later turn never waits on them. Parking without any
+  completion for `background_command_turn_wait_ms` (default 10 minutes)
+  releases them and gives the model one bounded `<commands_still_running>`
+  notice. Released commands keep running and stay readable, including
+  through completion waits. Added 2026-10-16 after a subagent's final report
+  was withheld indefinitely by hung SSH commands from earlier work.
+- With `background_jobs`, the captured session registry and completion queue
+  retain their cross-turn delivery and interruption policy described below.
+  The delivery-only turn wait limit does not release opted-in jobs.
 - The v0.159.0 merge uses upstream's shared output buffers and sandbox
   attribution while retaining the fork's completion ownership and result cache.
 - Remove when: upstream provides equivalent completion consumption, runtime
   waiting, and stack dependency semantics.
 - Review stages: gated execution contract; coordinator/context/turn waiting;
   stack and hook integration; lifecycle/request-count regression tests.
-- Local code: `codex-rs/core/src/unified_exec/managed.rs`,
+- Local code: `codex-rs/core/src/unified_exec/managed*.rs`,
   `codex-rs/core/src/context/command_completion.rs`,
+  `codex-rs/core/src/context/commands_still_running.rs`, turn teardown in
+  `codex-rs/core/src/tasks/mod.rs`, the `background_command_turn_wait_ms` config,
   `codex-rs/core/src/tools/handlers/command_stack_managed.rs`,
   unified-exec handlers, feature registry, and `core/src/session/turn.rs`.
 
@@ -410,3 +433,39 @@ notes are excluded. The original local development branches retain that history.
   method payload, including the intersection-wrapped notification envelope.
   Existing upstream notification contracts remain intact. Experimental generation
   includes the background-work read/changed variants and all payload definitions.
+## Stable v0.163.0 integration
+
+- Read-only tool parallelism follows upstream's per-tool scheduling flags.
+  `command_stack` retains its exclusive outer dispatch and bounded, independent
+  child scheduling; patches and dependent steps retain their ordering.
+- Persistent local shell selection now uses upstream's standard shell executor.
+  The retired patched-zsh backend and packaged zsh resources are removed.
+- Managed command completion adopts upstream's remote output-drain policy and
+  output retention, preserving final polling after the child exits.
+- Inbound MCP notifications use the current RMCP client configuration and MCP
+  refresh interfaces. Sandbox metadata follows upstream's dedicated module.
+- Local recompilation still deploys the complete package to the managed daemon.
+  Fork releases use version `0.163.0-doca`.
+
+## Background integration with v0.163.0-doca.1
+
+- Delivery-only commands adopt current main's turn ownership, turn-end release
+  and bounded no-progress park. Released results remain explicitly readable.
+  Session-owned background jobs retain UUID queue ownership, captured deadlines,
+  interrupted-result retention and optional idle continuation.
+- Managed release reads the existing origin and timing metadata, rather than
+  maintaining duplicate owner/command/start records. Retention may evict exited
+  released delivery-only records; live and unconsumed registry jobs stay protected.
+- Automatic completion admission respects main's terminal-recording fence.
+  Reservations cannot match a finishing turn. The existing pending-work helper
+  supplies fresh continued turn IDs after active-turn cleanup.
+- Claude channels replace the retired custom notification ingress. Their
+  automatic `ResponseItem` turns do not mark new user authorization or clear
+  background interruption suppression. Channel and background workers both
+  retain the existing idle/Plan/mailbox admission checks.
+- Remote output remains pollable through output closure; explicit termination
+  overrides retention. Fast opted-in commands still receive timing/UUID records.
+- Precomputed protocol conflicts are resolved from both schemas without running
+  generators. Stable exports retain current main; experimental exports combine
+  its new protocol surface with the background capability/job/work definitions.
+  Regeneration and parity checks remain required in the next validation stage.
