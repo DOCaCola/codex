@@ -22,9 +22,10 @@ pub(super) fn configure_exec(tool: &mut ToolSpec) {
         "Positive execution deadline for finite commands, including background time. Foreground defaults to 300000 ms; auto/background have no implicit deadline. This is separate from yield_time_ms.".into(),
     )));
     if let Some(yield_time) = properties.get_mut("yield_time_ms") {
-        yield_time.description.get_or_insert_default().push_str(
-            " Applies only to auto/interactive; background returns promptly and foreground waits until exit or its execution deadline.",
-        );
+        yield_time.description = Some(format!(
+            "{} Applies only to auto/interactive; background returns promptly and foreground waits until exit or its execution deadline.",
+            yield_time.description.as_deref().unwrap_or_default(),
+        ).into_boxed_str());
     }
     configure_result(tool);
 }

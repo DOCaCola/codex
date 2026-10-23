@@ -1,3 +1,5 @@
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::input_text;
 use std::time::Duration;
 
 use super::ContextualUserFragment;
@@ -56,7 +58,7 @@ impl ContextualUserFragment for CommandsStillRunning {
     fn type_markers() -> (&'static str, &'static str) {
         ("<commands_still_running>", "</commands_still_running>")
     }
-    fn body(&self) -> String {
+    fn body(&self) -> ContentItem {
         let mut sessions = String::new();
         for command in &self.listed {
             sessions.push_str(&format!(
@@ -69,10 +71,10 @@ impl ContextualUserFragment for CommandsStillRunning {
         if self.unlisted > 0 {
             sessions.push_str(&format!("- {} more sessions\n", self.unlisted));
         }
-        format!(
+        input_text(format!(
             "\nNo command finished during {}s of waiting, so this turn no longer waits for these running command sessions and will not receive their results automatically:\n{sessions}If a result is still required, use write_stdin with chars=\"\" and wait_mode=\"completion\" to wait for it, or read current output with write_stdin. Otherwise continue; the commands keep running as background sessions.\n",
             self.waited.as_secs(),
-        )
+        ))
     }
 }
 

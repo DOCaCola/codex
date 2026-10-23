@@ -224,3 +224,19 @@ notes are excluded. The original local development branches retain that history.
   refresh interfaces. Sandbox metadata follows upstream's dedicated module.
 - Local recompilation still deploys the complete package to the managed daemon.
   Fork releases use version `0.163.0-doca`.
+
+## Stable v0.164.0 integration
+
+- Persistent shell selection follows upstream's separate active and configured
+  environment bindings. Selecting a local shell refreshes both views while
+  preserving snapshots already captured by running commands and owner configuration.
+- Command batching retains hidden child tools and managed completion semantics with
+  upstream's stable tool declarations, readiness checks, and shell/login parameters.
+- Claude channels retain one-way server startup without a tools capability alongside
+  upstream EMA authentication and tool catalog metadata.
+- Runtime completion notices and channel context use upstream typed content items;
+  existing bounds, attribution, and model-visible text remain unchanged.
+- hpatch resolves its companion on the executor using upstream's current process
+  sandbox preparation and credential-broker handling.
+- The fork release workflow follows upstream Rust 1.99.1; package builds use the
+  pinned V8 152.2.0 artifacts. Daemon auto-start retains the upstream enabled default.

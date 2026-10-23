@@ -1,6 +1,4 @@
 use crate::function_tool::FunctionCallError;
-use codex_features::Feature;
-
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
@@ -101,18 +99,7 @@ impl WriteStdinHandler {
                 "completion waits require background_command_delivery, empty chars and no yield_time_ms".into(),
             ));
         }
-        if turn
-            .config
-            .features
-            .get()
-            .enabled(Feature::StableEnvironmentTools)
-        {
-            resolve_tool_environment(
-                &step_context,
-                /*environment_id*/ None,
-                "unified exec is unavailable in this session",
-            )?;
-        }
+        resolve_tool_environment(&step_context.environments, /*environment_id*/ None)?;
         let context =
             UnifiedExecContext::new(session.clone(), step_context, cancellation_token, call_id);
         let response = session

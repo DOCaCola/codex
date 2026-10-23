@@ -707,11 +707,9 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
         .primary()
         .expect("primary local environment");
     let handler = ExecCommandHandler::new(ExecCommandHandlerOptions {
-        include_login_parameter: false,
         allow_tty: false,
         exec_permission_approvals_enabled: false,
         include_environment_id: false,
-        include_shell_parameter: true,
         persist_shell_selection: true,
         include_windows_shell_guidance: cfg!(windows),
     });
@@ -737,6 +735,15 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
     let refreshed_snapshot = session.services.turn_environments.snapshot().await;
     assert_eq!(
         refreshed_snapshot.primary().unwrap().shell.as_ref(),
+        Some(selected.as_ref())
+    );
+    let configured_snapshot = session.services.turn_environments.configured_snapshot_now();
+    for starting in configured_snapshot.starting() {
+        starting.wait_until_ready().await?;
+    }
+    let configured_snapshot = configured_snapshot.refresh_readiness();
+    assert_eq!(
+        configured_snapshot.primary().unwrap().shell.as_ref(),
         Some(selected.as_ref())
     );
     assert_eq!(previous_snapshot.primary().unwrap().shell, previous_shell);

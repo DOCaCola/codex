@@ -8,3 +8,4 @@ codex-rs/state/**/*.sql text eol=crlf
 
 # Buildifier must see LF in Starlark multiline string continuations.
 *.bzl text eol=lf
+patches/v8_array_sort_elements_kind.patch text eol=lf

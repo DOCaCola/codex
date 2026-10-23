@@ -51,9 +51,8 @@ impl HpatchHandler {
         let original_input = input.clone();
         let (environment_id, workdir, script) = parse_input(input, self.multi_environment)?;
         let turn_environment = resolve_tool_environment(
-            &invocation.step_context,
+            &invocation.step_context.environments,
             environment_id.as_deref(),
-            "hpatch is unavailable in this session",
         )?;
         let (cwd, root) = resolve_translation_paths(
             turn_environment.cwd(),

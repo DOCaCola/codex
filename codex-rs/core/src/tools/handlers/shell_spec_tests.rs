@@ -6,17 +6,9 @@ fn windows_shell_guidance_description() -> String {
     format!("\n\n{}", windows_shell_guidance())
 }
 
-fn has_parameter(tool: &ToolSpec, parameter_name: &str) -> bool {
-    serde_json::to_value(tool)
-        .expect("tool spec should serialize")
-        .pointer(&format!("/parameters/properties/{parameter_name}"))
-        .is_some()
-}
-
 #[test]
 fn exec_command_tool_matches_expected_spec() {
     let tool = create_exec_command_tool(CommandToolOptions {
-        include_login_parameter: true,
         exec_permission_approvals_enabled: false,
         active_shell_name: None,
     });
@@ -100,33 +92,13 @@ fn exec_command_tool_matches_expected_spec() {
 }
 
 #[test]
-fn exec_command_tool_can_hide_shell_parameter() {
-    let tool = create_exec_command_tool_with_environment_id(
-        CommandToolOptions {
-            include_login_parameter: true,
-            exec_permission_approvals_enabled: false,
-            active_shell_name: None,
-        },
-        /*include_environment_id*/ false,
-        /*include_shell_parameter*/ false,
-        /*persist_shell_selection*/ false,
-        /*include_windows_shell_guidance*/ cfg!(windows),
-    );
-
-    assert!(!has_parameter(&tool, "shell"));
-    assert!(has_parameter(&tool, "cmd"));
-}
-
-#[test]
 fn exec_command_tool_can_describe_persistent_shell_selection() {
     let tool = create_exec_command_tool_with_environment_id(
         CommandToolOptions {
-            include_login_parameter: true,
             exec_permission_approvals_enabled: false,
             active_shell_name: None,
         },
         /*include_environment_id*/ false,
-        /*include_shell_parameter*/ true,
         /*persist_shell_selection*/ true,
         /*include_windows_shell_guidance*/ cfg!(windows),
     );

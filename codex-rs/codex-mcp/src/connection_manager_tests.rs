@@ -137,6 +137,8 @@ impl McpConnectionSet {
         self.servers.insert(
             name,
             McpServerView {
+                refresh_tool_list: true,
+                refresh_timeout: DEFAULT_STARTUP_TIMEOUT,
                 tool_filter: ToolFilter::default(),
                 protocol_mode: crate::McpProtocolMode::Legacy,
                 startup_readiness: Default::default(),
@@ -218,10 +220,11 @@ fn create_codex_apps_tools_cache_context(
 }
 
 fn store_current_tools(cache_context: &ConnectorRuntimeContext<ToolInfo>, tools: Vec<ToolInfo>) {
-    let _ = cache_context.publish_if_newest_accepted(
+    let _ = cache_context.publish_runtime_if_newest_accepted(
         cache_context.begin_fetch(ConnectorRuntimeFetchSource::HardRefresh),
         &create_test_server_info("Codex Apps"),
         tools,
+        /*tool_list_meta*/ None,
     );
 }
 
@@ -342,7 +345,25 @@ struct MutableToolsServer {
 
 impl ServerHandler for MutableToolsServer {
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_tool_list_changed()
+                .build(),
+        )
+    }
+
+    async fn call_tool(
+        &self,
+        _request: rmcp::model::CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
+        context
+            .peer
+            .notify_tool_list_changed()
+            .await
+            .map_err(|error| McpError::internal_error(error.to_string(), None))?;
+        Ok(rmcp::model::CallToolResult::success(Vec::new()).into())
     }
 
     async fn list_tools(
@@ -470,7 +491,9 @@ async fn create_test_managed_client(tools: Vec<ToolInfo>) -> ManagedClient {
                 .expect("create in-process RMCP client"),
         ),
         server_info: create_test_server_info("Ready"),
-        tool_catalog: Arc::new(ClientToolCatalog::new(tools, /*updates*/ None)),
+        tool_catalog: Arc::new(ClientToolCatalog::new(
+            tools, /*meta*/ None, /*updates*/ None,
+        )),
         tool_timeout: None,
         server_instructions: None,
         server_supports_sandbox_state_meta_capability: false,
@@ -552,11 +575,16 @@ async fn prepared_call_timeout_includes_trusted_access_lookup() {
 
     assert_eq!(started.elapsed(), Duration::from_secs(1));
     assert!(format!("{error:#}").contains("timed out awaiting tools/call after 1s"));
+    assert_eq!(
+        codex_rmcp_client::request_error_code(&error),
+        Some("request_timeout")
+    );
 }
 
 pub(crate) async fn create_ready_async_managed_client(tools: Vec<ToolInfo>) -> AsyncManagedClient {
     AsyncManagedClient {
         channel_registration: Arc::new(()),
+        ema_authority: None,
         client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Ok(
             create_test_managed_client(tools).await,
         ))
@@ -588,6 +616,7 @@ async fn connection_statuses_observe_clients_without_starting_them() {
             StartupOutcomeError::Failed {
                 error: "broken".to_string(),
                 is_authentication_required: false,
+                is_ema_authentication_required: false,
             },
         ),
         (
@@ -595,6 +624,7 @@ async fn connection_statuses_observe_clients_without_starting_them() {
             StartupOutcomeError::Failed {
                 error: "login".to_string(),
                 is_authentication_required: true,
+                is_ema_authentication_required: false,
             },
         ),
         (
@@ -669,6 +699,7 @@ async fn connection_statuses_follow_latest_reconnect_outcome() {
                     0 | 1 => Err(StartupOutcomeError::Failed {
                         error: "retry failed".to_string(),
                         is_authentication_required: attempt == 0,
+                        is_ema_authentication_required: false,
                     }),
                     _ => Ok(recovered),
                 }
@@ -728,6 +759,7 @@ fn create_gated_async_managed_client(
     (
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client,
             is_codex_apps_mcp_server: false,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -777,7 +809,11 @@ pub(crate) async fn create_test_manager_with_ready_apps_client(
         _auth_change_notifications: None,
         client,
         server_info: create_test_server_info("Codex Apps"),
-        tool_catalog: Arc::new(ClientToolCatalog::new(vec![tool], /*updates*/ None)),
+        tool_catalog: Arc::new(ClientToolCatalog::new(
+            vec![tool],
+            /*meta*/ None,
+            /*updates*/ None,
+        )),
         tool_timeout: Some(Duration::from_secs(5)),
         server_instructions: None,
         server_supports_sandbox_state_meta_capability: false,
@@ -794,6 +830,7 @@ pub(crate) async fn create_test_manager_with_ready_apps_client(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Ok(
                 managed_client,
             ))
@@ -830,6 +867,7 @@ fn create_test_manager_with_failed_apps_startup(
     let client: ManagedClientFuture = futures::future::ready(Err(StartupOutcomeError::Failed {
         error: "startup failed".to_string(),
         is_authentication_required: false,
+        is_ema_authentication_required: false,
     }))
     .boxed()
     .shared();
@@ -851,6 +889,7 @@ fn create_test_manager_with_failed_apps_startup(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2037,6 +2076,8 @@ async fn read_only_apps_discovery_never_uses_a_shared_writable_catalog() -> anyh
         let cancellation = CancellationToken::new();
         cancellation.cancel();
         let manager = McpConnectionSet::new(
+            /*ema_auth*/ None,
+            /*existing_ema*/ None,
             /*previous*/ None,
             McpPublicationGate::already_published(),
             McpRuntimeInput {
@@ -2111,6 +2152,8 @@ async fn hosted_apps_protocol_mode_is_independent_of_generic_mode() -> anyhow::R
         let startup_cancellation_token = CancellationToken::new();
         startup_cancellation_token.cancel();
         let manager = McpConnectionSet::new(
+            /*ema_auth*/ None,
+            /*existing_ema*/ None,
             /*previous*/ None,
             McpPublicationGate::already_published(),
             McpRuntimeInput {
@@ -2218,6 +2261,8 @@ async fn codex_apps_extension_does_not_share_host_owned_tools_cache() -> anyhow:
         let startup_cancellation_token = CancellationToken::new();
         startup_cancellation_token.cancel();
         let manager = McpConnectionSet::new(
+            /*ema_auth*/ None,
+            /*existing_ema*/ None,
             /*previous*/ None,
             McpPublicationGate::already_published(),
             McpRuntimeInput {
@@ -2297,6 +2342,7 @@ async fn list_all_tools_uses_shared_codex_apps_cache_while_client_is_pending() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2328,7 +2374,8 @@ async fn capture_binding_preserves_ready_client_catalog_and_shares_prepared_meta
         codex_home.path().to_path_buf(),
         Some("account-one"),
         Some("user-one"),
-    );
+    )
+    .with_live_scope("apps".to_string());
     store_current_tools(
         &cache_context,
         vec![create_test_tool(
@@ -2369,6 +2416,7 @@ async fn capture_binding_preserves_ready_client_catalog_and_shares_prepared_meta
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: futures::future::ready(Ok(ready_client)).boxed().shared(),
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2629,17 +2677,27 @@ async fn tool_catalog_cache_sanitizes_tools_and_tracks_environment_generation() 
     let first_environment = resolve_environment();
     let first_environment_weak = Arc::downgrade(&first_environment);
     let first_context = cache_context(&first_environment);
-    first_context.publish_if_newest(first_context.begin_fetch(), &[]);
+    first_context.publish_if_newest(first_context.begin_fetch(), &[], /*meta*/ None);
     assert!(!first_context.has_tools());
 
     let mut tool = create_test_tool("docs", "search");
     tool.tool.annotations = Some(rmcp::model::ToolAnnotations::new().read_only(true));
-    first_context.publish_if_newest(first_context.begin_fetch(), &[tool]);
+    first_context.publish_if_newest(first_context.begin_fetch(), &[tool], /*meta*/ None);
     assert_eq!(
         first_context.current_tools().expect("cached tools")[0]
             .tool
             .annotations,
         None
+    );
+
+    let fallback = first_context.current_tools();
+    let mut tracking_context = first_context.clone();
+    tracking_context.track_tool_list_changes = true;
+    assert!(!tracking_context.has_tools());
+    assert_eq!(tracking_context.current_tools_or(fallback), None);
+    assert!(
+        first_context.has_tools(),
+        "disabled refresh preserves cached startup"
     );
 
     drop(first_environment);
@@ -2650,8 +2708,16 @@ async fn tool_catalog_cache_sanitizes_tools_and_tracks_environment_generation() 
 
     let older = first_context.begin_fetch();
     let newer = first_context.begin_fetch();
-    first_context.publish_if_newest(newer, &[create_test_tool("docs", "new")]);
-    first_context.publish_if_newest(older, &[create_test_tool("docs", "old")]);
+    first_context.publish_if_newest(
+        newer,
+        &[create_test_tool("docs", "new")],
+        /*meta*/ None,
+    );
+    first_context.publish_if_newest(
+        older,
+        &[create_test_tool("docs", "old")],
+        /*meta*/ None,
+    );
     assert_eq!(
         first_context.current_tools().expect("cached tools")[0].callable_name,
         "new"
@@ -2748,6 +2814,7 @@ async fn list_available_server_infos_uses_cache_while_client_is_pending() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2846,6 +2913,7 @@ async fn capture_binding_exposes_cached_tools_before_startup() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -2947,6 +3015,7 @@ async fn capture_binding_skips_pending_optional_servers_after_configured_shared_
             server_name.to_string(),
             AsyncManagedClient {
                 channel_registration: Arc::new(()),
+                ema_authority: None,
                 client: futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
                     .boxed()
                     .shared(),
@@ -3132,6 +3201,7 @@ async fn stable_catalog_revisions_ignore_terminal_optional_server_failures() {
         StartupOutcomeError::Failed {
             error: "optional startup failed".to_string(),
             is_authentication_required: false,
+            is_ema_authentication_required: false,
         },
     ))
     .boxed()
@@ -3200,6 +3270,7 @@ async fn capture_binding_shares_optional_startup_grace_across_connection_sets() 
             "pending",
             AsyncManagedClient {
                 channel_registration: Arc::new(()),
+                ema_authority: None,
                 client: futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
                     .boxed()
                     .shared(),
@@ -3283,6 +3354,7 @@ async fn capture_binding_shares_optional_startup_grace_across_connection_sets() 
     cache_context.publish_if_newest(
         cache_context.begin_fetch(),
         &[create_test_tool("pending", "cached_tool")],
+        /*meta*/ None,
     );
     let deadline_after_publication = tokio::time::Instant::now() + Duration::from_secs(1);
     assert_eq!(
@@ -3368,6 +3440,7 @@ async fn capture_binding_uses_cache_published_during_optional_startup() {
     cache_context.publish_if_newest(
         cache_context.begin_fetch(),
         &[create_test_tool("pending", "peer_tool")],
+        /*meta*/ None,
     );
     tokio::time::advance(Duration::from_secs(/*secs*/ 2)).await;
 
@@ -3417,6 +3490,7 @@ async fn capture_binding_retains_cached_tools_that_expire_while_waiting_for_anot
     cache_context.publish_if_newest(
         cache_context.begin_fetch(),
         &[create_test_tool("server_a", "cached_tool")],
+        /*meta*/ None,
     );
     tokio::time::advance(Duration::from_secs(30 * 60 - 1)).await;
 
@@ -3482,6 +3556,7 @@ async fn capture_binding_omits_cache_disabled_while_waiting_for_another_server()
     cache_context.publish_if_newest(
         cache_context.begin_fetch(),
         &[create_test_tool("cached", "cached_tool")],
+        /*meta*/ None,
     );
     let (mut cached, _started, _release) = create_gated_async_managed_client(
         create_test_managed_client(vec![create_test_tool("cached", "live_tool")]).await,
@@ -3822,6 +3897,47 @@ async fn list_all_tools_resolves_server_catalogs_concurrently() {
 }
 
 #[tokio::test]
+async fn catalog_listing_preserves_legacy_apps_tools_during_failed_startup() {
+    for startup_complete in [false, true] {
+        let mut manager = create_test_manager_with_failed_apps_startup(
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "drive_search")],
+            Arc::new(|| futures::future::pending().boxed().shared()),
+        );
+        let connection = Arc::get_mut(
+            &mut manager
+                .servers
+                .get_mut(CODEX_APPS_MCP_SERVER_NAME)
+                .expect("Apps server")
+                .connection,
+        )
+        .expect("unshared connection");
+        let context = connection
+            .client
+            .codex_apps_tools_cache_context
+            .take()
+            .expect("Apps cache")
+            .with_live_scope("endpoint".to_string());
+        assert!(context.current_catalog_snapshot().is_none());
+        connection.client.codex_apps_tools_cache_context = Some(context);
+        connection.client.startup_reconnect = None;
+        connection
+            .client
+            .startup_complete
+            .store(startup_complete, Ordering::Release);
+
+        let (tools, errors, metadata) = manager.list_catalogs_with_errors(|_| true).await;
+        assert_eq!(
+            (model_tool_names(&tools), errors, metadata),
+            (
+                HashSet::from([ToolName::namespaced("mcp__codex_apps", "drive_search")]),
+                HashMap::new(),
+                HashMap::new(),
+            ),
+        );
+    }
+}
+
+#[tokio::test]
 async fn list_all_tools_blocks_while_client_is_pending_without_cached_tools() {
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()
@@ -3837,6 +3953,7 @@ async fn list_all_tools_blocks_while_client_is_pending_without_cached_tools() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -3896,6 +4013,7 @@ async fn shutdown_cancels_pending_tool_listing() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -3944,6 +4062,7 @@ async fn shutdown_continues_after_caller_is_aborted() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: blocking_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -3998,6 +4117,7 @@ async fn list_all_tools_does_not_block_when_shared_codex_apps_cache_is_empty() {
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: pending_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -4036,6 +4156,7 @@ async fn list_all_tools_uses_shared_codex_apps_cache_when_client_startup_fails()
         StartupOutcomeError::Failed {
             error: "startup failed".to_string(),
             is_authentication_required: false,
+            is_ema_authentication_required: false,
         },
     ))
     .boxed()
@@ -4052,6 +4173,7 @@ async fn list_all_tools_uses_shared_codex_apps_cache_when_client_startup_fails()
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: failed_client,
             is_codex_apps_mcp_server: true,
             server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -4195,6 +4317,7 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
                 Err(StartupOutcomeError::Failed {
                     error: "recreated startup failed".to_string(),
                     is_authentication_required: false,
+                    is_ema_authentication_required: false,
                 })
             } else {
                 Ok(recovered_client)
@@ -4470,7 +4593,8 @@ fn hosted_actor_credentials_are_only_available_to_host_owned_mcp_servers() {
     let bootstrap_auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
     let mut actor_headers = Default::default();
     codex_model_provider::auth_provider_from_auth(&bootstrap_auth)
-        .add_auth_headers(&mut actor_headers);
+        .add_auth_headers(&mut actor_headers)
+        .unwrap();
     actor_headers.insert(
         "x-openai-actor-authorization",
         "hosted-actor-secret"
@@ -4493,6 +4617,7 @@ fn hosted_actor_credentials_are_only_available_to_host_owned_mcp_servers() {
     assert_eq!(
         local_provider
             .to_auth_headers()
+            .unwrap()
             .get("x-openai-actor-authorization")
             .and_then(|value| value.to_str().ok()),
         Some("hosted-actor-secret")
@@ -4579,7 +4704,8 @@ async fn executor_owned_chatgpt_mcp_accepts_only_safe_explicit_authorization() -
     let bootstrap_auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
     let mut actor_headers = Default::default();
     codex_model_provider::auth_provider_from_auth(&bootstrap_auth)
-        .add_auth_headers(&mut actor_headers);
+        .add_auth_headers(&mut actor_headers)
+        .unwrap();
     actor_headers.insert(
         "x-openai-actor-authorization",
         "hosted-actor-secret"
@@ -4721,6 +4847,8 @@ async fn executor_owned_chatgpt_mcp_accepts_only_safe_explicit_authorization() -
             OAuthCredentialsStoreMode::default(),
             AuthKeyringBackendKind::default(),
             Some(&hosted_auth),
+            /*auth_manager*/ None,
+            &crate::EmaState::default(),
             &runtime_context,
         )
         .await;
@@ -4735,6 +4863,8 @@ async fn executor_owned_chatgpt_mcp_accepts_only_safe_explicit_authorization() -
         );
 
         let manager = McpConnectionSet::new(
+            /*ema_auth*/ None,
+            /*existing_ema*/ None,
             /*previous*/ None,
             McpPublicationGate::already_published(),
             McpRuntimeInput {
@@ -4858,6 +4988,8 @@ async fn no_local_runtime_fails_local_stdio_but_keeps_local_http_server() {
 
     let cancel_token = CancellationToken::new();
     let manager = McpConnectionSet::new(
+        /*ema_auth*/ None,
+        /*existing_ema*/ None,
         /*previous*/ None,
         McpPublicationGate::already_published(),
         McpRuntimeInput {
@@ -4997,6 +5129,7 @@ fn mcp_init_error_display_prompts_for_login_when_auth_required() {
         StartupOutcomeError::Failed {
             error: "OAuth refresh token was rejected: invalid_grant".to_string(),
             is_authentication_required: true,
+            is_ema_authentication_required: false,
         },
     ] {
         let display = mcp_init_error_display(
@@ -5028,6 +5161,7 @@ fn mcp_init_error_display_identifies_oauth_reauthentication() {
     let error = StartupOutcomeError::Failed {
         error: "authorization required: Bearer error=\"invalid_token\"".to_string(),
         is_authentication_required: true,
+        is_ema_authentication_required: false,
     };
     let executor_config: McpServerConfig = serde_json::from_value(serde_json::json!({
         "url": "https://example.com/mcp",
@@ -5091,6 +5225,7 @@ fn mcp_startup_failure_reason_requires_existing_oauth_and_auth_failure() {
         let error = StartupOutcomeError::Failed {
             error: "startup failed".to_string(),
             is_authentication_required,
+            is_ema_authentication_required: false,
         };
 
         assert_eq!(
@@ -5266,6 +5401,8 @@ async fn manager_with_reusable_ready_server(
     manager.servers.insert(
         "docs".to_string(),
         McpServerView {
+            refresh_tool_list: true,
+            refresh_timeout: DEFAULT_STARTUP_TIMEOUT,
             protocol_mode: crate::McpProtocolMode::Legacy,
             startup_readiness: Default::default(),
             connection: Arc::new(McpServerConnection {
@@ -5311,6 +5448,8 @@ async fn reconcile_reusable_server_with_mcp_config(
 ) -> McpConnectionSet {
     let (tx_event, _rx_event) = async_channel::unbounded();
     McpConnectionSet::new(
+        /*ema_auth*/ None,
+        /*existing_ema*/ None,
         Some(previous),
         McpPublicationGate::already_published(),
         McpRuntimeInput {
@@ -5385,7 +5524,7 @@ async fn apps_catalog_broadcast_preserves_running_calls_and_rejects_stale_calls(
     let original = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "original")];
     let updated = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "updated")];
     store_current_tools(&context, original.clone());
-    let catalog = ClientToolCatalog::new(original.clone(), context.subscribe());
+    let catalog = ClientToolCatalog::new(original.clone(), /*meta*/ None, context.subscribe());
     let snapshot = catalog.read(Arc::new).await;
 
     store_current_tools(&context, original.clone());
@@ -5417,7 +5556,7 @@ async fn apps_catalog_broadcast_preserves_running_calls_and_rejects_stale_calls(
     );
 
     // A client whose startup finishes late adopts the already-published result.
-    let late = ClientToolCatalog::new(original, context.subscribe());
+    let late = ClientToolCatalog::new(original, /*meta*/ None, context.subscribe());
     assert_eq!(late.read(|catalog| catalog.tools.to_vec()).await, updated);
     Ok(())
 }
@@ -5436,7 +5575,7 @@ async fn apps_catalog_broadcast_restores_equivalent_calls() -> anyhow::Result<()
         create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "second"),
     ];
     store_current_tools(&context, original.clone());
-    let catalog = ClientToolCatalog::new(original.clone(), context.subscribe());
+    let catalog = ClientToolCatalog::new(original.clone(), /*meta*/ None, context.subscribe());
     let snapshot = catalog.read(Arc::new).await;
 
     let mut changed = original.clone();
@@ -5460,8 +5599,8 @@ async fn apps_catalog_broadcast_restores_equivalent_calls() -> anyhow::Result<()
     );
     catalog
         .refresh(
-            || async { Ok((snapshot.tools.to_vec(), ())) },
-            |tools, ()| store_current_tools(&context, tools.to_vec()),
+            || async { Ok((snapshot.tools.to_vec(), None, ())) },
+            |tools, _, ()| store_current_tools(&context, tools.to_vec()),
         )
         .await?;
     assert_eq!(
@@ -5487,8 +5626,8 @@ fn idle_apps_clients_do_not_retain_replaced_tools() {
     let schema = Arc::downgrade(&tool.tool.input_schema);
     store_current_tools(&context, vec![tool]);
     let clients = [
-        ClientToolCatalog::new(Vec::new(), context.subscribe()),
-        ClientToolCatalog::new(Vec::new(), context.subscribe()),
+        ClientToolCatalog::new(Vec::new(), /*meta*/ None, context.subscribe()),
+        ClientToolCatalog::new(Vec::new(), /*meta*/ None, context.subscribe()),
     ];
     store_current_tools(
         &context,
@@ -5511,20 +5650,24 @@ async fn apps_catalog_broadcast_survives_an_older_local_refresh() -> anyhow::Res
     )
     .with_live_scope("apps".to_string());
     store_current_tools(&context, Vec::new());
-    let catalog = ClientToolCatalog::new(Vec::new(), context.subscribe());
+    let catalog = ClientToolCatalog::new(Vec::new(), /*meta*/ None, context.subscribe());
     let older_ticket = context.begin_fetch(ConnectorRuntimeFetchSource::HardRefresh);
     let newer = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")];
     store_current_tools(&context, newer.clone());
     assert_eq!(catalog.read(|catalog| catalog.tools.to_vec()).await, newer);
     catalog
         .refresh(
-            || async { Ok((Vec::new(), older_ticket)) },
-            |tools, ticket| {
-                context.publish_if_newest_accepted(
-                    ticket,
-                    &create_test_server_info("Apps"),
-                    tools.to_vec(),
-                )
+            || async { Ok((Vec::new(), None, older_ticket)) },
+            |tools, _, ticket| {
+                context
+                    .publish_runtime_if_newest_accepted(
+                        ticket,
+                        &create_test_server_info("Apps"),
+                        tools.to_vec(),
+                        /*tool_list_meta*/ None,
+                    )
+                    .tools()
+                    .to_vec()
             },
         )
         .await?;
@@ -5573,7 +5716,7 @@ async fn refreshed_catalog_follows_reused_client_without_mutating_old_bindings()
     let startup_tools = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "startup")];
     client
         .tool_catalog
-        .refresh(|| async { Ok((startup_tools, ())) }, |_, ()| {})
+        .refresh(|| async { Ok((startup_tools, None, ())) }, |_, _, ()| {})
         .await?;
     let old_binding = capture_binding(&previous).await;
     let old_tools = serde_json::to_value(old_binding.tools())?;
@@ -5623,7 +5766,7 @@ async fn refreshed_catalog_follows_reused_client_without_mutating_old_bindings()
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> anyhow::Result<()> {
     let tools = Arc::new(tokio::sync::RwLock::new(vec![Tool::new(
         "old_search",
@@ -5661,7 +5804,7 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
             None,
         )
         .await?;
-    let initial_tools = list_tools_for_client_uncached(
+    let (initial_tools, initial_meta) = list_tools_for_client_uncached(
         "docs",
         /*is_codex_apps_mcp_server*/ false,
         /*codex_apps_refresh_trigger*/ "test",
@@ -5673,16 +5816,20 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
     .await?;
     let managed_client = ManagedClient {
         _auth_change_notifications: None,
-        client,
+        client: Arc::clone(&client),
         server_info: create_test_server_info("Mutable tools"),
-        tool_catalog: Arc::new(ClientToolCatalog::new(initial_tools, /*updates*/ None)),
+        tool_catalog: Arc::new(ClientToolCatalog::new(
+            initial_tools,
+            initial_meta,
+            /*updates*/ None,
+        )),
         tool_timeout: None,
         server_instructions: initialize.instructions,
         server_supports_sandbox_state_meta_capability: false,
         codex_apps_tools_cache_context: None,
     };
     let runtime_context = reusable_server_runtime_context();
-    let config = reusable_server_config("http://127.0.0.1:1");
+    let mut config = reusable_server_config("http://127.0.0.1:1");
     let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
     let permission_profile = Constrained::allow_any(PermissionProfile::default());
     let mut previous = McpConnectionSet::new_uninitialized(
@@ -5694,12 +5841,15 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
     previous.servers.insert(
         "docs".to_string(),
         McpServerView {
+            refresh_tool_list: true,
+            refresh_timeout: DEFAULT_STARTUP_TIMEOUT,
             protocol_mode: crate::McpProtocolMode::Legacy,
             startup_readiness: Default::default(),
             connection: Arc::new(McpServerConnection {
                 identity: Some(reusable_server_identity("docs", &config, &runtime_context)),
                 client: AsyncManagedClient {
                     channel_registration: Arc::new(()),
+                    ema_authority: None,
                     client: futures::future::ready(Ok(managed_client)).boxed().shared(),
                     is_codex_apps_mcp_server: false,
                     server_capabilities: Arc::new(std::sync::Mutex::new(None)),
@@ -5724,6 +5874,35 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
     );
     let previous = Arc::new(previous);
     let old_step = capture_binding(&previous).await;
+    let cache = McpToolCatalogCache::default();
+    let mut cache = cache
+        .context(
+            "docs",
+            &config,
+            &runtime_context,
+            /*resolved_environment*/ None,
+            (
+                &ElicitationCapability::default(),
+                &ClientMcpExtensions::default(),
+            ),
+            Some((
+                previous.servers["docs"]
+                    .connection
+                    .identity
+                    .as_ref()
+                    .unwrap(),
+                crate::McpProtocolMode::Legacy,
+                /*agent_plugin*/ false,
+            )),
+        )
+        .expect("cache context");
+    cache.track_tool_list_changes = true;
+    let mut ticket = cache.begin_fetch();
+    ticket.tool_list_revision = Some(client.tool_list_revision());
+    cache.publish_if_newest(ticket, old_step.tools(), /*meta*/ None);
+    assert!(cache.has_tools());
+    // Reused connections must use the new view's timeout, not their startup timeout.
+    config.startup_timeout_sec = Some(Duration::from_secs(1));
     *tools.write().await = vec![Tool::new(
         "new_search",
         "new search",
@@ -5757,6 +5936,91 @@ async fn reconciliation_reuses_connection_without_relisting_regular_tools() -> a
             .map(|tool| tool.tool.name.to_string())
             .collect::<Vec<_>>(),
         vec!["old_search".to_string()]
+    );
+    let prepared = old_step
+        .prepare_call("docs", "old_search")
+        .expect("prepared call");
+    let (entered, started) = tokio::sync::oneshot::channel();
+    let (release, resumed) = tokio::sync::oneshot::channel();
+    let call = tokio::spawn(async move {
+        prepared
+            .call_with_preparation(/*requested_timeout*/ None, || async {
+                entered.send(()).unwrap();
+                resumed.await?;
+                anyhow::bail!("stop after preparation")
+            })
+            .await
+    });
+    started.await?;
+    // Refresh must not wait for this admitted call or lose healthy resource endpoints.
+    client
+        .call_tool(
+            "notify".into(),
+            /*arguments*/ None,
+            /*meta*/ None,
+            /*timeout*/ None,
+        )
+        .await?;
+    assert!(
+        reconciled
+            .stable_catalog_revisions(&[], &HashSet::new())
+            .await
+            .is_none()
+    );
+    assert!(!cache.has_tools());
+    assert_eq!(
+        cache.current_tools_or(Some(old_step.tools().to_vec())),
+        None
+    );
+    let failed = tokio::time::timeout(Duration::from_secs(3), capture_binding(&reconciled))
+        .await
+        .expect("refresh must use the reconciled timeout");
+    assert_eq!(failed.tools(), old_step.tools());
+    assert_eq!(
+        failed.list_all_resources(|_| true).await,
+        HashMap::from([("docs".to_string(), vec![])])
+    );
+    assert_eq!(
+        failed.list_all_resource_templates(|_| true).await,
+        HashMap::from([("docs".to_string(), vec![])])
+    );
+    let retry_started = tokio::time::Instant::now();
+    let retry = capture_binding(&reconciled).await;
+    assert_eq!(retry.tools(), old_step.tools());
+    assert_eq!(retry_started.elapsed(), Duration::ZERO);
+    block_tool_listing.store(false, Ordering::Release);
+    tokio::time::advance(Duration::from_secs(5)).await;
+    let (first, second) = tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::join!(capture_binding(&previous), capture_binding(&reconciled))
+    })
+    .await
+    .expect("notification refresh must not wait for a running call");
+    release.send(()).unwrap();
+    call.await?.expect_err("test stops before dispatch");
+    assert_eq!(first.tools(), second.tools());
+    assert_eq!(
+        model_tool_names(first.tools()),
+        HashSet::from([ToolName::namespaced("mcp__docs", "new_search"),])
+    );
+    assert_eq!(
+        old_step.tools(),
+        new_step.tools(),
+        "old bindings remain immutable"
+    );
+    assert!(
+        reconciled
+            .prepare_call_for_tool(Arc::clone(old_step.config()), &old_step.tools()[0],)
+            .await
+            .is_none()
+    );
+    let refreshed = previous.test_client("docs").client().await?;
+    assert_eq!(
+        refreshed
+            .tool_catalog
+            .read(|catalog| catalog.revision)
+            .await,
+        1,
+        "concurrent readers publish one refresh on their shared client"
     );
     Ok(())
 }
@@ -5889,6 +6153,7 @@ async fn reconciliation_retries_non_oauth_authentication_failures() {
     connection.client.client = futures::future::ready(Err(StartupOutcomeError::Failed {
         error: "bearer token rejected".to_string(),
         is_authentication_required: true,
+        is_ema_authentication_required: false,
     }))
     .boxed()
     .shared();
@@ -6114,6 +6379,7 @@ async fn reconciliation_replaces_connection_when_auth_mode_changes() -> anyhow::
         StartupOutcomeError::Failed {
             error,
             is_authentication_required,
+            ..
         } => {
             assert_eq!(
                 (error.as_str(), is_authentication_required),
@@ -6146,6 +6412,8 @@ async fn reconciliation_replaces_connection_when_protocol_mode_changes() {
     mcp_config.protocol_mode = codex_rmcp_client::McpProtocolMode::V20260728;
 
     let reconciled = McpConnectionSet::new(
+        /*ema_auth*/ None,
+        /*existing_ema*/ None,
         Some(&previous),
         McpPublicationGate::already_published(),
         McpRuntimeInput {
@@ -6205,6 +6473,8 @@ async fn reconciliation_reuses_legacy_stdio_server_when_modern_protocol_is_enabl
     mcp_config.protocol_mode = codex_rmcp_client::McpProtocolMode::V20260728;
 
     let reconciled = McpConnectionSet::new(
+        /*ema_auth*/ None,
+        /*existing_ema*/ None,
         Some(&previous),
         McpPublicationGate::already_published(),
         McpRuntimeInput {
@@ -6407,6 +6677,7 @@ async fn reconciliation_replaces_closed_connections() -> anyhow::Result<()> {
         identity: Some(reusable_server_identity("docs", &config, &runtime_context)),
         client: AsyncManagedClient {
             channel_registration: Arc::new(()),
+            ema_authority: None,
             client: futures::future::ready(Ok(connected_client))
                 .boxed()
                 .shared(),

@@ -1096,7 +1096,6 @@ async fn command_stack_remains_declared_without_ready_environments() {
             Feature::ShellTool,
             Feature::UnifiedExec,
             Feature::CommandStack,
-            Feature::StableEnvironmentTools,
         ],
     );
     update_turn_settings_for_test(&mut turn, |settings| {
