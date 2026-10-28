@@ -20,6 +20,7 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
         .thread_manager
         .default_environment_requests(&cwd, &roots);
     let owner_config = EnvironmentConfig {
+        environment_hooks: Default::default(),
         allow_login_shell: false,
         workspace_roots: environments[0].workspace_roots.clone(),
         permission_profile: PermissionProfileSnapshot::legacy(

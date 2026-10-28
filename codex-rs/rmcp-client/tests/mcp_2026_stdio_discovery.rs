@@ -131,7 +131,7 @@ async fn local_stdio_inherits_ca_certificate_variables_child() -> anyhow::Result
             .call_tool(
                 "echo".to_string(),
                 Some(json!({ "message": "ca inheritance", "env_var": env_name })),
-                /*meta*/ None,
+                |_| Ok(None),
                 Some(Duration::from_secs(10)),
             )
             .await?;
@@ -269,7 +269,7 @@ async fn legacy_stdio_preserves_existing_protocol_marker_environment() -> anyhow
                         "message": "legacy environment",
                         "env_var": "CODEX_MCP_PROTOCOL_VERSION",
                     })),
-                    /*meta*/ None,
+                    |_| Ok(None),
                     Some(Duration::from_secs(10)),
                 )
                 .await?;

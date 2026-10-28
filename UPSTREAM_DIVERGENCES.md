@@ -240,3 +240,16 @@ notes are excluded. The original local development branches retain that history.
   sandbox preparation and credential-broker handling.
 - The fork release workflow follows upstream Rust 1.99.1; package builds use the
   pinned V8 152.2.0 artifacts. Daemon auto-start retains the upstream enabled default.
+
+## Stable v0.165.0 integration
+
+- Stdin polling and finite completion reads use upstream's terminal objects and
+  live environment resolver. Retained finite results preserve the original process,
+  call, and environment identity after leaving the live process store.
+- Command completion retains the upstream protection against process ID reuse;
+  later reads cannot redirect an existing terminal operation to a replacement.
+- Claude channels coexist with upstream MCP network-policy capability metadata
+  and shared tool environment selection. Persistent shell selection, hpatch,
+  request-auth image eligibility, and turn-scoped completion delivery remain.
+- Upstream private publishing and signing workflows remain disabled. Release
+  packages use version `0.165.0-doca`; daemon auto-start stays enabled.

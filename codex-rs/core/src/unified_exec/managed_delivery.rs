@@ -30,7 +30,7 @@ impl UnifiedExecProcessManager {
                 || !job.delivers_to(turn_id)
                 || !job.initial_response_done.is_cancelled()
                 || job.initial_response_consumed.load(Ordering::Acquire)
-                || !job.process.has_exited()
+                || !job.terminal.process.has_exited()
             {
                 continue;
             }
@@ -44,7 +44,7 @@ impl UnifiedExecProcessManager {
                 .write_stdin(
                     context,
                     WriteStdinRequest {
-                        process_id: id,
+                        terminal: &job.terminal,
                         input: "",
                         yield_time_ms: 5_000,
                         max_output_tokens: None,
@@ -61,7 +61,8 @@ impl UnifiedExecProcessManager {
             let result = match result {
                 Ok(mut output) => {
                     output.completion_delivery = Some(true);
-                    self.accept_managed_output(context, output).await
+                    self.accept_managed_output(context, output, &[&job.terminal.environment_id])
+                        .await
                 }
                 Err(error) => Err(error),
             };
@@ -102,6 +103,7 @@ impl UnifiedExecProcessManager {
         &self,
         context: &UnifiedExecContext,
         mut output: ExecCommandToolOutput,
+        target_environments: &[&str],
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let payload = ToolPayload::Function {
             arguments: String::new(),
@@ -121,6 +123,7 @@ impl UnifiedExecProcessManager {
                 name.matcher_aliases().to_vec(),
                 input,
                 response,
+                target_environments,
             )
             .await;
             crate::hook_runtime::record_additional_contexts(

@@ -38,9 +38,7 @@ async fn managed_harness() -> Result<TestCodexHarness> {
 #[test_case::test_case("auto"; "automatic")]
 #[test_case::test_case("background"; "explicit_background")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn background_delivery_parks_without_model_requests_and_resumes_once(
-    mode: &str,
-) -> Result<()> {
+async fn background_delivery_parks_resumes_once_and_retains_result(mode: &str) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = managed_harness().await?;
     let log = mount_sse_sequence(
@@ -64,6 +62,19 @@ async fn background_delivery_parks_without_model_requests_and_resumes_once(
             sse(vec![
                 ev_assistant_message("done", "finished"),
                 ev_completed("r3"),
+            ]),
+            sse(vec![
+                ev_function_call(
+                    "cached",
+                    "write_stdin",
+                    &json!({"session_id": 1000, "chars": "", "wait_mode": "completion"})
+                        .to_string(),
+                ),
+                ev_completed("r4"),
+            ]),
+            sse(vec![
+                ev_assistant_message("read-done", "cached-result-read"),
+                ev_completed("r5"),
             ]),
         ],
     )
@@ -95,6 +106,25 @@ async fn background_delivery_parks_without_model_requests_and_resumes_once(
     assert_eq!(final_input.matches("<command_completion>").count(), 1);
     assert!(final_input.contains("completed-marker"));
     assert!(final_input.contains("exit_code=Some(0)"));
+
+    // Automatic delivery removes the live process. The next turn must still
+    // resolve its original terminal and consume the retained artifact.
+    submit_unified_exec_turn(
+        test,
+        "read the completed command",
+        PermissionProfile::Disabled,
+    )
+    .await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert_eq!(log.requests().len(), 5);
+    let cached = log.function_call_output_text("cached").unwrap();
+    assert!(cached.contains("completed-marker"), "{cached}");
+    assert!(cached.contains("Process exited with code 0"), "{cached}");
+    let final_input = log.last_request().unwrap().body_json()["input"].to_string();
+    assert_eq!(final_input.matches("<command_completion>").count(), 1);
     Ok(())
 }
 

@@ -53,3 +53,80 @@ fn truncates_translator_errors_on_utf8_boundaries() {
     assert!(truncated.ends_with("[output truncated]"));
     assert!(truncated.is_char_boundary(truncated.len()));
 }
+
+#[tokio::test]
+async fn hooks_capture_the_selected_hpatch_environment_and_reject_redirection() {
+    use crate::environment_selection::TurnEnvironmentState;
+    use crate::session::step_context::StepContext;
+    use crate::session::tests::make_session_and_context;
+    use crate::tools::context::ToolCallSource;
+    use crate::turn_diff_tracker::TurnDiffTracker;
+    use pretty_assertions::assert_eq;
+    use tokio::sync::Mutex;
+    use tokio_util::sync::CancellationToken;
+
+    let (session, turn) = make_session_and_context().await;
+    let turn = Arc::new(turn);
+    let mut step_context = StepContext::for_test(Arc::clone(&turn));
+    let primary = step_context
+        .environments
+        .primary()
+        .unwrap()
+        .selection
+        .environment_id
+        .clone();
+    let mut other = step_context.environments.primary().unwrap().clone();
+    other.selection.environment_id = "other".to_string();
+    Arc::get_mut(&mut step_context)
+        .unwrap()
+        .environments
+        .environments
+        .push(TurnEnvironmentState::Ready(other));
+    let handler = HpatchHandler::new(/*multi_environment*/ true);
+    let mut invocation = ToolInvocation {
+        session: session.into(),
+        turn,
+        step_context,
+        cancellation_token: CancellationToken::new(),
+        tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
+        call_id: "hpatch-hook".to_string(),
+        tool_name: ToolName::plain("hpatch"),
+        source: ToolCallSource::Direct,
+        payload: ToolPayload::Custom {
+            input: "*** Environment ID: other\nin file.txt\ncommit".to_string(),
+        },
+        environments: ToolEnvironments::default(),
+    };
+    invocation.environments = handler.environments_for_input(&invocation).unwrap();
+    assert_eq!(invocation.environments.hook_ids(), vec!["other"]);
+    for (target, accepted) in [
+        (Some("other"), true),
+        (None, true),
+        (Some(primary.as_str()), false),
+    ] {
+        let command = target.map_or_else(
+            || "in changed.txt\ncommit".to_string(),
+            |target| format!("*** Environment ID: {target}\nin changed.txt\ncommit"),
+        );
+        let rewritten = handler
+            .with_updated_hook_input(invocation.clone(), serde_json::json!({"command": command}));
+        if accepted {
+            let rewritten = rewritten.unwrap();
+            assert_eq!(rewritten.environments.hook_ids(), vec!["other"]);
+            assert_eq!(
+                selected_executor(
+                    &rewritten.environments,
+                    &rewritten.step_context.environments
+                )
+                .unwrap()
+                .selection
+                .environment_id,
+                "other"
+            );
+        } else {
+            assert!(
+                matches!(rewritten, Err(FunctionCallError::RespondToModel(message)) if message == "PreToolUse hook cannot change the tool environment")
+            );
+        }
+    }
+}

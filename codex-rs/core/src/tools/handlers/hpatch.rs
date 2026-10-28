@@ -15,11 +15,13 @@ use codex_utils_path_uri::PathUri;
 use uuid::Uuid;
 
 use crate::function_tool::FunctionCallError;
+use crate::tools::context::ToolEnvironments;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::ApplyPatchHandler;
 use crate::tools::handlers::hpatch_spec::create_hpatch_freeform_tool;
 use crate::tools::handlers::resolve_tool_environment;
+use crate::tools::handlers::selected_executor;
 use crate::tools::handlers::updated_hook_command;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::registry::CoreToolRuntime;
@@ -50,9 +52,9 @@ impl HpatchHandler {
         };
         let original_input = input.clone();
         let (environment_id, workdir, script) = parse_input(input, self.multi_environment)?;
-        let turn_environment = resolve_tool_environment(
+        let turn_environment = selected_executor(
+            &invocation.environments,
             &invocation.step_context.environments,
-            environment_id.as_deref(),
         )?;
         let (cwd, root) = resolve_translation_paths(
             turn_environment.cwd(),
@@ -301,6 +303,23 @@ impl ToolExecutor<ToolInvocation> for HpatchHandler {
 }
 
 impl CoreToolRuntime for HpatchHandler {
+    fn environments_for_input(
+        &self,
+        invocation: &ToolInvocation,
+    ) -> Result<ToolEnvironments, FunctionCallError> {
+        let ToolPayload::Custom { input } = &invocation.payload else {
+            return Err(FunctionCallError::Fatal(
+                "expected hpatch input".to_string(),
+            ));
+        };
+        let (environment_id, _, _) = parse_input(input, self.multi_environment)?;
+        let environment = resolve_tool_environment(
+            &invocation.step_context.environments,
+            environment_id.as_deref(),
+        )?;
+        Ok(ToolEnvironments::single_executor(environment))
+    }
+
     fn matches_kind(&self, payload: &ToolPayload) -> bool {
         matches!(payload, ToolPayload::Custom { .. })
     }
@@ -321,6 +340,14 @@ impl CoreToolRuntime for HpatchHandler {
         updated_input: serde_json::Value,
     ) -> Result<ToolInvocation, FunctionCallError> {
         let script = updated_hook_command(&updated_input)?;
+        let (environment_id, _, _) = parse_input(script, self.multi_environment)?;
+        if let Some(environment_id) = environment_id
+            && Some(environment_id.as_str()) != invocation.environments.single_id()
+        {
+            return Err(FunctionCallError::RespondToModel(
+                "PreToolUse hook cannot change the tool environment".to_string(),
+            ));
+        }
         invocation.payload = ToolPayload::Custom {
             input: script.to_string(),
         };

@@ -64,6 +64,7 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
                     home.path().to_path_buf(),
                 )),
                 plugins_available: false,
+                network_policy_metadata: None,
                 ready_selected_capability_roots: Vec::new(),
                 mcp_servers: HashMap::from([(
                     "docs".to_string(),
