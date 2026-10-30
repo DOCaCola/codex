@@ -270,3 +270,8 @@ notes are excluded. The original local development branches retain that history.
   pinned V8 source/artifacts. Windows CI enables long dependency paths. Daemon
   auto-start remains enabled on every platform. The existing Starlark LF checkout
   policy covers BUILD/MODULE/WORKSPACE files too, preserving escaped continuations.
+
+- Release revision `0.166.0-doca.1` applies upstream's
+  `CARGO_NET_GIT_FETCH_WITH_CLI=true` CI transport setting to the fork workflow.
+  It avoids Cargo's bundled macOS SecureTransport failure while fetching the
+  newly pinned V8 source submodules; Rust source and dependency pins are unchanged.

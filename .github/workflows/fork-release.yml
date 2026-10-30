@@ -32,6 +32,7 @@ jobs:
     timeout-minutes: 180
     env:
       CARGO_BUILD_JOBS: ${{ matrix.jobs }}
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
       LIBSQLITE3_FLAGS: SQLITE_DISABLE_INTRINSIC
       CODEX_REPO_ROOT: ${{ github.workspace }}
     steps:
