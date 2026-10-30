@@ -39,6 +39,8 @@ def main() -> int:
             "--bin",
             "codex-code-mode-host",
             "--bin",
+            "codex-exec-server",
+            "--bin",
             "codex-command-runner",
             "--bin",
             "codex-windows-sandbox-setup",

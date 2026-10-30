@@ -329,7 +329,7 @@ impl UnifiedExecProcessManager {
         };
         if let Ok(output) = &result {
             state.last_poll = Some(Instant::now());
-            if !output.raw_output.is_empty() {
+            if !output.raw_output.text.is_empty() {
                 state.last_poll = None;
                 state.poll_level = 0;
             }

@@ -20,6 +20,7 @@ def main() -> None:
         for executable, arguments in [
             (cli, ["--version"]),
             (package / "bin" / f"hpatch{suffix}", ["--help"]),
+            (package / "bin" / f"codex-exec-server{suffix}", ["--help"]),
             (package / "codex-path" / f"rg{suffix}", ["--version"]),
         ]:
             subprocess.run(

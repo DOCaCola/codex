@@ -119,7 +119,10 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
         let refreshed = McpConnectionSet::new(
             /*ema_auth*/ None,
             /*existing_ema*/ None,
-            Some(&previous),
+            Some(PreviousMcpConnections {
+                connections: &previous,
+                same_owner: false,
+            }),
             McpPublicationGate::already_published(),
             input(),
             ElicitationRequestRouter::default(),

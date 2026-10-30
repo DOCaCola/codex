@@ -34,6 +34,7 @@ def main() -> int:
         for option, executable in (
             ("--entrypoint-bin", "codex.exe"),
             ("--code-mode-host-bin", "codex-code-mode-host.exe"),
+            ("--exec-server-bin", "codex-exec-server.exe"),
             ("--codex-command-runner-bin", "codex-command-runner.exe"),
             ("--codex-windows-sandbox-setup-bin", "codex-windows-sandbox-setup.exe"),
         ):

@@ -1423,8 +1423,8 @@ impl TurnEnvironmentSnapshot {
         })
     }
 
-    /// Native children retain ready and starting attachments captured by their spawning step.
-    pub(crate) fn inheritable_selections(&self) -> Vec<TurnEnvironmentSelection> {
+    /// Requests for native children retain ready and starting attachments from their spawning step.
+    pub(crate) fn inheritable_requests(&self) -> Vec<TurnEnvironmentRequest> {
         self.environments
             .iter()
             .filter_map(|environment| match environment {
@@ -1436,6 +1436,7 @@ impl TurnEnvironmentSnapshot {
                 ),
                 TurnEnvironmentState::Failed { .. } => None,
             })
+            .map(TurnEnvironmentSelection::into_request)
             .collect()
     }
 

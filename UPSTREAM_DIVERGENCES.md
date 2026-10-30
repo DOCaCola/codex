@@ -253,3 +253,20 @@ notes are excluded. The original local development branches retain that history.
   request-auth image eligibility, and turn-scoped completion delivery remain.
 - Upstream private publishing and signing workflows remain disabled. Release
   packages use version `0.165.0-doca`; daemon auto-start stays enabled.
+
+## Stable v0.166.0 integration
+
+- Command batching and finite completion use upstream prepared execution requests,
+  shared head/tail output capture, and direct-tool timing. Persistent shell selection
+  is applied before preparation and preserves captured environment snapshots.
+- hpatch keeps translator working directories and original permission-hook inputs
+  through upstream prepared patch requests and the shared approval path.
+- Claude channels coexist with upstream MCP startup/reconnect changes. Their
+  listeners start even with cached tools, and connections remain session-owned.
+- The existing 200000-byte Guardian review bound moves with upstream's extracted
+  reviewer crate; the former core implementation is removed.
+- Complete packages include upstream's separate codex-exec-server executable and
+  the fork hpatch companion. The fork workflow follows upstream Rust 1.95.0 and
+  pinned V8 source/artifacts. Windows CI enables long dependency paths. Daemon
+  auto-start remains enabled on every platform. The existing Starlark LF checkout
+  policy covers BUILD/MODULE/WORKSPACE files too, preserving escaped continuations.

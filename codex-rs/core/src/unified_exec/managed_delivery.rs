@@ -118,11 +118,13 @@ impl UnifiedExecProcessManager {
             let outcome = crate::hook_runtime::run_post_tool_use_hooks(
                 &context.session,
                 context.step_context.as_ref(),
-                output.event_call_id.clone(),
-                name.name().to_string(),
-                name.matcher_aliases().to_vec(),
-                input,
-                response,
+                crate::tools::registry::PostToolUsePayload {
+                    tool_cwd: output.post_tool_use_cwd(),
+                    tool_name: name,
+                    tool_use_id: output.event_call_id.clone(),
+                    tool_input: input,
+                    tool_response: response,
+                },
                 target_environments,
             )
             .await;
@@ -140,9 +142,8 @@ impl UnifiedExecProcessManager {
                 ));
             }
             if let Some(feedback) = outcome.feedback_message {
-                output.raw_output = feedback.into_bytes();
+                output.raw_output = feedback.as_str().into();
                 output.original_token_count = None;
-                output.output_omitted_bytes = None;
             }
         }
         // Both explicit completion waits and automatic delivery accept exactly once.

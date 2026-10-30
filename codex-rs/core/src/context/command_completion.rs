@@ -18,7 +18,7 @@ impl CommandCompletion {
         Self {
             process_id,
             status: format!("exit_code={:?}", output.exit_code),
-            preview: bounded(&String::from_utf8_lossy(&output.raw_output)),
+            preview: bounded(&output.raw_output.text),
             retained_output: true,
         }
     }

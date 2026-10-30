@@ -363,6 +363,7 @@ impl CoreToolRuntime for HpatchHandler {
             return None;
         };
         Some(PostToolUsePayload {
+            tool_cwd: None,
             tool_name: HookToolName::hpatch(),
             tool_use_id: invocation.call_id.clone(),
             tool_input: serde_json::json!({ "command": input }),
