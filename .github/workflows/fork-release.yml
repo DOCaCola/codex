@@ -2,6 +2,11 @@ name: Fork release
 
 on:
   workflow_dispatch:
+    inputs:
+      installer_tests_only:
+        description: Run native installer tests without building release packages
+        type: boolean
+        default: false
   push:
     tags:
       - "doca-v*"
@@ -14,8 +19,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  installer-tests:
     if: github.repository == 'DOCaCola/codex'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Test Windows installer
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/install/test_install_ps1.ps1
+      - name: Test macOS installer
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s scripts/install -p test_install_sh.py
+
+  build:
+    if: github.repository == 'DOCaCola/codex' && inputs.installer_tests_only != true
+    needs: installer-tests
     strategy:
       fail-fast: false
       matrix:
@@ -81,13 +110,6 @@ jobs:
         shell: bash
         run: |
           python scripts/smoke_fork_release.py dist/package
-      - name: Test Windows installer
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: ./scripts/install/test_install_ps1.ps1
-      - name: Test macOS installer
-        if: runner.os == 'macOS'
-        run: python3 -m unittest discover -s scripts/install -p test_install_sh.py
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: codex-${{ matrix.target }}

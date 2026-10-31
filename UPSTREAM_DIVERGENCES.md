@@ -20,6 +20,9 @@ maintaining parallel logic or compatibility fallbacks.
   restart and fork revisions still select their matching runtime packages.
 - Installer verification retains native Windows locked-executable and checksum
   coverage plus macOS package, selection, pin and running-release coverage.
+  Native installer jobs gate compilation; manual runs can test only installers.
+  Process-retention fixtures compile a native helper and wait for readiness,
+  avoiding copied macOS platform executables and process-start races.
 - Remove when: upstream supports a complete configurable release source, version
   policy and package format for forks.
 

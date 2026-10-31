@@ -444,17 +444,22 @@ class InstallShTest(unittest.TestCase):
             self.assertEqual(first.returncode, 0, first.stderr)
             oldest = releases / f"{versions[0]}-{target}"
             helper = oldest / "bin/codex-code-mode-host"
-            shutil.copy("/bin/sleep", helper)
-            if system.sysname == "Darwin":
-                # A copied macOS system binary cannot run with its platform signature.
-                subprocess.run(
-                    ["/usr/bin/codesign", "--force", "--sign", "-", str(helper)],
-                    check=True,
-                    capture_output=True,
-                )
+            # Compile a native helper instead of copying a platform-signed
+            # system executable. Signal readiness before inspecting its files.
+            subprocess.run(
+                ["cc", "-x", "c", "-o", str(helper), "-"],
+                input="#include <stdio.h>\n#include <unistd.h>\n"
+                'int main(void) { puts("ready"); fflush(stdout); for (;;) pause(); }\n',
+                text=True,
+                check=True,
+                capture_output=True,
+            )
             # A helper can outlive its parent CLI; retain its whole release.
-            with subprocess.Popen([str(helper), "300"]) as running:
+            with subprocess.Popen(
+                [str(helper)], stdout=subprocess.PIPE, text=True
+            ) as running:
                 try:
+                    self.assertEqual(running.stdout.readline(), "ready\n")
                     second, _ = run_installer_in(
                         root, versions[1], **install_options[versions[1]]
                     )
@@ -568,8 +573,13 @@ class InstallShTest(unittest.TestCase):
                             readable, "installer did not attempt retirement"
                         )
                         self.assertEqual(os.read(ready_fd, 128), b"ready\n")
-                        with subprocess.Popen([str(helper), "300"]) as late_helper:
+                        with subprocess.Popen(
+                            [str(helper)], stdout=subprocess.PIPE, text=True
+                        ) as late_helper:
                             try:
+                                self.assertEqual(
+                                    late_helper.stdout.readline(), "ready\n"
+                                )
                                 os.write(resume_fd, b"continue\n")
                                 raced, _ = installing.result(timeout=30)
                                 self.assertEqual(raced.returncode, 0, raced.stderr)

@@ -102,6 +102,8 @@ Caches, package assembly, and the rest of the toolchain require additional space
 A manual run produces a seven-day artifact. A matching tag also creates a
 **draft** GitHub release for review. Later fork versions should use an increasing
 `-doca.N` suffix, updating Cargo manifests/lockfiles together.
+Set `installer_tests_only` on a manual run to check both native installers without
+compiling packages. Release runs require these tests to pass before compilation.
 
 The workflow uses a Windows runner with four Cargo jobs and a native macOS ARM64
 runner with two Cargo jobs, no retained build cache, and no OpenAI signing credentials
