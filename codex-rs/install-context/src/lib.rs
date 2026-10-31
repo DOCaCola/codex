@@ -1,3 +1,13 @@
+mod fork_release;
+
+pub use fork_release::LATEST_RELEASE_URL;
+pub use fork_release::UNIX_INSTALLER_URL;
+pub use fork_release::VERSION_CACHE_FILENAME;
+pub use fork_release::WINDOWS_INSTALLER_URL;
+pub use fork_release::is_newer_fork_release;
+pub use fork_release::is_stable_fork_version;
+pub use fork_release::version_from_release_tag;
+
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;

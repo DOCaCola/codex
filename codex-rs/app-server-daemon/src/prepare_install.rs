@@ -498,7 +498,7 @@ fn package_tree(
 
 fn stable_version(value: &str) -> Option<semver::Version> {
     let version = semver::Version::parse(value).ok()?;
-    (version.pre.is_empty()
+    ((version.pre.is_empty() || codex_install_context::is_stable_fork_version(value))
         && version.build.is_empty()
         && (version.major, version.minor, version.patch) != (0, 0, 0))
         .then_some(version)

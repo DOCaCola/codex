@@ -6,15 +6,48 @@ Upstream copyright, Apache-2.0 licensing, and history are preserved.
 
 ## Install
 
-Download a Windows x64 ZIP or macOS Apple Silicon tar.gz from
-[this fork's releases](https://github.com/DOCaCola/codex/releases) when available.
+Releases containing `install.ps1` and `install.sh` support managed installation.
+Download the matching installer from
+[this fork's latest release](https://github.com/DOCaCola/codex/releases/latest).
+On Windows x64, run it from PowerShell:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$HOME\Downloads\install.ps1"
+```
+
+On macOS Apple Silicon, run it from Terminal:
+
+```sh
+sh ~/Downloads/install.sh
+```
+
+The installer downloads the complete fork package, checks its SHA-256 checksum,
+and uses stock Codex's directories under `~/.codex/packages/standalone`.
+Windows exposes the command through `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`;
+macOS uses `~/.local/bin/codex`. Open a new terminal and run `codex` to sign in.
+This replaces the selected standalone Codex installation and shares its settings
+and sessions. Use a separate `CODEX_HOME` and `CODEX_INSTALL_DIR` for an independent
+installation.
+
+Run `codex update` for subsequent CLI updates. Each release is extracted beside
+the previous one before `current` is switched; running executables stay in their
+original directories. Restart CLI sessions to use the new version. The background
+server follows the same fork release feed through `codex app-server daemon update`
+and its scheduled updater. Explicitly pinned server packages remain pinned until
+that manual server update is requested.
+When replacing a stock installation with an existing background server, run
+`codex app-server daemon update` once after installing the fork to switch that
+server and its updater to the fork release feed.
+
+For a portable installation, download a Windows x64 ZIP or macOS Apple Silicon
+tar.gz from the releases.
 Extract the **whole archive**, then run `bin/codex.exe` (Windows) or `bin/codex` (macOS).
 Keep `bin`, `codex-resources`, `codex-path`, and the license files together.
 Packages include the code-mode host, Windows sandbox helpers, ripgrep, and hpatch.
 Go is not required. Initial builds are unsigned and omit the optional voice runtime.
 
-This fork targets Windows x64 and macOS Apple Silicon. The inherited npm/Python publishing and
-installer scripts target official OpenAI packages; use the fork release archives.
+This fork targets Windows x64 and macOS Apple Silicon. npm, Homebrew, and Python
+package publishing remain upstream-only; use this fork's installers or archives.
 macOS packages have no Developer ID signing or notarization. Desktop integration
 and existing database compatibility require validation on a real Mac.
 
@@ -73,7 +106,10 @@ A manual run produces a seven-day artifact. A matching tag also creates a
 The workflow uses a Windows runner with four Cargo jobs and a native macOS ARM64
 runner with two Cargo jobs, no retained build cache, and no OpenAI signing credentials
 or registry publishing. Both packages must pass native CLI and app-server startup
-checks before a tag creates a draft containing both archives and combined checksums.
+checks and native installer tests before a tag creates a draft containing both
+archives, both installer scripts, and combined checksums. Publish a reviewed
+stable draft as a full GitHub release to make it available to `codex update`;
+alpha tags create prereleases and are only installed by explicit version.
 The inherited
 OpenAI workflows have been removed from this branch; their source remains in the
 upstream history. Do not re-enable them wholesale when merging upstream.

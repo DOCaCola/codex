@@ -4,6 +4,25 @@ These fork-only changes should be removed once upstream provides the same or equ
 Review every entry when merging or rebasing from upstream; prefer the upstream implementation over
 maintaining parallel logic or compatibility fallbacks.
 
+## Fork release installation and updates
+
+- The standalone installers retain stock paths, locks, versioned packages and
+  junction/symlink switching, but use DOCaCola/codex release metadata and assets.
+  The release workflow publishes both installers with the complete archives and
+  SHA256SUMS; alpha releases are marked as prereleases.
+- CLI update execution, notices, doctor and daemon update downloads use the fork.
+  Shared release identity in install-context orders numeric `-doca.N` revisions,
+  isolates the fork's version cache, and recognizes fork stable daemon packages
+  while preserving explicit pins. Registry/package-manager updates are removed
+  because they would replace this fork with official OpenAI packages.
+- Daemon update checks compare running executable identity because the public
+  server version omits the fork suffix; identical binaries do not repeatedly
+  restart and fork revisions still select their matching runtime packages.
+- Installer verification retains native Windows locked-executable and checksum
+  coverage plus macOS package, selection, pin and running-release coverage.
+- Remove when: upstream supports a complete configurable release source, version
+  policy and package format for forks.
+
 ## Local Windows release workflow
 
 - Local behavior: `scripts/local-release` builds the fork's Windows executables and

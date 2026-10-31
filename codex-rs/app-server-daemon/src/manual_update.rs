@@ -27,6 +27,18 @@ pub(super) const MAX_RESPONSE_BYTES: u64 = 16 * 1024;
 
 pub(crate) async fn request(daemon: &Daemon) -> Result<UpdateOutput> {
     let socket_path = daemon.manual_update_socket_path();
+    {
+        let _operation_lock = daemon.acquire_operation_lock().await?;
+        if supported(daemon)? && !daemon.is_stable_standalone_release()? {
+            // An explicit update authorizes leaving a stock or pinned package.
+            // Its existing updater may use another release feed; start this
+            // CLI's worker with the guarded restoration request below.
+            let settings = daemon.load_settings().await?;
+            crate::backend::pid_update_loop_backend(daemon.backend_paths(&settings))
+                .stop()
+                .await?;
+        }
+    }
     let mut replacement_deadline = None;
     'request: loop {
         let mut connection = if let Some(deadline) = replacement_deadline {
@@ -181,7 +193,6 @@ pub(super) async fn handle_request(
     mut connection: UnixStream,
     http: &impl InstallerHttp,
     daemon: &Daemon,
-    running_updater_identity: &crate::managed_install::ExecutableIdentity,
     terminate: &mut Signal,
     trigger: UpdateTrigger<'_>,
 ) -> Result<RequestDisposition> {
@@ -197,7 +208,7 @@ pub(super) async fn handle_request(
     {
         return Ok(RequestDisposition::Unchanged);
     }
-    let result = run(http, daemon, running_updater_identity, terminate, trigger).await;
+    let result = run(http, daemon, terminate, trigger).await;
     let interrupted = result.as_ref().err().is_some_and(|err| {
         err.downcast_ref::<std::io::Error>()
             .is_some_and(|err| err.kind() == std::io::ErrorKind::Interrupted)
@@ -228,7 +239,6 @@ pub(super) enum RequestDisposition {
 pub(super) async fn run(
     http: &impl InstallerHttp,
     daemon: &Daemon,
-    running_updater_identity: &crate::managed_install::ExecutableIdentity,
     terminate: &mut Signal,
     trigger: UpdateTrigger<'_>,
 ) -> Result<UpdateOutput> {
@@ -244,8 +254,7 @@ pub(super) async fn run(
     let managed_codex_path = daemon.current_managed_codex_bin()?;
     let (_, previous_release, _) = selected_release(daemon)?;
     let previous_identity = executable_identity(&managed_codex_path).await?;
-    let (control, restart) =
-        update_once(http, daemon, running_updater_identity, terminate, trigger).await?;
+    let (control, restart) = update_once(http, daemon, terminate, trigger).await?;
     if matches!(control, UpdateLoopControl::Stop) {
         return Err(std::io::Error::from(std::io::ErrorKind::Interrupted).into());
     }

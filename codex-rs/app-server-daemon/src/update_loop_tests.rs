@@ -220,9 +220,6 @@ async fn explicit_update_migrates_running_and_stopped_installations() {
         super::update_once(
             &scheduled,
             &legacy,
-            &executable_identity(&legacy.managed_codex_bin)
-                .await
-                .unwrap(),
             &mut test_terminate(),
             super::UpdateTrigger::Scheduled,
         )
@@ -424,7 +421,7 @@ fn manual_update_daemon(home: &TempDir) -> (Daemon, String) {
     } else {
         format!("{}-unknown-linux-musl", std::env::consts::ARCH)
     };
-    let release = format!("1.0.0-{target}");
+    let release = format!("1.0.0-doca-{target}");
     let standalone = home.path().join("packages/standalone");
     let bin = standalone.join("releases").join(&release).join("codex");
     std::fs::create_dir_all(bin.parent().expect("binary parent")).expect("release directory");
@@ -733,7 +730,7 @@ async fn scheduled_no_op_preserves_daemon_and_hands_off_stale_updater() {
         stale.join("codex-package.json"),
         serde_json::json!({
             "version": "0.8.0",
-            "target": release.strip_prefix("1.0.0-").unwrap(),
+            "target": release.strip_prefix("1.0.0-doca-").unwrap(),
             "entrypoint": "bin/codex"
         })
         .to_string(),
@@ -752,7 +749,6 @@ async fn scheduled_no_op_preserves_daemon_and_hands_off_stale_updater() {
     let outcome = super::update_once(
         &no_op,
         &daemon,
-        &executable_identity_from_reader(&b"stale updater"[..]).expect("updater identity"),
         &mut test_terminate(),
         super::UpdateTrigger::Scheduled,
     )
@@ -799,9 +795,6 @@ async fn scheduled_resource_only_update_restarts_daemon() {
     let outcome = super::update_once(
         &installer,
         &daemon,
-        &executable_identity(&daemon.managed_codex_bin)
-            .await
-            .expect("updater identity"),
         &mut test_terminate(),
         super::UpdateTrigger::Scheduled,
     )
@@ -1158,7 +1151,6 @@ async fn check_manual_update_restart(package_directory: &str) {
     let output = manual_update_once(
         &no_op,
         &daemon,
-        &executable_identity_from_reader(&b"updater"[..]).expect("updater identity"),
         &mut test_terminate(),
         super::UpdateTrigger::Manual,
     )
@@ -1189,7 +1181,7 @@ Test-Installer
         .expect("fetch installer");
     super::run_installer_script(
         &script,
-        super::InstallerMode::RestoreProduction("0.150.0-x86_64-pc-windows-msvc"),
+        super::InstallerMode::RestoreProduction("0.150.0-doca-x86_64-pc-windows-msvc"),
         std::path::Path::new("packages/app-server-daemon"),
     )
     .await
@@ -1202,7 +1194,7 @@ Test-Installer
         .expect("fetch failing installer");
     let error = super::run_installer_script(
         &script,
-        super::InstallerMode::RestoreProduction("0.150.0-x86_64-pc-windows-msvc"),
+        super::InstallerMode::RestoreProduction("0.150.0-doca-x86_64-pc-windows-msvc"),
         std::path::Path::new("packages/app-server-daemon"),
     )
     .await
@@ -1220,7 +1212,7 @@ async fn installer_failure_includes_stderr() {
     );
     let error = super::run_installer_script(
         script.as_bytes(),
-        super::InstallerMode::Update("0.150.0-x86_64-unknown-linux-gnu"),
+        super::InstallerMode::Update("0.150.0-doca-x86_64-unknown-linux-gnu"),
         std::path::Path::new("packages/app-server-daemon"),
         futures::future::pending(),
     )
@@ -1239,7 +1231,7 @@ async fn installer_failure_preserves_stderr_before_drain_timeout() {
         Duration::from_secs(3),
         super::run_installer_script(
             b"printf 'installer failed' >&2\nsleep 5 &\nexit 1\n",
-            super::InstallerMode::Update("0.150.0-x86_64-unknown-linux-gnu"),
+            super::InstallerMode::Update("0.150.0-doca-x86_64-unknown-linux-gnu"),
             std::path::Path::new("packages/app-server-daemon"),
             futures::future::pending(),
         ),
@@ -1268,13 +1260,9 @@ async fn update_rejects_a_package_root_change_during_download() {
     }
     let home = TempDir::new().unwrap();
     let (daemon, _) = manual_update_daemon(&home);
-    let identity = executable_identity(&daemon.managed_codex_bin)
-        .await
-        .unwrap();
     let error = manual_update_once(
         &ChangingRoot(home.path()),
         &daemon,
-        &identity,
         &mut test_terminate(),
         super::UpdateTrigger::Manual,
     )
@@ -1291,16 +1279,12 @@ async fn daemon_owned_updates_require_and_request_an_isolated_installer() {
     let root = home.path().join("packages/app-server-daemon");
     std::fs::rename(home.path().join("packages/standalone"), &root).unwrap();
     daemon.managed_codex_bin = root.join("current/codex");
-    let identity = executable_identity(&daemon.managed_codex_bin)
-        .await
-        .unwrap();
     let old = FakeInstallerHttp::new(InstallerResponse::Success(
         b"# CODEX_INSTALL_IF_LATEST\nexit 0\n".to_vec(),
     ));
     let error = manual_update_once(
         &old,
         &daemon,
-        &identity,
         &mut test_terminate(),
         super::UpdateTrigger::Manual,
     )
@@ -1317,7 +1301,6 @@ async fn daemon_owned_updates_require_and_request_an_isolated_installer() {
     let output = manual_update_once(
         &current,
         &daemon,
-        &identity,
         &mut test_terminate(),
         super::UpdateTrigger::Manual,
     )
@@ -1351,7 +1334,6 @@ printf '%s' '{release}' > '{marker}'
         let error = manual_update_once(
             &no_op,
             &daemon,
-            &identity,
             &mut test_terminate(),
             super::UpdateTrigger::RestoreProduction(&release),
         )
@@ -1366,7 +1348,6 @@ printf '%s' '{release}' > '{marker}'
         let restored = manual_update_once(
             &restore,
             &daemon,
-            &identity,
             &mut test_terminate(),
             super::UpdateTrigger::RestoreProduction(&release),
         )

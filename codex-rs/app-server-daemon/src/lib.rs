@@ -222,8 +222,8 @@ pub(crate) enum RestartIfRunningOutcome {
 #[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestartMode {
-    IfVersionChanged,
-    IfBinaryOrVersionChanged,
+    IfBinaryChanged,
+    KeepCurrent,
     Always,
 }
 
@@ -552,11 +552,6 @@ impl Daemon {
         let settings = self.load_settings().await?;
         let outcome = if let Some(backend) = self.running_backend_instance(&settings).await? {
             let info = client::probe(&self.socket_path).await.ok();
-            let managed_version = if info.is_some() {
-                Some(managed_codex_version(managed_codex_bin).await?)
-            } else {
-                None
-            };
             // The installer can retarget `current` while the updater waits for
             // this lock or probes the running server. Never restart from a
             // release that is no longer the selected latest-channel binary.
@@ -569,19 +564,19 @@ impl Daemon {
             {
                 return Ok(RestartIfRunningOutcome::AlreadyCurrent);
             }
-            let mode = if mode == RestartMode::IfBinaryOrVersionChanged {
+            let mode = if mode == RestartMode::IfBinaryChanged {
                 let managed_identity =
                     managed_install::executable_identity(managed_codex_bin).await?;
                 if backend.running_executable_identity().await?.as_ref() == Some(&managed_identity)
                 {
-                    RestartMode::IfVersionChanged
+                    RestartMode::KeepCurrent
                 } else {
                     RestartMode::Always
                 }
             } else {
                 mode
             };
-            match restart_decision(mode, info.as_ref(), managed_version.as_deref()) {
+            match restart_decision(mode, info.as_ref()) {
                 RestartDecision::NotReady => {
                     diagnostics::event("daemon_not_ready", ());
                     return Ok(RestartIfRunningOutcome::NotReady);
@@ -1218,22 +1213,14 @@ fn already_remote_control_status(mode: RemoteControlMode) -> RemoteControlStatus
 }
 
 #[cfg(any(unix, windows))]
-fn restart_decision(
-    mode: RestartMode,
-    info: Option<&client::ProbeInfo>,
-    managed_version: Option<&str>,
-) -> RestartDecision {
-    match (mode, info, managed_version) {
-        (RestartMode::IfBinaryOrVersionChanged, _, _) => {
+fn restart_decision(mode: RestartMode, info: Option<&client::ProbeInfo>) -> RestartDecision {
+    match (mode, info) {
+        (RestartMode::IfBinaryChanged, _) => {
             unreachable!("binary comparison is resolved before restart decision")
         }
-        (RestartMode::IfVersionChanged, None, _) => RestartDecision::NotReady,
-        (RestartMode::IfVersionChanged, Some(info), Some(managed_version))
-            if info.app_server_version == managed_version =>
-        {
-            RestartDecision::AlreadyCurrent
-        }
-        _ => RestartDecision::Restart,
+        (RestartMode::KeepCurrent, None) => RestartDecision::NotReady,
+        (RestartMode::KeepCurrent, Some(_)) => RestartDecision::AlreadyCurrent,
+        (RestartMode::Always, _) => RestartDecision::Restart,
     }
 }
 
@@ -1291,32 +1278,34 @@ mod tests {
         let current_info = ProbeInfo {
             app_server_version: "0.1.0".to_string(),
         };
-
         assert_eq!(
             [
-                restart_decision(
-                    RestartMode::IfVersionChanged,
-                    Some(&current_info),
-                    Some("0.1.0"),
-                ),
-                restart_decision(
-                    RestartMode::IfVersionChanged,
-                    /*info*/ None,
-                    /*managed_version*/ None,
-                ),
-                restart_decision(RestartMode::Always, Some(&current_info), Some("0.1.0")),
-                restart_decision(
-                    RestartMode::Always,
-                    /*info*/ None,
-                    /*managed_version*/ None,
-                ),
+                restart_decision(RestartMode::KeepCurrent, Some(&current_info)),
+                restart_decision(RestartMode::KeepCurrent, /*info*/ None),
+                restart_decision(RestartMode::Always, Some(&current_info)),
+                restart_decision(RestartMode::Always, /*info*/ None),
             ],
             [
                 RestartDecision::AlreadyCurrent,
                 RestartDecision::NotReady,
                 RestartDecision::Restart,
-                RestartDecision::Restart,
+                RestartDecision::Restart
             ]
+        );
+    }
+
+    #[test]
+    fn matching_binary_does_not_restart_for_a_stripped_fork_version() {
+        let info = ProbeInfo {
+            app_server_version: "0.166.0".to_string(),
+        };
+        assert_eq!(
+            restart_decision(RestartMode::KeepCurrent, Some(&info),),
+            RestartDecision::AlreadyCurrent
+        );
+        assert_eq!(
+            restart_decision(RestartMode::KeepCurrent, /*info*/ None,),
+            RestartDecision::NotReady
         );
     }
 

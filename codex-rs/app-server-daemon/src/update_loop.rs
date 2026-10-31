@@ -72,9 +72,9 @@ const RESTART_RETRY_INTERVAL: Duration = Duration::from_millis(50);
 const INSTALLER_STDERR_TAIL_BYTES: usize = 2 * 1024;
 const INSTALLER_STDERR_DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 #[cfg(unix)]
-const INSTALL_URL: &str = "https://chatgpt.com/codex/install.sh";
+const INSTALL_URL: &str = codex_install_context::UNIX_INSTALLER_URL;
 #[cfg(windows)]
-const INSTALL_URL: &str = "https://chatgpt.com/codex/install.ps1";
+const INSTALL_URL: &str = codex_install_context::WINDOWS_INSTALLER_URL;
 
 pub(crate) async fn run(
     http_client_factory: HttpClientFactory,
@@ -174,7 +174,7 @@ async fn run_with_http(
                 // single-use authority. Ordinary socket requests cannot undo a pin.
                 let restoration = restore_release.take();
                 let trigger = restoration.as_deref().map_or(UpdateTrigger::Manual, UpdateTrigger::RestoreProduction);
-                let disposition = match manual_update::handle_request(connection, http, daemon, running_updater_identity, &mut terminate, trigger).await {
+                let disposition = match manual_update::handle_request(connection, http, daemon, &mut terminate, trigger).await {
                     Ok(manual_update::RequestDisposition::Stop) => return Ok(()),
                     Ok(disposition) => disposition,
                     Err(_) => manual_update::RequestDisposition::Continue,
@@ -238,7 +238,7 @@ async fn run_with_http(
                     continue;
                 }
                 let started = std::time::Instant::now();
-                match update_once(http, daemon, running_updater_identity, &mut terminate, UpdateTrigger::Scheduled).await {
+                match update_once(http, daemon, &mut terminate, UpdateTrigger::Scheduled).await {
                     Ok((UpdateLoopControl::Continue, Some(_))) => {
                         manual_handoff_pending = true;
                         next_check = Instant::now();
@@ -334,7 +334,6 @@ enum UpdateTrigger<'a> {
 async fn update_once(
     http: &impl InstallerHttp,
     daemon: &Daemon,
-    running_updater_identity: &ExecutableIdentity,
     terminate: &mut Signal,
     trigger: UpdateTrigger<'_>,
 ) -> Result<(UpdateLoopControl, Option<RestartIfRunningOutcome>)> {
@@ -438,18 +437,10 @@ async fn update_once(
             "trigger": if trigger == UpdateTrigger::Scheduled { "scheduled" } else { "manual" },
         }),
     );
-    let restart_mode = match trigger {
-        UpdateTrigger::Manual | UpdateTrigger::RestoreProduction(_) => {
-            RestartMode::IfBinaryOrVersionChanged
-        }
-        // Updater adoption does not imply daemon replacement.
-        UpdateTrigger::Scheduled
-            if executable_identity(&managed_codex_bin).await? != *running_updater_identity =>
-        {
-            RestartMode::IfBinaryOrVersionChanged
-        }
-        UpdateTrigger::Scheduled => RestartMode::IfVersionChanged,
-    };
+    // The server's public user agent omits the fork suffix. Compare executable
+    // identity even on scheduled checks so unchanged packages do not restart,
+    // and revisions within one upstream version still replace the server.
+    let restart_mode = RestartMode::IfBinaryChanged;
 
     loop {
         if terminate.recv().now_or_never().flatten().is_some() {
@@ -476,9 +467,7 @@ async fn update_once(
                     Some(RestartIfRunningOutcome::NotRunning),
                 ));
             }
-            RestartIfRunningOutcome::AlreadyCurrent
-                if restart_mode == RestartMode::IfBinaryOrVersionChanged =>
-            {
+            RestartIfRunningOutcome::AlreadyCurrent => {
                 anyhow::ensure!(
                     daemon.is_stable_standalone_release()?
                         && resolved_managed_codex_bin(&daemon.current_managed_codex_bin()?).await?
@@ -490,28 +479,14 @@ async fn update_once(
                     Some(RestartIfRunningOutcome::AlreadyCurrent),
                 ));
             }
-            RestartIfRunningOutcome::NotReady
-                if trigger == UpdateTrigger::Scheduled
-                    && restart_mode == RestartMode::IfBinaryOrVersionChanged =>
-            {
+            RestartIfRunningOutcome::NotReady if trigger == UpdateTrigger::Scheduled => {
                 return Ok((
                     UpdateLoopControl::Continue,
                     Some(RestartIfRunningOutcome::NotReady),
                 ));
             }
-            RestartIfRunningOutcome::NotReady | RestartIfRunningOutcome::AlreadyCurrent => {
-                anyhow::ensure!(
-                    trigger == UpdateTrigger::Scheduled,
-                    "managed daemon could not restart; retry when it is ready"
-                );
-                return Ok((
-                    if daemon.is_stable_standalone_release()? {
-                        UpdateLoopControl::Continue
-                    } else {
-                        UpdateLoopControl::Stop
-                    },
-                    None,
-                ));
+            RestartIfRunningOutcome::NotReady => {
+                anyhow::bail!("managed daemon could not restart; retry when it is ready");
             }
         }
     }

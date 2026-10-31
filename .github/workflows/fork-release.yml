@@ -81,6 +81,13 @@ jobs:
         shell: bash
         run: |
           python scripts/smoke_fork_release.py dist/package
+      - name: Test Windows installer
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./scripts/install/test_install_ps1.ps1
+      - name: Test macOS installer
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s scripts/install -p test_install_sh.py
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: codex-${{ matrix.target }}
@@ -98,6 +105,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           pattern: codex-*
@@ -107,8 +117,10 @@ jobs:
         run: |
           mkdir release
           cp dist/*/*.zip dist/*/*.tar.gz release/
+          cp scripts/install/install.sh scripts/install/install.ps1 release/
           cat dist/*/SHA256SUMS > release/SHA256SUMS
           cd release
+          sha256sum install.sh install.ps1 >> SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Create draft release
         env:
@@ -116,6 +128,11 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          release_flags=()
+          if [[ "$RELEASE_TAG" == *-alpha.* ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$RELEASE_TAG" release/* --verify-tag --draft \
+            "${release_flags[@]}" \
             --title "$RELEASE_TAG" \
-            --notes "Windows x64 and macOS Apple Silicon fork builds, without publisher signing or notarization. Extract the complete archive and run bin/codex.exe (Windows) or bin/codex (macOS). Includes the pinned hpatch companion and redistribution notices. Voice components are not included."
+            --notes "Windows x64 and macOS Apple Silicon fork builds, without publisher signing or notarization. Run install.ps1 (Windows) or install.sh (macOS) to install into the standard Codex directories; subsequent updates use codex update. Portable installation: extract the complete archive and run bin/codex.exe or bin/codex. Includes the pinned hpatch companion and redistribution notices. Voice components are not included."
