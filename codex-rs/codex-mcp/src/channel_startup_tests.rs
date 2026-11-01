@@ -64,6 +64,7 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
                     home.path().to_path_buf(),
                 )),
                 plugins_available: false,
+                network_policy_metadata: None,
                 ready_selected_capability_roots: Vec::new(),
                 mcp_servers: HashMap::from([(
                     "docs".to_string(),
@@ -87,6 +88,8 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
             }
         };
         let first = McpConnectionSet::new(
+            /*ema_auth*/ None,
+            /*existing_ema*/ None,
             /*previous*/ None,
             McpPublicationGate::already_published(),
             input(),
@@ -99,9 +102,13 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
             .tool_catalog_cache_context
             .as_ref()
             .expect("cache context");
+        let client = create_test_managed_client(Vec::new()).await;
+        let mut ticket = cache_context.begin_fetch();
+        ticket.tool_list_revision = Some(client.client.tool_list_revision());
         cache_context.publish_if_newest(
-            cache_context.begin_fetch(),
+            ticket,
             &[create_test_tool("docs", "cached_tool")],
+            /*meta*/ None,
         );
         // A new registration can share its catalog without sharing a live connection.
         let previous = McpConnectionSet::new_uninitialized(
@@ -110,7 +117,12 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
             /*prefix_mcp_tool_names*/ true,
         );
         let refreshed = McpConnectionSet::new(
-            Some(&previous),
+            /*ema_auth*/ None,
+            /*existing_ema*/ None,
+            Some(PreviousMcpConnections {
+                connections: &previous,
+                same_owner: false,
+            }),
             McpPublicationGate::already_published(),
             input(),
             ElicitationRequestRouter::default(),

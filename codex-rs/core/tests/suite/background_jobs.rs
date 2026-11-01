@@ -140,7 +140,10 @@ async fn background_jobs_later_turn_preserves_hook_origin(rich: bool, stack: boo
                 ev_assistant_message("done", "finished"),
                 ev_completed("finish"),
             ]),
-        ],
+        ]
+        .into_iter()
+        .take(if rich { 4 } else { 2 })
+        .collect(),
     )
     .await;
     submit_unified_exec_turn(harness.test(), "run", PermissionProfile::Disabled).await?;
@@ -161,6 +164,32 @@ async fn background_jobs_later_turn_preserves_hook_origin(rich: bool, stack: boo
         matches!(event, EventMsg::TurnAborted(_))
     })
     .await;
+    let retained =
+        if !rich {
+            let jobs = harness.test().codex.list_background_jobs().await?;
+            assert_eq!(jobs.len(), 1);
+            let process_id = jobs[0].process_id.parse::<i32>()?;
+            harness.write_file("release", "go").await?;
+            Some(
+                mount_sse_sequence(
+                    harness.server(),
+                    vec![
+                        sse(
+                            vec![ev_function_call("read-retained", "write_stdin", &json!({
+                "session_id": process_id, "chars": "", "wait_mode": "completion",
+            }).to_string()), ev_completed("read-retained")],
+                        ),
+                        sse(vec![
+                            ev_assistant_message("done", "finished"),
+                            ev_completed("finish"),
+                        ]),
+                    ],
+                )
+                .await,
+            )
+        } else {
+            None
+        };
     submit_unified_exec_turn(harness.test(), "continue", PermissionProfile::Disabled).await?;
     let EventMsg::TurnStarted(second) = wait_for_event(&harness.test().codex, |event| {
         matches!(event, EventMsg::TurnStarted(_))
@@ -170,24 +199,52 @@ async fn background_jobs_later_turn_preserves_hook_origin(rich: bool, stack: boo
         unreachable!()
     };
     assert_ne!(first.turn_id, second.turn_id);
-    wait_for_event(&harness.test().codex, |event| {
-        matches!(event,
+    if rich {
+        wait_for_event(&harness.test().codex, |event| {
+            matches!(event,
         EventMsg::AgentMessage(message) if message.message == "second-wait")
-    })
-    .await;
-    harness.write_file("release", "go").await?;
+        })
+        .await;
+        harness.write_file("release", "go").await?;
+    }
     wait_for_event(&harness.test().codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
     let payload: Value = serde_json::from_str(&std::fs::read_to_string(&hook_log)?)?;
-    assert_eq!(payload["turn_id"], first.turn_id);
+    assert_eq!(
+        payload["turn_id"].as_str(),
+        Some(if rich {
+            first.turn_id.as_str()
+        } else {
+            second.turn_id.as_str()
+        })
+    );
     let call_id = if stack {
         "launch:with:colons:1:0"
     } else {
         "launch:with:colons"
     };
     assert_eq!(payload["tool_use_id"], call_id);
+    if let Some(retained) = retained {
+        let request = retained.last_request().unwrap();
+        assert!(
+            request
+                .function_call_output("read-retained")
+                .to_string()
+                .contains("completed-marker")
+        );
+        assert!(
+            !request.body_json()["input"]
+                .to_string()
+                .contains("<command_completion>")
+        );
+        assert_eq!(
+            harness.test().codex.list_background_jobs().await?[0].delivery,
+            codex_core::background_jobs::BackgroundJobDelivery::Delivered
+        );
+        return Ok(());
+    }
     let input = log.last_request().unwrap().body_json();
     let fragment = input["input"]
         .as_array()

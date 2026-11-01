@@ -1,5 +1,4 @@
 //! Interrupt preserves session jobs; explicit stop/shutdown revoke delivery.
-//! All cases in this module are written, not run under the production-machine rule.
 use super::*;
 use codex_core::background_jobs::BackgroundJobDelivery;
 use codex_core::background_jobs::BackgroundJobState;
@@ -76,32 +75,15 @@ fn parked_response() -> String {
 }
 
 #[test_case::test_case(true; "jobs_before_next_user_sample")]
-#[test_case::test_case(false; "flag_off_post_sampling_parity")]
+#[test_case::test_case(false; "flag_off_retains_explicit_completion")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_jobs_interrupt_keeps_completion_without_starting_a_turn(
     enabled: bool,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let harness = interrupt_harness(enabled).await?;
-    let mut responses = vec![
-        launch_response(),
-        parked_response(),
-        sse(vec![
-            ev_assistant_message("next", "next-user"),
-            ev_completed("next"),
-        ]),
-    ];
-    if !enabled {
-        responses.push(sse(vec![
-            ev_assistant_message("result", "result-seen"),
-            ev_completed("result"),
-        ]));
-    }
-    responses.push(sse(vec![
-        ev_assistant_message("later", "later-user"),
-        ev_completed("later"),
-    ]));
-    let log = mount_sse_sequence(harness.server(), responses).await;
+    let launch_log =
+        mount_sse_sequence(harness.server(), vec![launch_response(), parked_response()]).await;
     interrupt_parked_job(&harness).await?;
     let running = harness.test().codex.list_background_jobs().await?;
     assert_eq!(running.len(), 1);
@@ -139,23 +121,56 @@ async fn background_jobs_interrupt_keeps_completion_without_starting_a_turn(
         .is_err(),
         "completion must wait for user input"
     );
-    assert_eq!(log.requests().len(), 2);
+    assert_eq!(launch_log.requests().len(), 2);
+    let mut responses = Vec::new();
+    if !enabled {
+        responses.push(sse(vec![
+            ev_function_call(
+                "read-retained",
+                "write_stdin",
+                &json!({
+                    "session_id": finished[0].process_id.parse::<i32>()?,
+                    "chars": "", "wait_mode": "completion",
+                })
+                .to_string(),
+            ),
+            ev_completed("read-retained"),
+        ]));
+    }
+    responses.push(sse(vec![
+        ev_assistant_message("next", "next-user"),
+        ev_completed("next"),
+    ]));
+    responses.push(sse(vec![
+        ev_assistant_message("later", "later-user"),
+        ev_completed("later"),
+    ]));
+    let log = mount_sse_sequence(harness.server(), responses).await;
     submit_unified_exec_turn(harness.test(), "continue", PermissionProfile::Disabled).await?;
     wait_for_event(&harness.test().codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
     let requests = log.requests();
-    let first = requests[2].body_json()["input"].to_string();
+    let first = requests[0].body_json()["input"].to_string();
     assert_eq!(
         first.matches("<command_completion>").count(),
         usize::from(enabled)
     );
     let last = requests.last().unwrap().body_json()["input"].to_string();
-    assert_eq!(last.matches("<command_completion>").count(), 1);
+    assert_eq!(
+        last.matches("<command_completion>").count(),
+        usize::from(enabled)
+    );
     assert!(last.contains("completed-marker"));
     if enabled {
         assert_eq!(last.matches(&finished[0].job_id).count(), 1);
+    } else {
+        let output = requests
+            .last()
+            .unwrap()
+            .function_call_output("read-retained");
+        assert!(output.to_string().contains("completed-marker"));
     }
     assert_eq!(
         harness.test().codex.list_background_jobs().await?[0].delivery,
@@ -171,7 +186,7 @@ async fn background_jobs_interrupt_keeps_completion_without_starting_a_turn(
             .to_string()
             .matches("<command_completion>")
             .count(),
-        1
+        usize::from(enabled)
     );
     Ok(())
 }

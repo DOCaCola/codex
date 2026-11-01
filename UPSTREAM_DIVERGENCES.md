@@ -4,6 +4,39 @@ These fork-only changes should be removed once upstream provides the same or equ
 Review every entry when merging or rebasing from upstream; prefer the upstream implementation over
 maintaining parallel logic or compatibility fallbacks.
 
+## Spawn model list truncation disclosure
+
+- Local behavior: keep the five-entry `spawn_agent` model summary cap and append a
+  notice when additional picker-visible, backend-compatible models are omitted.
+  The notice tells the agent that other catalog models may be valid and to try an
+  explicit override before declaring one unavailable.
+- Adapted from Kevinjohn/codex commit `31ed6acb7ce68eecfe039c6230bb8d2993094587`
+  linked in upstream issue openai/codex#34166. Request-level tests cover V1/V2,
+  exactly five eligible models, truncation, and hidden/disabled entries.
+- Remove when: upstream provides equivalent disclosure for the capped tool description.
+
+## Fork release installation and updates
+
+- The standalone installers retain stock paths, locks, versioned packages and
+  junction/symlink switching, but use DOCaCola/codex release metadata and assets.
+  The release workflow publishes both installers with the complete archives and
+  SHA256SUMS; alpha releases are marked as prereleases.
+- CLI update execution, notices, doctor and daemon update downloads use the fork.
+  Shared release identity in install-context orders numeric `-doca.N` revisions,
+  isolates the fork's version cache, and recognizes fork stable daemon packages
+  while preserving explicit pins. Registry/package-manager updates are removed
+  because they would replace this fork with official OpenAI packages.
+- Daemon update checks compare running executable identity because the public
+  server version omits the fork suffix; identical binaries do not repeatedly
+  restart and fork revisions still select their matching runtime packages.
+- Installer verification retains native Windows locked-executable and checksum
+  coverage plus macOS package, selection, pin and running-release coverage.
+  Native installer jobs gate compilation; manual runs can test only installers.
+  Process-retention fixtures compile a native helper and wait for readiness,
+  avoiding copied macOS platform executables and process-start races.
+- Remove when: upstream supports a complete configurable release source, version
+  policy and package format for forks.
+
 ## Local Windows release workflow
 
 - Local behavior: `scripts/local-release` builds the fork's Windows executables and
@@ -465,7 +498,69 @@ notes are excluded. The original local development branches retain that history.
   retain the existing idle/Plan/mailbox admission checks.
 - Remote output remains pollable through output closure; explicit termination
   overrides retention. Fast opted-in commands still receive timing/UUID records.
-- Precomputed protocol conflicts are resolved from both schemas without running
-  generators. Stable exports retain current main; experimental exports combine
-  its new protocol surface with the background capability/job/work definitions.
-  Regeneration and parity checks remain required in the next validation stage.
+- Protocol fixtures are regenerated from Rust types using the repository generators.
+  Stable exports follow the stable API; experimental exports include the background
+  capability/job/work definitions alongside the current main protocol surface.
+## Stable v0.164.0 integration
+
+- Persistent shell selection follows upstream's separate active and configured
+  environment bindings. Selecting a local shell refreshes both views while
+  preserving snapshots already captured by running commands and owner configuration.
+- Command batching retains hidden child tools and managed completion semantics with
+  upstream's stable tool declarations, readiness checks, and shell/login parameters.
+- Claude channels retain one-way server startup without a tools capability alongside
+  upstream EMA authentication and tool catalog metadata.
+- Runtime completion notices and channel context use upstream typed content items;
+  existing bounds, attribution, and model-visible text remain unchanged.
+- hpatch resolves its companion on the executor using upstream's current process
+  sandbox preparation and credential-broker handling.
+- The fork release workflow follows upstream Rust 1.99.1; package builds use the
+  pinned V8 152.2.0 artifacts. Daemon auto-start retains the upstream enabled default.
+
+## Stable v0.165.0 integration
+
+- Stdin polling and finite completion reads use upstream's terminal objects and
+  live environment resolver. Retained finite results preserve the original process,
+  call, and environment identity after leaving the live process store.
+- Command completion retains the upstream protection against process ID reuse;
+  later reads cannot redirect an existing terminal operation to a replacement.
+- Claude channels coexist with upstream MCP network-policy capability metadata
+  and shared tool environment selection. Persistent shell selection, hpatch,
+  request-auth image eligibility, and turn-scoped completion delivery remain.
+- Upstream private publishing and signing workflows remain disabled. Release
+  packages use version `0.165.0-doca`; daemon auto-start stays enabled.
+
+## Stable v0.166.0 integration
+
+- Command batching and finite completion use upstream prepared execution requests,
+  shared head/tail output capture, and direct-tool timing. Persistent shell selection
+  is applied before preparation and preserves captured environment snapshots.
+- hpatch keeps translator working directories and original permission-hook inputs
+  through upstream prepared patch requests and the shared approval path.
+- Claude channels coexist with upstream MCP startup/reconnect changes. Their
+  listeners start even with cached tools, and connections remain session-owned.
+- The existing 200000-byte Guardian review bound moves with upstream's extracted
+  reviewer crate; the former core implementation is removed.
+- Complete packages include upstream's separate codex-exec-server executable and
+  the fork hpatch companion. The fork workflow follows upstream Rust 1.95.0 and
+  pinned V8 source/artifacts. Windows CI enables long dependency paths. Daemon
+  auto-start remains enabled on every platform. The existing Starlark LF checkout
+  policy covers BUILD/MODULE/WORKSPACE files too, preserving escaped continuations.
+
+- Release revision `0.166.0-doca.1` applies upstream's
+  `CARGO_NET_GIT_FETCH_WITH_CLI=true` CI transport setting to the fork workflow.
+  It avoids Cargo's bundled macOS SecureTransport failure while fetching the
+  newly pinned V8 source submodules; Rust source and dependency pins are unchanged.
+
+## Background integration with v0.166.0-doca.3
+
+- Background execution uses upstream prepared requests and terminal identities.
+  Session-owned jobs retain process-start deadlines, fast-exit metadata, exact
+  terminal reads and origin-attributed completion hooks. Delivery-only jobs follow
+  main's release contract and remain explicitly readable after interruption.
+- Listener startup uses upstream atomic subscriber installation and cold-resume
+  admission while retaining registry-aware unload protection and job timers.
+  In-process continuation notifications use upstream serialized pending delivery.
+- Background wake reservations retain the finishing-token and turn-state identity
+  fences. Pending work uses fresh turn IDs and current mailbox wake policy; Claude
+  channel startup, dispatch and shutdown retain upstream behavior.

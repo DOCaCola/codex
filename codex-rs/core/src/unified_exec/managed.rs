@@ -22,9 +22,9 @@ use tokio::sync::Semaphore;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
+use super::TerminalSession;
 use super::UnifiedExecContext;
 use super::UnifiedExecError;
-use super::UnifiedExecProcess;
 use super::UnifiedExecProcessManager;
 use super::WriteStdinRequest;
 use crate::tools::context::ExecCommandToolOutput;
@@ -111,7 +111,7 @@ struct Job {
     origin: Arc<crate::session::step_context::StepContext>,
     metadata: Mutex<metadata::JobMetadata>,
     _slot: Arc<OwnedSemaphorePermit>,
-    process: Arc<UnifiedExecProcess>,
+    terminal: TerminalSession,
     initial_response_done: CancellationToken,
     initial_response_consumed: AtomicBool,
     acknowledged: AtomicBool,
@@ -185,6 +185,27 @@ impl Drop for NotifyOnDrop {
 }
 
 impl UnifiedExecProcessManager {
+    pub(crate) async fn resolve_terminal(
+        &self,
+        process_id: i32,
+    ) -> Result<TerminalSession, UnifiedExecError> {
+        if let Some(entry) = self.process_store.lock().await.processes.get(&process_id) {
+            return Ok(TerminalSession {
+                process_id,
+                process: Arc::clone(&entry.process),
+                call_id: entry.call_id.clone(),
+                environment_id: entry.environment_id.clone(),
+            });
+        }
+        // Finite results outlive the live process store, but retain the same
+        // terminal identity and environment for explicit artifact reads.
+        self.managed
+            .get(process_id)
+            .await
+            .map(|job| job.terminal.clone())
+            .ok_or(UnifiedExecError::UnknownProcessId { process_id })
+    }
+
     pub(super) async fn reserve_managed_command(
         &self,
     ) -> Result<Arc<OwnedSemaphorePermit>, UnifiedExecError> {
@@ -200,7 +221,7 @@ impl UnifiedExecProcessManager {
             // Preserve delivery-only retention when background_jobs is disabled.
             if jobs.len() >= RETAINED_RESULTS {
                 jobs.retain(|_, job| {
-                    !job.process.has_exited()
+                    !job.terminal.process.has_exited()
                         || !(job.acknowledged.load(Ordering::Acquire)
                             || job.revoked.is_cancelled()
                             || job.initial_response_consumed.load(Ordering::Acquire)
@@ -216,7 +237,7 @@ impl UnifiedExecProcessManager {
         process_id: i32,
         context: &UnifiedExecContext,
         metadata: metadata::JobMetadata,
-        process: Arc<UnifiedExecProcess>,
+        terminal: TerminalSession,
         slot: Arc<OwnedSemaphorePermit>,
     ) -> LaunchGuard {
         let job_id = metadata.job_id;
@@ -226,7 +247,7 @@ impl UnifiedExecProcessManager {
             origin: Arc::clone(&context.step_context),
             metadata: Mutex::new(metadata),
             _slot: slot,
-            process,
+            terminal,
             initial_response_done: CancellationToken::new(),
             initial_response_consumed: AtomicBool::new(false),
             acknowledged: AtomicBool::new(false),
@@ -250,12 +271,16 @@ impl UnifiedExecProcessManager {
         let changed = Arc::clone(&self.managed.changed);
         let finishing = Arc::clone(&job);
         tokio::spawn(async move {
-            finishing.process.cancellation_token().cancelled().await;
             finishing
-                .metadata
-                .lock()
-                .await
-                .finish(&finishing.process, finishing.revoked.is_cancelled());
+                .terminal
+                .process
+                .cancellation_token()
+                .cancelled()
+                .await;
+            finishing.metadata.lock().await.finish(
+                &finishing.terminal.process,
+                finishing.revoked.is_cancelled(),
+            );
             if finishing.background_jobs {
                 registry.enqueue(job_id).await;
                 changed.notify_waiters();
@@ -292,7 +317,11 @@ impl UnifiedExecProcessManager {
         mut request: WriteStdinRequest<'_>,
         wait: WaitMode,
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
-        let job = self.managed.get(request.process_id).await;
+        let job = self
+            .managed
+            .get(request.terminal.process_id)
+            .await
+            .filter(|job| Arc::ptr_eq(&job.terminal.process, &request.terminal.process));
         let Some(job) = job else {
             if wait == WaitMode::Completion {
                 return Err(UnifiedExecError::process_failed(
@@ -340,7 +369,7 @@ impl UnifiedExecProcessManager {
             ));
         }
         if wait == WaitMode::Completion {
-            let exited = job.process.cancellation_token();
+            let exited = job.terminal.process.cancellation_token();
             tokio::select! {
                 biased;
                 _ = context.cancellation_token.cancelled() => return Err(UnifiedExecError::process_failed("wait cancelled".into())),
@@ -365,13 +394,14 @@ impl UnifiedExecProcessManager {
         }
         let result = match result {
             Ok(output) if output.process_id.is_none() => {
-                self.accept_managed_output(context, &job, output).await
+                self.accept_managed_output(context, &job, output, &[&job.terminal.environment_id])
+                    .await
             }
             result => result,
         };
         if let Ok(output) = &result {
             state.last_poll = Some(Instant::now());
-            if !output.raw_output.is_empty() {
+            if !output.raw_output.text.is_empty() {
                 state.last_poll = None;
                 state.poll_level = 0;
             }
@@ -379,7 +409,7 @@ impl UnifiedExecProcessManager {
                 state.result = Some(output.clone());
                 job.acknowledged.store(true, Ordering::Release);
             }
-        } else if job.process.has_exited() {
+        } else if job.terminal.process.has_exited() {
             state.error = result.as_ref().err().map(ToString::to_string);
             job.acknowledged.store(true, Ordering::Release);
         }
@@ -422,7 +452,7 @@ impl UnifiedExecProcessManager {
                 if job.acknowledged.load(Ordering::Acquire) {
                     continue;
                 }
-                let exited = job.process.cancellation_token();
+                let exited = job.terminal.process.cancellation_token();
                 if exited.is_cancelled() {
                     if queued_ready != Some(false) {
                         return true;
@@ -486,7 +516,9 @@ impl UnifiedExecProcessManager {
                 return true;
             }
             if let Some(deadline) = deadline {
-                match tokio::time::timeout_at(deadline, self.wait_for_managed_commands(context)).await {
+                match tokio::time::timeout_at(deadline, self.wait_for_managed_commands(context))
+                    .await
+                {
                     Ok(true) => {}
                     Ok(false) => return false,
                     Err(_) => {

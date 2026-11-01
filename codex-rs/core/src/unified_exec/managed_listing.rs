@@ -6,10 +6,10 @@ use std::sync::atomic::Ordering;
 impl UnifiedExecProcessManager {
     pub(crate) async fn finish_background_job_timing(&self, item_id: &str) {
         for (_, job) in self.managed.records().await {
-            if job.background_jobs && job.process.has_exited() {
+            if job.background_jobs && job.terminal.process.has_exited() {
                 let mut metadata = job.metadata.lock().await;
                 if metadata.item_id == item_id {
-                    metadata.finish(&job.process, job.revoked.is_cancelled());
+                    metadata.finish(&job.terminal.process, job.revoked.is_cancelled());
                 }
             }
         }

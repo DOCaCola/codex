@@ -1,6 +1,6 @@
 ---
 source: core/tests/suite/scenarios.rs
-expression: "context_snapshot::format_request_history_snapshot(\"Astra calls list_agents using the selected catalog parameter schema.\",\n&mock.requests(),\n&ContextSnapshotOptions::default().include_request_settings(),)"
+expression: "context_snapshot::format_request_history_snapshot(description,\n&mock.requests(),\n&ContextSnapshotOptions::default().include_request_settings(),)"
 ---
 Scenario: Astra calls list_agents using the selected catalog parameter schema.
 
@@ -16,7 +16,7 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=2b84850bc279e5ed):
+00:additional_tools/developer (3; hash=6003d8c3ab8a80f6):
         - namespace/functions; hash=fada4a476a3754dd
           - custom/exec
           - function/wait
@@ -24,7 +24,7 @@ Settings:
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=7e156cf57f85af87
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=a5168d82d74266fc
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -100,6 +100,7 @@ Settings:
     </environment_context>
 06:message/user:
     Check which agents are working under /root before delegating more work.
+07:configuration_update:reasoning={"effort":"low"}
 -- request 2 (turn) --
-07:function_call/collaboration.list_agents:{"path_prefix":"/root"}
-08:function_call_output:{"agents":[{"agent_name":"/root","agent_status":"running"}]}
+08:function_call/collaboration.list_agents:{"path_prefix":"/root"}
+09:function_call_output:{"agents":[{"agent_name":"/root","agent_status":"running"}]}

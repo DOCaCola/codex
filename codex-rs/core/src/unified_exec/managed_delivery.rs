@@ -30,7 +30,7 @@ impl UnifiedExecProcessManager {
             {
                 continue;
             }
-            if !job.initial_response_done.is_cancelled() || !job.process.has_exited() {
+            if !job.initial_response_done.is_cancelled() || !job.terminal.process.has_exited() {
                 continue;
             }
             let Ok(mut state) = Arc::clone(&job.state).try_lock_owned() else {
@@ -43,7 +43,7 @@ impl UnifiedExecProcessManager {
                 .write_stdin(
                     context,
                     WriteStdinRequest {
-                        process_id: id,
+                        terminal: &job.terminal,
                         input: "",
                         yield_time_ms: 5_000,
                         max_output_tokens: None,
@@ -60,7 +60,13 @@ impl UnifiedExecProcessManager {
             let result = match result {
                 Ok(mut output) => {
                     output.completion_delivery = Some(true);
-                    self.accept_managed_output(context, &job, output).await
+                    self.accept_managed_output(
+                        context,
+                        &job,
+                        output,
+                        &[&job.terminal.environment_id],
+                    )
+                    .await
                 }
                 Err(error) => Err(error),
             };
@@ -77,7 +83,7 @@ impl UnifiedExecProcessManager {
             };
             {
                 let mut metadata = job.metadata.lock().await;
-                metadata.finish(&job.process, job.revoked.is_cancelled());
+                metadata.finish(&job.terminal.process, job.revoked.is_cancelled());
             }
             if !job.revoked.is_cancelled() {
                 items.push(ContextualUserFragment::into(fragment));
@@ -107,6 +113,7 @@ impl UnifiedExecProcessManager {
         context: &UnifiedExecContext,
         job: &Job,
         mut output: ExecCommandToolOutput,
+        target_environments: &[&str],
     ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
         let payload = ToolPayload::Function {
             arguments: String::new(),
@@ -120,12 +127,19 @@ impl UnifiedExecProcessManager {
             let name = crate::tools::hook_names::HookToolName::bash();
             let outcome = crate::hook_runtime::run_post_tool_use_hooks(
                 &context.session,
-                job.origin.as_ref(),
-                output.event_call_id.clone(),
-                name.name().to_string(),
-                name.matcher_aliases().to_vec(),
-                input,
-                response,
+                if job.background_jobs {
+                    job.origin.as_ref()
+                } else {
+                    context.step_context.as_ref()
+                },
+                crate::tools::registry::PostToolUsePayload {
+                    tool_cwd: output.post_tool_use_cwd(),
+                    tool_name: name,
+                    tool_use_id: output.event_call_id.clone(),
+                    tool_input: input,
+                    tool_response: response,
+                },
+                target_environments,
             )
             .await;
             crate::hook_runtime::record_additional_contexts(
@@ -142,9 +156,8 @@ impl UnifiedExecProcessManager {
                 ));
             }
             if let Some(feedback) = outcome.feedback_message {
-                output.raw_output = feedback.into_bytes();
+                output.raw_output = feedback.as_str().into();
                 output.original_token_count = None;
-                output.output_omitted_bytes = None;
             }
         }
         // Both explicit completion waits and automatic delivery accept exactly once.

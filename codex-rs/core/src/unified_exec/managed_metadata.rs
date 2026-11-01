@@ -83,7 +83,7 @@ impl JobMetadata {
             call_id: context.call_id.clone(),
             stack: request.command_stack.clone(),
             item_id: context.call_id.clone(),
-            command: request.hook_command.clone(),
+            command: request.prepared.hook_command.clone(),
             mode: execution.mode,
             started_at: if context.session.background_jobs.enabled {
                 process.started_at_utc

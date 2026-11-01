@@ -1,4 +1,6 @@
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 use codex_rmcp_client::ChannelNotification;
 
 use super::ContextualUserFragment;
@@ -68,10 +70,10 @@ impl ContextualUserFragment for ChannelMessage {
         (text.starts_with("<channel ") || text.starts_with("<channel_instructions "))
             && text.ends_with("</channel>")
     }
-    fn body(&self) -> String {
-        self.text.clone()
+    fn body(&self) -> ContentItem {
+        input_text(self.text.clone())
     }
-    fn render(&self) -> String {
+    fn render(&self) -> ContentItem {
         self.body()
     }
 }

@@ -134,13 +134,14 @@ for line in sys.stdin:
                     }
                     .boxed()
                 }),
+                /*send_notification*/ None,
             )
             .await?;
         let result = client
             .call_tool(
                 "probe".to_string(),
                 /*arguments*/ None,
-                /*meta*/ None,
+                |_| Ok(None),
                 Some(Duration::from_secs(/*secs*/ 5)),
             )
             .await?;

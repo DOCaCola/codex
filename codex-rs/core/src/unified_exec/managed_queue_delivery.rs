@@ -62,7 +62,7 @@ impl UnifiedExecProcessManager {
             candidates.push(crate::session::background_continuation::WakeCandidate {
                 job_id: metadata.job_id,
                 originating_turn: metadata.originating_turn.clone(),
-                ready: job.process.has_exited()
+                ready: job.terminal.process.has_exited()
                     && job.initial_response_done.is_cancelled()
                     && job.state.try_lock().is_ok(),
             });
@@ -82,7 +82,7 @@ impl UnifiedExecProcessManager {
         // The flag-off map is deliberately excluded. A pending auto/background
         // record also protects the brief exit-to-queue publication handoff.
         for job in self.managed.registry.all_jobs().await {
-            if !job.process.has_exited() {
+            if !job.terminal.process.has_exited() {
                 return true;
             }
             if job.revoked.is_cancelled()
@@ -109,7 +109,7 @@ impl UnifiedExecProcessManager {
         let Some(job) = self.managed.get(process_id).await else {
             return;
         };
-        if job.background_jobs && !Arc::ptr_eq(&job.process, process) {
+        if job.background_jobs && !Arc::ptr_eq(&job.terminal.process, process) {
             return;
         }
         if job.background_jobs {
@@ -120,7 +120,7 @@ impl UnifiedExecProcessManager {
         job.metadata
             .lock()
             .await
-            .finish(&job.process, job.revoked.is_cancelled());
+            .finish(&job.terminal.process, job.revoked.is_cancelled());
     }
 
     pub(super) async fn read_cached_background_job(
@@ -144,7 +144,10 @@ impl UnifiedExecProcessManager {
             None => unreachable!("cached job read requires a result or error"),
         };
         if !job.revoked.is_cancelled() && result.hook_command.is_some() {
-            result = match self.accept_managed_output(context, job, result).await {
+            result = match self
+                .accept_managed_output(context, job, result, &[&job.terminal.environment_id])
+                .await
+            {
                 Ok(output) => output,
                 Err(error) => {
                     state.result = None;
@@ -178,7 +181,8 @@ impl UnifiedExecProcessManager {
         let result = match result {
             Ok(output) if output.process_id.is_none() && !job.revoked.is_cancelled() => {
                 state.result = Some(output.clone());
-                self.accept_managed_output(context, job, output).await
+                self.accept_managed_output(context, job, output, &[&job.terminal.environment_id])
+                    .await
             }
             result => result,
         };
@@ -191,7 +195,7 @@ impl UnifiedExecProcessManager {
         }
         if let Ok(output) = &result {
             state.last_poll = Some(Instant::now());
-            if !output.raw_output.is_empty() {
+            if !output.raw_output.text.is_empty() {
                 state.last_poll = None;
                 state.poll_level = 0;
             }
@@ -199,7 +203,7 @@ impl UnifiedExecProcessManager {
                 state.result = Some(output.clone());
                 job.acknowledged.store(true, Ordering::Release);
             }
-        } else if job.process.has_exited() {
+        } else if job.terminal.process.has_exited() {
             state.result = None;
             state.error = result.as_ref().err().map(ToString::to_string);
             job.acknowledged.store(true, Ordering::Release);
@@ -216,7 +220,7 @@ impl UnifiedExecProcessManager {
         let Some(job) = self.managed.get(process_id).await else {
             return Ok(false);
         };
-        if !job.background_jobs || !Arc::ptr_eq(&job.process, process) {
+        if !job.background_jobs || !Arc::ptr_eq(&job.terminal.process, process) {
             return Ok(false);
         }
         job.revoked.cancel();
@@ -246,7 +250,7 @@ impl UnifiedExecProcessManager {
                 self.managed.registry.consumed(job_id).await;
                 continue;
             }
-            if !job.initial_response_done.is_cancelled() || !job.process.has_exited() {
+            if !job.initial_response_done.is_cancelled() || !job.terminal.process.has_exited() {
                 continue;
             }
             let Ok(mut state) = Arc::clone(&job.state).try_lock_owned() else {
@@ -264,7 +268,7 @@ impl UnifiedExecProcessManager {
                     .write_stdin(
                         context,
                         WriteStdinRequest {
-                            process_id: id,
+                            terminal: &job.terminal,
                             input: "",
                             yield_time_ms: 5_000,
                             max_output_tokens: None,
@@ -293,7 +297,10 @@ impl UnifiedExecProcessManager {
             if let Some(output) = state.result.clone()
                 && output.hook_command.is_some()
             {
-                match self.accept_managed_output(context, &job, output).await {
+                match self
+                    .accept_managed_output(context, &job, output, &[&job.terminal.environment_id])
+                    .await
+                {
                     Ok(output) => {
                         state.result = Some(output);
                     }
@@ -312,7 +319,7 @@ impl UnifiedExecProcessManager {
             };
             let fragment = {
                 let mut metadata = job.metadata.lock().await;
-                metadata.finish(&job.process, job.revoked.is_cancelled());
+                metadata.finish(&job.terminal.process, job.revoked.is_cancelled());
                 ContextualUserFragment::into(fragment.with_metadata(&metadata))
             };
             pending.push(PendingCompletion {

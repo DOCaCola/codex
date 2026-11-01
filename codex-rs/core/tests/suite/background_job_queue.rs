@@ -39,7 +39,7 @@ impl TurnLifecycleContributor for PauseTurnSetup {
 #[test_case::test_case(1, true; "during_turn_setup_before_first_sample")]
 #[test_case::test_case(2, true; "two_completions_share_boundary")]
 #[test_case::test_case(6, true; "four_then_two_without_loss")]
-#[test_case::test_case(1, false; "flag_off_keeps_post_sampling_delivery")]
+#[test_case::test_case(1, false; "flag_off_retains_explicit_completion")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_job_queue_drains_at_sampling_boundaries(
     count: usize,
@@ -77,29 +77,17 @@ async fn background_job_queue_drains_at_sampling_boundaries(
         })
         .collect::<Vec<_>>();
     launch.push(ev_completed("launch"));
-    let mut responses = vec![
-        sse(launch),
-        sse(vec![
-            ev_assistant_message("wait", "parked"),
-            ev_completed("park"),
-        ]),
-        sse(vec![
-            ev_assistant_message("new", "first-sample"),
-            ev_completed("new"),
-        ]),
-        sse(vec![
-            ev_assistant_message("rest", "next-boundary"),
-            ev_completed("rest"),
-        ]),
-        sse(vec![
-            ev_assistant_message("later", "later-turn"),
-            ev_completed("later"),
-        ]),
-    ];
-    if enabled && count <= 4 {
-        responses.pop();
-    }
-    let log = mount_sse_sequence(harness.server(), responses).await;
+    let launch_log = mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(launch),
+            sse(vec![
+                ev_assistant_message("wait", "parked"),
+                ev_completed("park"),
+            ]),
+        ],
+    )
+    .await;
     let test = harness.test();
     submit_unified_exec_turn(test, "launch", PermissionProfile::Disabled).await?;
     wait_for_event(
@@ -107,7 +95,7 @@ async fn background_job_queue_drains_at_sampling_boundaries(
         |event| matches!(event, EventMsg::AgentMessage(message) if message.message == "parked"),
     )
     .await;
-    assert_eq!(log.requests().len(), 2);
+    assert_eq!(launch_log.requests().len(), 2);
     test.codex.submit(Op::Interrupt).await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnAborted(_))
@@ -137,10 +125,40 @@ async fn background_job_queue_drains_at_sampling_boundaries(
             .all(|job| job.delivery == BackgroundJobDelivery::Pending)
     );
     assert_eq!(
-        log.requests().len(),
+        launch_log.requests().len(),
         2,
         "setup is paused while completions queue"
     );
+    let mut responses = Vec::new();
+    if !enabled {
+        responses.push(sse(vec![
+            ev_function_call(
+                "read-retained",
+                "write_stdin",
+                &json!({
+                    "session_id": completed[0].process_id.parse::<i32>()?,
+                    "chars": "", "wait_mode": "completion",
+                })
+                .to_string(),
+            ),
+            ev_completed("read-retained"),
+        ]));
+    }
+    responses.push(sse(vec![
+        ev_assistant_message("new", "first-sample"),
+        ev_completed("new"),
+    ]));
+    if enabled && count > 4 {
+        responses.push(sse(vec![
+            ev_assistant_message("rest", "next-boundary"),
+            ev_completed("rest"),
+        ]));
+    }
+    responses.push(sse(vec![
+        ev_assistant_message("later", "later-turn"),
+        ev_completed("later"),
+    ]));
+    let log = mount_sse_sequence(harness.server(), responses).await;
     pause.resume.notify_one();
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::TurnComplete(_))
@@ -153,9 +171,22 @@ async fn background_job_queue_drains_at_sampling_boundaries(
             .matches("<command_completion>")
             .count()
     };
-    assert_eq!(fragments(2), if enabled { count.min(4) } else { 0 });
-    assert_eq!(requests.len(), if enabled && count <= 4 { 3 } else { 4 });
-    assert_eq!(fragments(requests.len() - 1), count);
+    assert_eq!(fragments(0), if enabled { count.min(4) } else { 0 });
+    assert_eq!(requests.len(), if enabled && count <= 4 { 1 } else { 2 });
+    assert_eq!(
+        fragments(requests.len() - 1),
+        if enabled { count } else { 0 }
+    );
+    if !enabled {
+        assert!(
+            requests
+                .last()
+                .unwrap()
+                .function_call_output("read-retained")
+                .to_string()
+                .contains("completed-marker")
+        );
+    }
     if enabled {
         let final_input = requests.last().unwrap().body_json()["input"].to_string();
         for job in &completed {
@@ -180,7 +211,7 @@ async fn background_job_queue_drains_at_sampling_boundaries(
             .to_string()
             .matches("<command_completion>")
             .count(),
-        count
+        if enabled { count } else { 0 }
     );
     Ok(())
 }

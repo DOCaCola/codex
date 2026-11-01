@@ -54,6 +54,10 @@ async fn idle_harness(enabled: bool, gate: Arc<PreparationGate>) -> Result<TestC
                     .unwrap();
                 config.features.disable(Feature::CommandStack).unwrap();
                 config.features.disable(Feature::CodeMode).unwrap();
+                config
+                    .features
+                    .disable(Feature::WakeOnAgentMessages)
+                    .unwrap();
             }),
     )
     .await
@@ -125,10 +129,14 @@ async fn finished(harness: &TestCodexHarness) {
     .await;
 }
 
-#[test_case::test_case(false; "two_jobs_one_wake_window")]
-#[test_case::test_case(true; "user_input_races_admitted_wake")]
+#[test_case::test_case(false, false; "two_jobs_one_wake_window")]
+#[test_case::test_case(true, false; "user_input_races_admitted_wake")]
+#[test_case::test_case(false, true; "non_triggering_mail_does_not_block_completion")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool) -> Result<()> {
+async fn background_idle_continuation_batches_and_yields_to_user(
+    race_user: bool,
+    queued_mail: bool,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let gate = Arc::new(PreparationGate::default());
     let harness = idle_harness(/*enabled*/ true, Arc::clone(&gate)).await?;
@@ -140,7 +148,9 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
     launch(&harness, ModeKind::Default).await?;
     let EventMsg::TurnStarted(initial) = wait_for_event(&harness.test().codex, |event| {
         matches!(event, EventMsg::TurnStarted(_))
-    }).await else {
+    })
+    .await
+    else {
         unreachable!()
     };
     finished(&harness).await;
@@ -149,6 +159,37 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
         2,
         "turn ends while both jobs are still running"
     );
+    if queued_mail {
+        harness
+            .test()
+            .codex
+            .submit(Op::InterAgentCommunication {
+                communication: codex_protocol::protocol::InterAgentCommunication::new(
+                    codex_protocol::AgentPath::try_from("/root/worker").expect("valid worker path"),
+                    codex_protocol::AgentPath::root(),
+                    Vec::new(),
+                    "queued-mail-marker".into(),
+                    /*trigger_turn*/ false,
+                ),
+                start_options: Default::default(),
+            })
+            .await?;
+        // A query response fences mailbox insertion before the process completes.
+        harness
+            .test()
+            .codex
+            .submit(Op::RealtimeConversationListVoices)
+            .await?;
+        wait_for_event(&harness.test().codex, |event| {
+            matches!(event, EventMsg::RealtimeConversationListVoicesResponse(_))
+        })
+        .await;
+        assert_eq!(
+            log.requests().len(),
+            2,
+            "queue-only mail does not start inference"
+        );
+    }
     gate.armed.store(/*val*/ true, Ordering::SeqCst);
     harness.write_file("release-0", "go").await?;
     tokio::time::timeout(Duration::from_secs(20), gate.entered.notified()).await?;
@@ -165,7 +206,9 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
     gate.release.notify_one();
     let EventMsg::TurnStarted(continued) = wait_for_event(&harness.test().codex, |event| {
         matches!(event, EventMsg::TurnStarted(_))
-    }).await else {
+    })
+    .await
+    else {
         unreachable!()
     };
     assert_ne!(initial.turn_id, continued.turn_id);
@@ -180,6 +223,9 @@ async fn background_idle_continuation_batches_and_yields_to_user(race_user: bool
     assert!(input.contains("background_job_completion"));
     if race_user {
         assert!(input.contains("user-race-marker"));
+    }
+    if queued_mail {
+        assert!(input.contains("queued-mail-marker"));
     }
     let tools = log.last_request().unwrap().body_json()["tools"].to_string();
     assert!(!tools.contains("The runtime keeps the turn open"));

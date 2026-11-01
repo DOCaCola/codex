@@ -1,6 +1,7 @@
 use super::*;
 use crate::context::CommandCompletion;
 use crate::context::ContextualUserFragment;
+use codex_protocol_test_support::ContentItemTestExt;
 
 #[test]
 fn managed_fragment_bounds_escaped_metadata_and_multibyte_output() {
@@ -33,6 +34,7 @@ fn managed_fragment_bounds_escaped_metadata_and_multibyte_output() {
     let body = CommandCompletion::failed(i32::MIN, &hostile)
         .with_metadata(&job)
         .body();
+    let body = body.expect_text();
     assert!(body.len() + 64 < 1600, "fragment bytes: {}", body.len());
 }
 

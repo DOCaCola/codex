@@ -71,7 +71,7 @@ fn updater_only_runs_for_stable_installer_owned_releases() {
     std::fs::write(state.join("app-server.stderr.log"), b"").unwrap();
     let standalone = home.path().join("packages/standalone");
     let current = standalone.join("current");
-    let release = standalone.join("releases/0.150.0-aarch64-apple-darwin");
+    let release = standalone.join("releases/0.150.0-doca-aarch64-apple-darwin");
     let managed = release.join("bin/codex");
     std::fs::create_dir_all(managed.parent().expect("bin parent")).expect("release");
     std::fs::write(&managed, b"stable").expect("managed bin");
@@ -81,7 +81,7 @@ fn updater_only_runs_for_stable_installer_owned_releases() {
     let release_name = release.file_name().expect("release name");
     std::fs::write(&marker, release_name.as_encoded_bytes()).expect("latest selection");
     assert!(super::is_stable_standalone_release(home.path(), &managed));
-    std::fs::write(&marker, b"0.149.0-aarch64-apple-darwin").expect("stale selection");
+    std::fs::write(&marker, b"0.149.0-doca-aarch64-apple-darwin").expect("stale selection");
     assert!(!super::is_stable_standalone_release(home.path(), &managed));
     std::fs::remove_file(&marker).expect("pinned selection");
     assert!(!super::is_stable_standalone_release(home.path(), &managed));

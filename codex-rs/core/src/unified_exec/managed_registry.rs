@@ -127,7 +127,7 @@ impl SessionJobRegistry {
         if state.jobs.len() >= RETAINED_RESULTS {
             state.jobs.retain(|_, entry| {
                 let job = &entry.job;
-                !job.process.has_exited()
+                !job.terminal.process.has_exited()
                     // A claimed completion still owns its terminal reservation, even
                     // if cleanup revokes it while output/hooks are being accepted.
                     || job.state.try_lock().is_err()

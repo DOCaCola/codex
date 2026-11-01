@@ -37,12 +37,9 @@ async fn exited_process() -> Arc<UnifiedExecProcess> {
         tty: false,
     });
     let process = Arc::new(
-        UnifiedExecProcess::from_spawned(
-            spawned,
-            codex_sandboxing::SandboxType::None,
-        )
-        .await
-        .unwrap(),
+        UnifiedExecProcess::from_spawned(spawned, codex_sandboxing::SandboxType::None)
+            .await
+            .unwrap(),
     );
     process.cancellation_token().cancelled().await;
     process
@@ -50,35 +47,24 @@ async fn exited_process() -> Arc<UnifiedExecProcess> {
 
 fn job(context: &UnifiedExecContext, process: Arc<UnifiedExecProcess>) -> Arc<Job> {
     let turn = &context.step_context.turn;
+    let prepared = crate::tools::handlers::unified_exec::preparation::ParsedExecCommand::parse(
+        r#"{"cmd":"echo"}"#,
+        &context.session,
+        &context.step_context,
+        turn.initial_environments.primary().unwrap(),
+    )
+    .unwrap()
+    .prepare(
+        crate::tools::handlers::unified_exec::preparation::ExecCommandLifetime::Interactive,
+        context.session.user_shell(),
+    )
+    .unwrap();
     let request = ExecCommandRequest {
         command_stack: None,
+        prepared,
         managed: None,
-        command: vec!["echo".into()],
-        shell: crate::shell::ShellInvocation {
-            shell: crate::shell::Shell {
-                shell_type: crate::shell::ShellType::Sh,
-                shell_path: "sh".into(),
-            },
-            use_login_shell: true,
-        },
-        hook_command: "echo".into(),
         process_id: 1000,
-        yield_time_ms: 1,
-        yield_source: crate::unified_exec::background_policy::YieldSource::Legacy,
-        max_output_tokens: None,
-        #[allow(deprecated)]
-        cwd: turn.cwd.clone().into(),
-        #[allow(deprecated)]
-        sandbox_cwd: turn.cwd.clone().into(),
-        turn_environment: turn.initial_environments.primary().cloned().unwrap(),
-        shell_mode: codex_tools::UnifiedExecShellMode::Direct,
         network: None,
-        tty: false,
-        sandbox_permissions: crate::sandboxing::SandboxPermissions::UseDefault,
-        additional_permissions: None,
-        additional_permissions_preapproved: false,
-        justification: None,
-        prefix_rule: None,
     };
     Arc::new(Job {
         background_jobs: turn
@@ -105,7 +91,18 @@ fn job(context: &UnifiedExecContext, process: Arc<UnifiedExecProcess>) -> Arc<Jo
                 .deadline(ExecutionMode::Background, /*explicit*/ None),
         )),
         _slot: Arc::new(Arc::new(Semaphore::new(1)).try_acquire_owned().unwrap()),
-        process,
+        terminal: crate::unified_exec::TerminalSession {
+            process_id: 1000,
+            process,
+            call_id: context.call_id.clone(),
+            environment_id: turn
+                .initial_environments
+                .primary()
+                .unwrap()
+                .selection
+                .environment_id
+                .clone(),
+        },
         initial_response_done: CancellationToken::new(),
         initial_response_consumed: AtomicBool::new(false),
         acknowledged: AtomicBool::new(false),
@@ -124,15 +121,29 @@ async fn turn_release_preserves_session_owned_completions() {
     let background = job(&context, exited_process().await);
     background.initial_response_done.cancel();
     let background_id = background.metadata.lock().await.job_id;
-    manager.managed.jobs.lock().await.insert(1000, Arc::clone(&legacy));
-    manager.managed.registry.insert(1001, background_id, Arc::clone(&background)).await;
+    manager
+        .managed
+        .jobs
+        .lock()
+        .await
+        .insert(1000, Arc::clone(&legacy));
+    manager
+        .managed
+        .registry
+        .insert(1001, background_id, Arc::clone(&background))
+        .await;
     manager.managed.registry.enqueue(background_id).await;
 
-    manager.release_turn_commands(&context.step_context.turn.sub_id).await;
+    manager
+        .release_turn_commands(&context.step_context.turn.sub_id)
+        .await;
 
     assert!(legacy.released.load(Ordering::Acquire));
     assert!(!background.released.load(Ordering::Acquire));
-    assert_eq!(manager.background_wake_candidates().await[0].job_id, background_id);
+    assert_eq!(
+        manager.background_wake_candidates().await[0].job_id,
+        background_id
+    );
     assert!(manager.has_live_background_work().await);
 }
 
@@ -188,7 +199,7 @@ async fn background_job_queue_process_id_reuse_rejects_retired_completion_and_wa
         .await;
     assert!(replacement.metadata.lock().await.terminal_state.is_none());
     manager
-        .finalize_managed_outcome(/*process_id*/ 1000, &replacement.process)
+        .finalize_managed_outcome(/*process_id*/ 1000, &replacement.terminal.process)
         .await;
     registry.enqueue(replacement_id).await;
     let queued = registry.queued().await;
@@ -253,14 +264,14 @@ fn cached_completion_output() -> crate::tools::context::ExecCommandToolOutput {
         event_call_id: "call".into(),
         chunk_id: "chunk".into(),
         wall_time: std::time::Duration::from_secs(1),
-        raw_output: b"retained-result".to_vec(),
+        raw_output: "retained-result".into(),
         truncation_policy: codex_utils_output_truncation::TruncationPolicy::Bytes(1024),
         max_output_tokens: None,
         process_id: None,
         exit_code: Some(0),
         original_token_count: None,
-        output_omitted_bytes: None,
         hook_command: None,
+        tool_cwd: None,
     }
 }
 
@@ -313,7 +324,7 @@ async fn background_jobs_stopped_cached_completion_cannot_be_acknowledged() {
     manager.managed.registry.enqueue(job_id).await;
     assert!(
         manager
-            .stop_managed_command(/*process_id*/ 1000, &completed.process)
+            .stop_managed_command(/*process_id*/ 1000, &completed.terminal.process)
             .await
             .unwrap()
     );
@@ -321,7 +332,7 @@ async fn background_jobs_stopped_cached_completion_cannot_be_acknowledged() {
         .read_managed_command(
             &context,
             crate::unified_exec::WriteStdinRequest {
-                process_id: 1000,
+                terminal: &completed.terminal,
                 input: "",
                 yield_time_ms: 5000,
                 max_output_tokens: None,
@@ -333,8 +344,8 @@ async fn background_jobs_stopped_cached_completion_cannot_be_acknowledged() {
         .await
         .unwrap();
     assert_eq!(
-        (result.raw_output, result.completion_delivery),
-        (b"retained-result".to_vec(), Some(false))
+        (result.raw_output.text, result.completion_delivery),
+        ("retained-result".to_owned(), Some(false))
     );
     assert!(!completed.acknowledged.load(Ordering::Acquire));
     assert!(!manager.record_command_completions(&context).await);

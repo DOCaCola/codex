@@ -16,6 +16,7 @@ pub use launch::restart_with_features;
 pub use launch::start_with_features;
 mod managed_install;
 mod prepare_install;
+mod release_pruning;
 pub use prepare_install::InstallRequest;
 pub use prepare_install::update_from_cli;
 mod remote_control_client;
@@ -25,6 +26,7 @@ mod thread_recovery;
 mod update_loop;
 
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -47,6 +49,12 @@ use settings::MAX_SHUTDOWN_GRACE_SECONDS;
 use tokio::time::sleep;
 
 const START_POLL_INTERVAL: Duration = Duration::from_millis(50);
+// An older updater can pass background policy to a replacement daemon, so retain
+// the longer readiness allowance during upgrades on macOS. On Linux, a cold
+// start from a rotational disk can take more than ten seconds.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+const START_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 // Leave room for the longest graceful stop, forced-exit check, and restart.
 const OPERATION_LOCK_TIMEOUT: Duration =
@@ -59,10 +67,12 @@ const OPERATION_LOCK_FILE_NAME: &str = "daemon.lock";
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const STATE_DIR_NAME: &str = "app-server-daemon";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LifecycleCommand {
     Start,
-    Restart,
+    Restart {
+        feature_overrides: BTreeMap<String, bool>,
+    },
     Stop,
     Version,
 }
@@ -212,8 +222,8 @@ pub(crate) enum RestartIfRunningOutcome {
 #[cfg(any(unix, windows))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RestartMode {
-    IfVersionChanged,
-    IfBinaryOrVersionChanged,
+    IfBinaryChanged,
+    KeepCurrent,
     Always,
 }
 
@@ -228,7 +238,10 @@ enum RestartDecision {
 pub async fn run(command: LifecycleCommand) -> Result<LifecycleOutput> {
     ensure_supported_platform()?;
     #[cfg(windows)]
-    if matches!(command, LifecycleCommand::Start | LifecycleCommand::Restart) {
+    if matches!(
+        command,
+        LifecycleCommand::Start | LifecycleCommand::Restart { .. }
+    ) {
         backend::windows::ensure_not_elevated()?;
     }
     // Keep daemon package preparation off callers' async stack frames.
@@ -285,6 +298,20 @@ pub async fn run_pid_update_loop(
     #[cfg(windows)]
     backend::windows::ensure_not_elevated()?;
     update_loop::run(http_client_factory, restore_release).await
+}
+
+pub use backend::stderr_log::stderr_writer;
+
+/// Routes managed app-server logs through a bounded queue to a dedicated file worker.
+/// Full queues and oversized records are dropped; shutdown never waits for disk I/O.
+/// Native and other-process stderr writes remain best effort during pruning.
+pub fn maintain_stderr_log() -> Result<()> {
+    backend::stderr_log::start(
+        Daemon::from_environment()?
+            .pid_file
+            .with_extension("stderr.log"),
+    );
+    Ok(())
 }
 
 pub async fn update(
@@ -394,7 +421,9 @@ impl Daemon {
         let selected = self.current_installation()?;
         match command {
             LifecycleCommand::Start => selected.start(&BTreeMap::new()).await,
-            LifecycleCommand::Restart => selected.restart().await,
+            LifecycleCommand::Restart { feature_overrides } => {
+                selected.restart(&feature_overrides).await
+            }
             LifecycleCommand::Stop => {
                 let output = selected.stop().await?;
                 if let Err(err) = thread_recovery::discard_pending(&selected) {
@@ -514,6 +543,7 @@ impl Daemon {
         &self,
         mode: RestartMode,
         managed_codex_bin: &Path,
+        package_root: &Path,
     ) -> Result<RestartIfRunningOutcome> {
         let operation_lock = self.open_operation_lock_file().await?;
         if !try_lock_file(&operation_lock)? {
@@ -522,11 +552,6 @@ impl Daemon {
         let settings = self.load_settings().await?;
         let outcome = if let Some(backend) = self.running_backend_instance(&settings).await? {
             let info = client::probe(&self.socket_path).await.ok();
-            let managed_version = if info.is_some() {
-                Some(managed_codex_version(managed_codex_bin).await?)
-            } else {
-                None
-            };
             // The installer can retarget `current` while the updater waits for
             // this lock or probes the running server. Never restart from a
             // release that is no longer the selected latest-channel binary.
@@ -539,19 +564,19 @@ impl Daemon {
             {
                 return Ok(RestartIfRunningOutcome::AlreadyCurrent);
             }
-            let mode = if mode == RestartMode::IfBinaryOrVersionChanged {
+            let mode = if mode == RestartMode::IfBinaryChanged {
                 let managed_identity =
                     managed_install::executable_identity(managed_codex_bin).await?;
                 if backend.running_executable_identity().await?.as_ref() == Some(&managed_identity)
                 {
-                    RestartMode::IfVersionChanged
+                    RestartMode::KeepCurrent
                 } else {
                     RestartMode::Always
                 }
             } else {
                 mode
             };
-            match restart_decision(mode, info.as_ref(), managed_version.as_deref()) {
+            match restart_decision(mode, info.as_ref()) {
                 RestartDecision::NotReady => {
                     diagnostics::event("daemon_not_ready", ());
                     return Ok(RestartIfRunningOutcome::NotReady);
@@ -561,9 +586,9 @@ impl Daemon {
                     #[cfg(windows)]
                     backend::windows::ensure_detached_launch(managed_codex_bin)?;
                     if let Err(err) = thread_recovery::discard_pending(self) {
-                        eprintln!(
-                            "warning: failed to clear stale daemon recovery before update: {err}"
-                        );
+                        let _ = stderr_writer().write_all(format!(
+                            "warning: failed to clear stale daemon recovery before update: {err}\n"
+                        ).as_bytes());
                     }
                     diagnostics::event(
                         "restart_requested",
@@ -608,6 +633,20 @@ impl Daemon {
                 != Some(managed_codex_bin)
         {
             return Ok(RestartIfRunningOutcome::AlreadyCurrent);
+        }
+        // All exits for busy, not-ready or superseded selections precede cleanup.
+        // Keep the operation lock, and recheck readiness's selection under both locks.
+        if package_root.ends_with("app-server-daemon")
+            && let Ok(_install_lock) = install_lock::acquire_install_lock(package_root).await
+            && let Ok(current_bin) = self.current_managed_codex_bin()
+            && managed_install::resolved_managed_codex_bin(&current_bin)
+                .await
+                .ok()
+                .as_deref()
+                == Some(managed_codex_bin)
+            && let Err(error) = release_pruning::prune(self, package_root, &settings).await
+        {
+            tracing::debug!(%error, "skipped daemon release pruning");
         }
         Ok(outcome)
     }
@@ -658,20 +697,22 @@ impl Daemon {
     }
 
     async fn wait_until_ready(&self) -> Result<client::ProbeInfo> {
+        let exited = backend::wait_for_process_exit(&self.pid_file);
+        tokio::pin!(exited);
         let deadline = tokio::time::Instant::now() + START_TIMEOUT;
-        loop {
+        let err = loop {
             match client::probe(&self.socket_path).await {
                 Ok(info) => return Ok(info),
                 Err(err) if tokio::time::Instant::now() < deadline => {
-                    let _ = err;
-                    sleep(START_POLL_INTERVAL).await;
+                    tokio::select! {
+                        () = &mut exited => break err,
+                        () = sleep(START_POLL_INTERVAL) => {}
+                    }
                 }
-                Err(err) => {
-                    let context = self.app_server_not_ready_context().await;
-                    return Err(err).context(context);
-                }
+                Err(err) => break err,
             }
-        }
+        };
+        Err(err).context(self.app_server_not_ready_context().await)
     }
 
     async fn app_server_not_ready_context(&self) -> String {
@@ -830,6 +871,19 @@ impl Daemon {
         backend::pid_update_loop_backend(self.backend_paths(&settings))
             .stop()
             .await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileTypeExt;
+
+            // A stopped older updater can leave its socket behind. Remove only
+            // the rendezvous entry before starting, so readiness cannot be stale.
+            let path = self.manual_update_socket_path();
+            if let Ok(metadata) = tokio::fs::symlink_metadata(&path).await
+                && (metadata.file_type().is_socket() || metadata.file_type().is_symlink())
+            {
+                tokio::fs::remove_file(path).await?;
+            }
+        }
         if let Some(backend) = self.running_backend_instance(&settings).await? {
             if let Err(err) = thread_recovery::discard_pending(self) {
                 eprintln!("warning: failed to clear stale daemon recovery before bootstrap: {err}");
@@ -843,6 +897,46 @@ impl Daemon {
         backend.start().await?;
         let info = self.wait_until_ready().await?;
         let auto_update_enabled = managed.ensure_managed_updater(&settings).await?;
+        #[cfg(unix)]
+        // Older automatic updaters have no manual request socket to wait for.
+        if auto_update_enabled
+            && managed_install::supports_daemon_command(
+                &managed.managed_codex_bin,
+                &["update", "--help"],
+            )
+            .await
+        {
+            use std::os::unix::fs::FileTypeExt;
+
+            let updater = backend::pid_update_loop_backend(managed.backend_paths(&settings));
+            let path = managed.manual_update_socket_path();
+            // Match the manual-update client's startup allowance: the updater
+            // verifies its executable before publishing its listener.
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                // Do not connect: even an empty probe can consume a one-shot
+                // updater's restore authority. Old updaters also publish sockets.
+                let running = updater.is_starting_or_running().await?;
+                if running
+                    && tokio::fs::metadata(&path)
+                        .await
+                        .is_ok_and(|metadata| metadata.file_type().is_socket())
+                {
+                    break;
+                }
+                if !running || tokio::time::Instant::now() >= deadline {
+                    let reason = if running { "timed out" } else { "exited" };
+                    let mut context = format!(
+                        "daemon updater {reason} before becoming ready on {}",
+                        path.display()
+                    );
+                    backend::append_stderr_log_tail_context(&managed.update_pid_file, &mut context)
+                        .await;
+                    return Err(anyhow!(context));
+                }
+                sleep(START_POLL_INTERVAL).await;
+            }
+        }
         let managed_codex_version = managed.managed_codex_version_best_effort().await;
         Ok(BootstrapOutput {
             status: BootstrapStatus::Bootstrapped,
@@ -1119,22 +1213,14 @@ fn already_remote_control_status(mode: RemoteControlMode) -> RemoteControlStatus
 }
 
 #[cfg(any(unix, windows))]
-fn restart_decision(
-    mode: RestartMode,
-    info: Option<&client::ProbeInfo>,
-    managed_version: Option<&str>,
-) -> RestartDecision {
-    match (mode, info, managed_version) {
-        (RestartMode::IfBinaryOrVersionChanged, _, _) => {
+fn restart_decision(mode: RestartMode, info: Option<&client::ProbeInfo>) -> RestartDecision {
+    match (mode, info) {
+        (RestartMode::IfBinaryChanged, _) => {
             unreachable!("binary comparison is resolved before restart decision")
         }
-        (RestartMode::IfVersionChanged, None, _) => RestartDecision::NotReady,
-        (RestartMode::IfVersionChanged, Some(info), Some(managed_version))
-            if info.app_server_version == managed_version =>
-        {
-            RestartDecision::AlreadyCurrent
-        }
-        _ => RestartDecision::Restart,
+        (RestartMode::KeepCurrent, None) => RestartDecision::NotReady,
+        (RestartMode::KeepCurrent, Some(_)) => RestartDecision::AlreadyCurrent,
+        (RestartMode::Always, _) => RestartDecision::Restart,
     }
 }
 
@@ -1192,32 +1278,34 @@ mod tests {
         let current_info = ProbeInfo {
             app_server_version: "0.1.0".to_string(),
         };
-
         assert_eq!(
             [
-                restart_decision(
-                    RestartMode::IfVersionChanged,
-                    Some(&current_info),
-                    Some("0.1.0"),
-                ),
-                restart_decision(
-                    RestartMode::IfVersionChanged,
-                    /*info*/ None,
-                    /*managed_version*/ None,
-                ),
-                restart_decision(RestartMode::Always, Some(&current_info), Some("0.1.0")),
-                restart_decision(
-                    RestartMode::Always,
-                    /*info*/ None,
-                    /*managed_version*/ None,
-                ),
+                restart_decision(RestartMode::KeepCurrent, Some(&current_info)),
+                restart_decision(RestartMode::KeepCurrent, /*info*/ None),
+                restart_decision(RestartMode::Always, Some(&current_info)),
+                restart_decision(RestartMode::Always, /*info*/ None),
             ],
             [
                 RestartDecision::AlreadyCurrent,
                 RestartDecision::NotReady,
                 RestartDecision::Restart,
-                RestartDecision::Restart,
+                RestartDecision::Restart
             ]
+        );
+    }
+
+    #[test]
+    fn matching_binary_does_not_restart_for_a_stripped_fork_version() {
+        let info = ProbeInfo {
+            app_server_version: "0.166.0".to_string(),
+        };
+        assert_eq!(
+            restart_decision(RestartMode::KeepCurrent, Some(&info),),
+            RestartDecision::AlreadyCurrent
+        );
+        assert_eq!(
+            restart_decision(RestartMode::KeepCurrent, /*info*/ None,),
+            RestartDecision::NotReady
         );
     }
 
@@ -1427,7 +1515,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn not_ready_context_reports_daemon_app_server_before_stderr() {
+    async fn readiness_reports_stderr_promptly_when_daemon_is_gone() {
         let temp_dir = TempDir::new().expect("temp dir");
         let daemon = Daemon {
             log_diagnostics: false,
@@ -1443,8 +1531,25 @@ mod tests {
             .await
             .expect("write stderr log");
 
+        // A daemon that exits during startup leaves its published PID record behind.
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--help")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        child.wait().unwrap();
+        std::fs::write(
+            &daemon.pid_file,
+            serde_json::json!({ "pid": child.id(), "processStartTime": "exited" }).to_string(),
+        )
+        .unwrap();
+        let error =
+            tokio::time::timeout(std::time::Duration::from_secs(5), daemon.wait_until_ready())
+                .await
+                .expect("an exited daemon should not exhaust the readiness timeout")
+                .expect_err("daemon is gone");
         assert_eq!(
-            daemon.app_server_not_ready_context().await,
+            error.to_string(),
             format!(
                 "app server did not become ready on {}\n\n\
                  Daemon used app-server:\n  path: {}\n  version: unknown\n\n\

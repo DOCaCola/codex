@@ -105,11 +105,7 @@ pub(crate) fn is_stable_standalone_release(codex_home: &Path, codex_bin: &Path) 
     else {
         return false;
     };
-    let components: Vec<_> = version.split('.').collect();
-    components.len() == 3
-        && components.iter().all(|component| {
-            !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
-        })
+    codex_install_context::is_stable_fork_version(version)
         && std::fs::read_to_string(standalone.join("auto-update-version"))
             .is_ok_and(|selected| selected == release_name)
         && std::fs::canonicalize(codex_bin).is_ok_and(|bin| bin.starts_with(&release))
@@ -183,10 +179,10 @@ pub(crate) async fn managed_codex_version(codex_bin: &Path) -> Result<String> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ExecutableIdentity {
-    digest: [u8; 32],
+    pub(crate) digest: [u8; 32],
     // Distinguish release generations whose executable bytes are identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    path_digest: Option<[u8; 32]>,
+    pub(crate) path_digest: Option<[u8; 32]>,
 }
 
 impl ExecutableIdentity {
@@ -222,7 +218,7 @@ pub(crate) fn executable_identity_from_reader(
     })
 }
 
-fn path_digest(path: &Path) -> [u8; 32] {
+pub(crate) fn path_digest(path: &Path) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     #[cfg(unix)]
     {

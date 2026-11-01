@@ -6,7 +6,7 @@ Scenario: Astra compacts a completed launch-notes turn in the background. The us
 
 ## Window 1
 -- request 1 (request) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
+00:additional_tools/developer (3; hash=0d157d1117410b04):
         - namespace/functions; hash=fada4a476a3754dd
           - custom/exec
           - function/wait
@@ -14,7 +14,7 @@ Scenario: Astra compacts a completed launch-notes turn in the background. The us
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=d2a5cfea677350e8
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -34,14 +34,15 @@ Scenario: Astra compacts a completed launch-notes turn in the background. The us
     <ENVIRONMENT_CONTEXT>
 06:message/user:
     Draft the launch notes.
+07:configuration_update:reasoning={"effort":"low"}
 -- request 2 (request) --
-07:message/assistant:
+08:message/assistant:
     I drafted the launch notes.
-08:compaction_trigger
+09:compaction_trigger
 
-## Window 2 (after request 2: input diverged at item 08)
+## Window 2 (after request 2: input diverged at item 09)
 -- request 3 (request) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
+00:additional_tools/developer (3; hash=0d157d1117410b04):
         - namespace/functions; hash=fada4a476a3754dd
           - custom/exec
           - function/wait
@@ -49,7 +50,7 @@ Scenario: Astra compacts a completed launch-notes turn in the background. The us
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=d2a5cfea677350e8
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -69,16 +70,17 @@ Scenario: Astra compacts a completed launch-notes turn in the background. The us
     <ENVIRONMENT_CONTEXT>
 06:message/user:
     Draft the launch notes.
-07:message/assistant:
+07:configuration_update:reasoning={"effort":"low"}
+08:message/assistant:
     I drafted the launch notes.
-08:message/developer:
+09:message/developer:
     <COLLABORATION_MODE>
-09:message/user:
+10:message/user:
     Check who can finish the notes.
 
 ## Window 3 (after request 3: input diverged at item 02)
 -- request 4 (request) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
+00:additional_tools/developer (3; hash=0d157d1117410b04):
         - namespace/functions; hash=fada4a476a3754dd
           - custom/exec
           - function/wait
@@ -86,7 +88,7 @@ Scenario: Astra compacts a completed launch-notes turn in the background. The us
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=d2a5cfea677350e8
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents

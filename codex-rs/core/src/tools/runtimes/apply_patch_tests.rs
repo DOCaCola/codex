@@ -28,6 +28,7 @@ fn test_turn_environment(environment_id: &str) -> crate::session::turn_context::
             cwd: PathUri::from_abs_path(&std::env::temp_dir().abs()),
             workspace_roots: Vec::new(),
             config: EnvironmentConfigState::Ready(EnvironmentConfig {
+                environment_hooks: Default::default(),
                 allow_login_shell: true,
                 workspace_roots: Vec::new(),
                 windows_sandbox_level: WindowsSandboxLevel::Disabled,
@@ -95,7 +96,7 @@ async fn approval_action_preserves_patch_path_uris() {
         permission_request_command: "patch".to_string(),
     };
 
-    let approval_action = ApplyPatchRuntime::build_approval_action(&request, "call-1");
+    let approval_action = request.approval_action("call-1");
 
     assert_eq!(
         approval_action,
@@ -136,8 +137,7 @@ async fn permission_request_payload_uses_apply_patch_hook_name_and_aliases() {
         permission_request_command: expected_patch.clone(),
     };
 
-    let payload =
-        ApplyPatchRuntime::build_approval_action(&req, "call-1").permission_request_payload();
+    let payload = req.approval_action("call-1").permission_request_payload();
 
     assert_eq!(payload.tool_name.name(), "apply_patch");
     assert_eq!(
@@ -172,8 +172,7 @@ async fn permission_request_payload_preserves_hpatch_input() {
         permission_request_command: script.clone(),
     };
 
-    let payload =
-        ApplyPatchRuntime::build_approval_action(&req, "call-1").permission_request_payload();
+    let payload = req.approval_action("call-1").permission_request_payload();
 
     assert_eq!(payload.tool_name.name(), "hpatch");
     assert_eq!(payload.tool_input, serde_json::json!({ "command": script }));

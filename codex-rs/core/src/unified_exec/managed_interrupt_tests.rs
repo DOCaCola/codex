@@ -26,12 +26,9 @@ async fn older_running_job_is_suppressed_by_later_turn_and_idle_interrupts() {
             tty: false,
         });
         let process = Arc::new(
-            UnifiedExecProcess::from_spawned(
-                spawned,
-                codex_sandboxing::SandboxType::None,
-            )
-            .await
-            .unwrap(),
+            UnifiedExecProcess::from_spawned(spawned, codex_sandboxing::SandboxType::None)
+                .await
+                .unwrap(),
         );
         assert!(!process.has_exited());
         let record = job(&context, Arc::clone(&process));

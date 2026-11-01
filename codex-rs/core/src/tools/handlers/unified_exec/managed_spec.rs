@@ -49,11 +49,12 @@ pub(super) fn configure_exec(
             yield_time.description = Some(format!(
                 "Initial auto wait, default {} ms. Only this omitted auto default bypasses the floor and clamp. Explicit yield_time_ms and interactive keep legacy runtime bounds.",
                 policy.defaults.auto_yield.as_millis(),
-            ));
+            ).into_boxed_str());
         }
-        yield_time.description.get_or_insert_default().push_str(
-            " Applies only to auto/interactive; background returns promptly and foreground waits until exit or its execution deadline.",
-        );
+        yield_time.description = Some(format!(
+            "{} Applies only to auto/interactive; background returns promptly and foreground waits until exit or its execution deadline.",
+            yield_time.description.as_deref().unwrap_or_default(),
+        ).into_boxed_str());
     }
     configure_result(tool);
 }

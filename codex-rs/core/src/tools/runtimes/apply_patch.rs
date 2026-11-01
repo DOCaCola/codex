@@ -58,6 +58,22 @@ pub struct ApplyPatchRequest {
     pub permission_request_command: String,
 }
 
+impl ApplyPatchRequest {
+    pub(crate) fn approval_action(&self, call_id: &str) -> ApprovalAction {
+        ApprovalAction::ApplyPatch {
+            id: call_id.to_string(),
+            environment_id: self.turn_environment.selection.environment_id.clone(),
+            cwd: self.action.cwd.clone(),
+            files: self.file_paths.clone(),
+            patch: self.action.patch.clone(),
+            changes: Arc::clone(&self.changes),
+            permissions_preapproved: self.permissions_preapproved,
+            permission_request_tool_name: self.permission_request_tool_name.clone(),
+            permission_request_command: self.permission_request_command.clone(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct ApplyPatchRuntime {
     committed_delta: AppliedPatchDelta,
@@ -76,20 +92,6 @@ impl ApplyPatchRuntime {
 
     pub fn committed_delta(&self) -> &AppliedPatchDelta {
         &self.committed_delta
-    }
-
-    fn build_approval_action(req: &ApplyPatchRequest, call_id: &str) -> ApprovalAction {
-        ApprovalAction::ApplyPatch {
-            id: call_id.to_string(),
-            environment_id: req.turn_environment.selection.environment_id.clone(),
-            cwd: req.action.cwd.clone(),
-            files: req.file_paths.clone(),
-            patch: req.action.patch.clone(),
-            changes: Arc::clone(&req.changes),
-            permissions_preapproved: req.permissions_preapproved,
-            permission_request_tool_name: req.permission_request_tool_name.clone(),
-            permission_request_command: req.permission_request_command.clone(),
-        }
     }
 
     fn file_system_sandbox_context_for_attempt(
@@ -137,7 +139,7 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
         req: &ApplyPatchRequest,
         call_id: &str,
     ) -> std::io::Result<ApprovalAction> {
-        Ok(ApplyPatchRuntime::build_approval_action(req, call_id))
+        Ok(req.approval_action(call_id))
     }
 
     fn wants_no_sandbox_approval(&self, policy: AskForApproval) -> bool {

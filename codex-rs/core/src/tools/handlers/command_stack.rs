@@ -1109,6 +1109,7 @@ end"#,
             payload: ToolPayload::Custom {
                 input: input.to_string(),
             },
+            environments: Default::default(),
         }
     }
 }

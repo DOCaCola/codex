@@ -17,14 +17,14 @@ fn turn(id: &str, message: Option<&str>) -> Turn {
         duration_ms: None,
         items: message
             .map(|text| {
-                vec![ThreadItem::AgentMessage {
+                vec![ThreadItem::untimed(ThreadItemPayload::AgentMessage {
                     id: id.into(),
                     text: text.into(),
                     phase: None,
                     memory_citation: None,
                     delivery: None,
                     questions: None,
-                }]
+                })]
             })
             .unwrap_or_default(),
     }

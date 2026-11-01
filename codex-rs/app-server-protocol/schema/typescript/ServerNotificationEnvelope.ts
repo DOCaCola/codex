@@ -93,7 +93,7 @@ import type { WindowsWorldWritableWarningNotification } from "./v2/WindowsWorldW
  * `emitted_at_ms` records when app-server emitted the notification, before it
  * is fanned out to individual connections.
  */
-export type ServerNotificationEnvelope = {
+export type ServerNotificationEnvelope ={
 /**
  * Unix timestamp (in milliseconds) when app-server emitted this notification.
  *
