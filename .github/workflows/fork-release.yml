@@ -109,6 +109,7 @@ jobs:
       - name: Smoke test packaged executables
         shell: bash
         run: |
+          python -m unittest discover -s scripts -p test_smoke_fork_release.py
           python scripts/smoke_fork_release.py dist/package
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:

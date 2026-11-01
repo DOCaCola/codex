@@ -4,11 +4,9 @@
 import json
 import os
 from pathlib import Path
-import queue
 import subprocess
 import sys
 import tempfile
-import threading
 
 
 def main() -> None:
@@ -35,47 +33,29 @@ def main() -> None:
             if line.startswith("daemon_auto_start")
         )
         assert daemon.split()[-1] == "true", daemon
-        with (Path(home) / "stderr.log").open("w") as stderr:
-            child = subprocess.Popen(
-                [str(cli), "app-server"],
-                env=env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=stderr,
-                text=True,
-            )
-            replies = queue.Queue()
-
-            def read() -> None:
-                for line in child.stdout:
-                    replies.put(json.loads(line))
-                replies.put(None)
-
-            threading.Thread(target=read, daemon=True).start()
-            try:
-                request = {
-                    "id": 1,
-                    "method": "initialize",
-                    "params": {
-                        "clientInfo": {"name": "codexdc-release-check", "version": "1"},
-                        "capabilities": {"experimentalApi": True},
-                    },
-                }
-                child.stdin.write(json.dumps(request) + "\n")
-                child.stdin.flush()
-                reply = replies.get(timeout=20)
-                assert (
-                    reply
-                    and reply.get("id") == 1
-                    and reply.get("result", {}).get("userAgent")
-                ), reply
-            finally:
-                child.stdin.close()
-                try:
-                    child.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    child.kill()
-                    child.wait(timeout=10)
+        request = {
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "clientInfo": {"name": "codexdc-release-check", "version": "1"},
+                "capabilities": {"experimentalApi": True},
+            },
+        }
+        # Send the request and close stdin, then drain stdout through process exit.
+        # Keep stderr in the CI log instead of a temporary file whose inherited
+        # Windows handle can outlive the app-server process.
+        result = subprocess.run(
+            [str(cli), "app-server"],
+            env=env,
+            input=json.dumps(request) + "\n",
+            stdout=subprocess.PIPE,
+            text=True,
+            check=True,
+            timeout=20,
+        )
+        replies = [json.loads(line) for line in result.stdout.splitlines()]
+        reply = next((reply for reply in replies if reply.get("id") == 1), None)
+        assert reply and reply.get("result", {}).get("userAgent"), replies
         print("Native package and CodexDC app-server handshake passed.")
 
 
