@@ -219,6 +219,7 @@ mod shell_snapshot;
 mod skills;
 mod skills_extension;
 mod spawn_agent_description;
+mod spawn_agent_model_notice;
 mod sqlite_state;
 mod startup_cancellation;
 mod step_settings;

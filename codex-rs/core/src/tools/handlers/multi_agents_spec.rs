@@ -823,16 +823,18 @@ fn spawn_agent_models_description(
     models: &[ModelPreset],
     multi_agent_version: MultiAgentVersion,
 ) -> String {
-    let visible_models: Vec<&ModelPreset> = models
+    let mut visible_models: Vec<&ModelPreset> = models
         .iter()
         .filter(|model| model.show_in_picker)
         .filter(|model| model_supports_multi_agent_backend(model, multi_agent_version))
-        .take(MAX_SPAWN_AGENT_MODEL_OVERRIDES)
+        .take(MAX_SPAWN_AGENT_MODEL_OVERRIDES + 1)
         .collect();
     if visible_models.is_empty() {
         return "No picker-visible model overrides are currently loaded.".to_string();
     }
 
+    let models_were_truncated = visible_models.len() > MAX_SPAWN_AGENT_MODEL_OVERRIDES;
+    visible_models.truncate(MAX_SPAWN_AGENT_MODEL_OVERRIDES);
     let model_descriptions = visible_models
         .into_iter()
         .map(|model| {
@@ -881,8 +883,15 @@ fn spawn_agent_models_description(
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let truncation_notice = if models_were_truncated {
+        format!(
+            "\nThis list is truncated to {MAX_SPAWN_AGENT_MODEL_OVERRIDES} entries. Other catalog models may also be valid; try an explicit override before declaring a model unavailable."
+        )
+    } else {
+        String::new()
+    };
     format!(
-        "Available model overrides (optional; inherited parent model is preferred):\n{model_descriptions}"
+        "Available model overrides (optional; inherited parent model is preferred):\n{model_descriptions}{truncation_notice}"
     )
 }
 

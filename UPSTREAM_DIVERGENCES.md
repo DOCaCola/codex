@@ -4,6 +4,17 @@ These fork-only changes should be removed once upstream provides the same or equ
 Review every entry when merging or rebasing from upstream; prefer the upstream implementation over
 maintaining parallel logic or compatibility fallbacks.
 
+## Spawn model list truncation disclosure
+
+- Local behavior: keep the five-entry `spawn_agent` model summary cap and append a
+  notice when additional picker-visible, backend-compatible models are omitted.
+  The notice tells the agent that other catalog models may be valid and to try an
+  explicit override before declaring one unavailable.
+- Adapted from Kevinjohn/codex commit `31ed6acb7ce68eecfe039c6230bb8d2993094587`
+  linked in upstream issue openai/codex#34166. Request-level tests cover V1/V2,
+  exactly five eligible models, truncation, and hidden/disabled entries.
+- Remove when: upstream provides equivalent disclosure for the capped tool description.
+
 ## Fork release installation and updates
 
 - The standalone installers retain stock paths, locks, versioned packages and
