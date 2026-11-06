@@ -564,3 +564,30 @@ notes are excluded. The original local development branches retain that history.
 - Background wake reservations retain the finishing-token and turn-state identity
   fences. Pending work uses fresh turn IDs and current mailbox wake policy; Claude
   channel startup, dispatch and shutdown retain upstream behavior.
+
+
+## Stable v0.167.0 integration
+
+- Command batching, persistent shell selection, finite delivery and opted-in
+  background jobs use upstream's native-call evidence and extracted PreToolUse
+  dispatch. Synthetic stack child calls have no independent native-call evidence;
+  translated hpatch calls retain the original invocation and permission hooks.
+- Direct Guardian review of recorded commands uses the captured environment's
+  shell without changing the session's persistent shell selection. Upstream
+  native evidence, hook rewrites, human-approval requirements and elastic context
+  budgeting remain authoritative; the fork's aggregate action review bound stays.
+- Claude channels retain session-owned callbacks and one-way server startup with
+  upstream MCP connection leases and early Apps discovery. Channel callbacks are
+  not pooled, and cached channel catalogs do not defer listener startup.
+- Config reads retain upstream snapshot identity. The fork no longer clones a
+  config during reads to stamp the background host; startup and child/delegate
+  creation already capture and inherit it. This preserves refresh admission and
+  live managed Guardian policy.
+- Background continuation retains upstream turn admission, recording errors and
+  audio rejection, plus the fork's captured job policy, interruption fences,
+  unload protection, timers and experimental CodexDC protocol. Protocol exports
+  are regenerated from the merged Rust definitions.
+- Fork installation, release ordering and executable-identity daemon updates stay
+  integrated. Rust remains 1.95.0; external dependencies match upstream stable.
+  Daemon auto-start remains enabled on every platform. Only the fork release
+  workflow is enabled. Workspace version is `0.167.0-doca`.

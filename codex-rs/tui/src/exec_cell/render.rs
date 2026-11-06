@@ -543,7 +543,7 @@ impl ExecCell {
                 let mut line = line_to_static(&first_segment.line);
                 line.spans.splice(0..0, header_line.spans.clone());
                 if !timer.is_empty() {
-                    line.push_span(timer.clone().dim());
+                    line.push_span(timer.dim());
                 }
                 header = HyperlinkLine::new(line);
                 header.source = Some(header_source);

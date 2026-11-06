@@ -97,6 +97,7 @@ async fn hooks_capture_the_selected_hpatch_environment_and_reject_redirection() 
         payload: ToolPayload::Custom {
             input: "*** Environment ID: other\nin file.txt\ncommit".to_string(),
         },
+        native_call: None,
         environments: ToolEnvironments::default(),
     };
     invocation.environments = handler.environments_for_input(&invocation).unwrap();

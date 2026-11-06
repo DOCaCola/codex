@@ -33,7 +33,6 @@ async fn spawn_agent_description_discloses_truncated_model_overrides(
                 description: Some(format!("Model number {number}")),
                 visibility: ModelVisibility::List,
                 supported_in_api: true,
-                used_fallback_model_metadata: false,
                 multi_agent_version: Some(multi_agent_version),
                 priority: number as i32,
                 ..model_info_from_slug(&slug)

@@ -553,6 +553,7 @@ fn build_child_call(
         tool_name,
         payload,
         encrypted_function_args: None,
+        native_call: None,
     })
 }
 
@@ -1109,6 +1110,7 @@ end"#,
             payload: ToolPayload::Custom {
                 input: input.to_string(),
             },
+            native_call: None,
             environments: Default::default(),
         }
     }

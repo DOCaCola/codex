@@ -399,6 +399,7 @@ mod tests {
                 call_id: "call-view-image".to_string(),
                 tool_name: codex_tools::ToolName::plain("view_image"),
                 source: ToolCallSource::Direct,
+                native_call: None,
                 environments: Default::default(),
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "image.png" }).to_string(),
@@ -432,6 +433,7 @@ mod tests {
                 call_id: "call-view-image".to_string(),
                 tool_name: codex_tools::ToolName::plain("view_image"),
                 source: ToolCallSource::Direct,
+                native_call: None,
                 environments: Default::default(),
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "image.png", "detail": "low" }).to_string(),
@@ -478,6 +480,7 @@ mod tests {
                 call_id: "call-view-image".to_string(),
                 tool_name: codex_tools::ToolName::plain("view_image"),
                 source: ToolCallSource::Direct,
+                native_call: None,
                 environments: Default::default(),
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "image.png", "detail": "high" }).to_string(),
@@ -522,6 +525,7 @@ mod tests {
                     cell_id: "cell-1".to_string(),
                     runtime_tool_call_id: "tool-1".to_string(),
                 },
+                native_call: None,
                 environments: Default::default(),
                 payload: ToolPayload::Function {
                     arguments: json!({ "path": "not-an-image.txt" }).to_string(),
