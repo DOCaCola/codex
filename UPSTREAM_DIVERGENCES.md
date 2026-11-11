@@ -591,3 +591,20 @@ notes are excluded. The original local development branches retain that history.
   integrated. Rust remains 1.95.0; external dependencies match upstream stable.
   Daemon auto-start remains enabled on every platform. Only the fork release
   workflow is enabled. Workspace version is `0.167.0-doca`.
+
+
+## Stable v0.167.1 integration
+
+- Adopt upstream route-specific incremental-tool selection: Responses Lite uses
+  `incremental_tools`; regular Bedrock Responses uses the opt-in
+  `incremental_tools_legacy`. Other regular Responses routes retain their normal
+  tool layout. Hosted web search remains in top-level request configuration.
+- World-state and remote compaction follow upstream's shared route selection.
+  Command-stack declarations and session-owned background completion continue
+  through the existing tool router and sampling boundaries.
+- New regular-Responses scenario snapshots use the existing fork tool-description
+  hashes (persistent shell guidance and spawn-model truncation disclosure), matching
+  the already-covered incremental-tool scenarios.
+- Retain the existing fork features and defaults. Daemon auto-start remains
+  enabled; external dependency pins and Rust 1.95.0 are unchanged.
+  Workspace version is `0.167.1-doca`.

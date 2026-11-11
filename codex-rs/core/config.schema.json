@@ -1173,6 +1173,9 @@
             "incremental_tools": {
               "type": "boolean"
             },
+            "incremental_tools_legacy": {
+              "type": "boolean"
+            },
             "instant_interrupt": {
               "type": "boolean"
             },
@@ -7918,6 +7921,9 @@
           "type": "boolean"
         },
         "incremental_tools": {
+          "type": "boolean"
+        },
+        "incremental_tools_legacy": {
           "type": "boolean"
         },
         "instant_interrupt": {

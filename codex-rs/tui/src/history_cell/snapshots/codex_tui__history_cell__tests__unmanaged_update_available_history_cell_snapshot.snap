@@ -3,7 +3,7 @@ source: tui/src/history_cell/tests.rs
 expression: rendered
 ---
 ╭─────────────────────────────────────────────────────────────────╮
-│ ✨ Update available! 0.167.0-doca -> 9.9.9                      │
+│ ✨ Update available! 0.167.1-doca -> 9.9.9                      │
 │ See https://github.com/DOCaCola/codex for installation options. │
 │                                                                 │
 │ See full release notes:                                         │
