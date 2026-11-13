@@ -633,3 +633,9 @@ notes are excluded. The original local development branches retain that history.
 - External dependency pins, SQLite migration contents, and Rust 1.95.0 follow
   upstream. Daemon auto-start remains enabled on every platform. Only the fork
   release workflow is enabled. Workspace version is `0.169.0-doca`.
+
+- Release revision `0.169.0-doca.1` keeps the smoke client connected until the
+  initialize response arrives, then closes stdin, drains output, and checks the
+  server exit status. Upstream treats stdin EOF as a connection close and can
+  discard an initialize request still in flight. Rust source and dependency pins
+  are unchanged.
