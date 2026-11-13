@@ -45,6 +45,7 @@ use codex_core_plugins::PluginMetricsSidecar;
 
 mod async_watcher;
 pub(crate) mod background_policy;
+mod command_sessions;
 mod errors;
 pub(crate) mod managed;
 mod oneshot;
@@ -60,6 +61,7 @@ pub(crate) fn set_deterministic_process_ids_for_tests(enabled: bool) {
     process_manager::set_deterministic_process_ids_for_tests(enabled);
 }
 
+pub(crate) use command_sessions::command_sessions_state;
 pub(crate) use errors::UnifiedExecError;
 pub(crate) use process::UnifiedExecProcess;
 pub(crate) use stdin_approval::TerminalPermissions;

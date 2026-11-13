@@ -152,7 +152,7 @@ impl ExecCommandHandler {
         session: &crate::session::session::Session,
         turn_environment: &crate::session::turn_context::TurnEnvironment,
     ) -> Arc<crate::shell::Shell> {
-        if self.options.persist_shell_selection && !turn_environment.environment.is_remote() {
+        if self.options.persist_shell_selection && !turn_environment.environment().is_remote() {
             session.user_shell()
         } else {
             turn_environment
@@ -253,7 +253,7 @@ impl ExecCommandHandler {
         let persistent_shell = self.maybe_persist_local_shell(
             &mut parsed.args,
             &session,
-            turn_environment.environment.as_ref(),
+            turn_environment.environment().as_ref(),
         )?;
         let shell = persistent_shell
             .unwrap_or_else(|| self.shell_for_environment(&session, turn_environment));
@@ -277,12 +277,12 @@ impl ExecCommandHandler {
             timeout_ms,
         )?;
         let max_output_tokens = prepared.max_output_tokens;
-        let fs = prepared.turn_environment.environment.get_filesystem();
+        let fs = prepared.turn_environment.environment().get_filesystem();
         let intercepted_patch = intercept_apply_patch(
             &prepared.resolved.command,
             &prepared.cwd,
             fs.as_ref(),
-            prepared.turn_environment.clone(),
+            &prepared.turn_environment,
             context.session.clone(),
             Arc::clone(&context.step_context),
             context.cancellation_token.clone(),
@@ -325,7 +325,7 @@ impl ExecCommandHandler {
         let process_id = manager.allocate_process_id().await;
         let hook_command = prepared.hook_command.clone();
         let tool_cwd =
-            (!prepared.turn_environment.environment.is_remote()).then(|| prepared.cwd.clone());
+            (!prepared.turn_environment.environment().is_remote()).then(|| prepared.cwd.clone());
         let request = ExecCommandRequest {
             command_stack,
             prepared,
@@ -466,7 +466,7 @@ impl CoreToolRuntime for ExecCommandHandler {
         let cwd = args.resolve_cwd(environment)?;
         // Hook scripts execute on the host. Remote command paths cannot replace
         // the host cwd in hook input, even when both machines use the same OS.
-        Ok((!environment.environment.is_remote()).then_some(cwd))
+        Ok((!environment.environment().is_remote()).then_some(cwd))
     }
 
     fn with_updated_hook_input(

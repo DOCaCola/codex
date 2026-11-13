@@ -81,6 +81,7 @@ async fn forced_refresh_replaces_pending_connection_without_interrupting_other_c
     let input = McpRuntimeInput {
         mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),
         network_policy_metadata: None,
+        runtime_auth: None,
         startup_policy: McpStartupPolicy::Eager,
         config,
         plugins_available: false,

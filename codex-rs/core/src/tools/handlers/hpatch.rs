@@ -65,7 +65,7 @@ impl HpatchHandler {
         sandbox.permissions = PermissionProfile::read_only();
 
         let started = turn_environment
-            .environment
+            .environment()
             .get_exec_backend()
             .start(ExecParams {
                 process_id: format!("hpatch-{}", Uuid::new_v4()).into(),

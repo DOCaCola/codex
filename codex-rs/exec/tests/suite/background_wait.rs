@@ -117,8 +117,8 @@ async fn exec_waits_for_background_completion_and_reports_last_turn() -> anyhow:
                 "exec must survive its initial completion"
             );
             assert!(
-                !last_path.exists(),
-                "last-message file is emitted only at final shutdown"
+                std::fs::read_to_string(&last_path)?.is_empty(),
+                "last-message file remains empty until final shutdown"
             );
         } else {
             tokio::time::timeout(Duration::from_secs(20), async {
@@ -132,7 +132,7 @@ async fn exec_waits_for_background_completion_and_reports_last_turn() -> anyhow:
                 "the flag-off turn must remain parked"
             );
             assert!(
-                !last_path.exists(),
+                std::fs::read_to_string(&last_path)?.is_empty(),
                 "a parked turn cannot emit final output yet"
             );
         }

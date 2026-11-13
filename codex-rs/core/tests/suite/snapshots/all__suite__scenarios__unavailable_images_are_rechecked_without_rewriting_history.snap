@@ -1,14 +1,14 @@
 ---
 source: core/tests/suite/scenarios.rs
-assertion_line: 723
+assertion_line: 869
 expression: "context_snapshot::format_request_history_snapshot(\"Available file references pass through. A later request replaces missing files, preserves references on backend errors, rechecks each distinct ID once, and keeps canonical history intact.\",\n&requests, &ContextSnapshotOptions::default().rewrite_known_segments(),)"
 ---
 Scenario: Available file references pass through. A later request replaces missing files, preserves references on backend errors, rechecks each distinct ID once, and keeps canonical history intact.
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=0d157d1117410b04):
-        - namespace/functions; hash=fada4a476a3754dd
+00:additional_tools/developer (3; hash=4716f6c413ef39e0):
+        - namespace/functions; hash=03340277aa23936f
           - custom/exec
           - function/wait
           - function/request_user_input
@@ -43,8 +43,8 @@ Scenario: Available file references pass through. A later request replaces missi
 
 ## Window 2 (after request 1: input diverged at item 06)
 -- request 2 (turn) --
-00:additional_tools/developer (3; hash=0d157d1117410b04):
-        - namespace/functions; hash=fada4a476a3754dd
+00:additional_tools/developer (3; hash=4716f6c413ef39e0):
+        - namespace/functions; hash=03340277aa23936f
           - custom/exec
           - function/wait
           - function/request_user_input

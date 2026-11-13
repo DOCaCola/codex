@@ -64,6 +64,20 @@ async fn repeated_default_workspace_preserves_owner_configuration_and_updates_ta
         .await;
         assert_eq!(overrides.environment_requests, None);
         assert_eq!(overrides.runtime_workspace_roots, Some(roots.clone()));
+        let mut repeated_requests = environments.clone();
+        for request in &mut repeated_requests {
+            request.config = EnvironmentConfigState::FromThread;
+        }
+        let explicit_overrides = TurnRequestProcessor::build_environment_override(
+            &test.thread_manager,
+            &test.codex,
+            Some(cwd.clone()),
+            /*workspace_roots*/ None,
+            Some(repeated_requests),
+        )
+        .await;
+        assert_eq!(explicit_overrides.environment_requests, None);
+        assert_eq!(explicit_overrides.runtime_workspace_roots, None);
         test.codex
             .preview_thread_settings_overrides(CodexThreadSettingsOverrides {
                 environments: overrides.environment_requests.clone(),

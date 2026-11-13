@@ -22,6 +22,7 @@ fn turn(id: &str, message: Option<&str>) -> Turn {
                     text: text.into(),
                     phase: None,
                     memory_citation: None,
+                    moderation: None,
                     delivery: None,
                     questions: None,
                 })]
@@ -163,7 +164,9 @@ fn output_uses_last_tracked_turn_and_processors_do_not_request_shutdown() {
             collected.status,
             crate::event_processor::CodexStatus::Running
         );
-        output.print_final_output();
+        output
+            .print_final_output(Some(codex_exec_server::BoundOutput::open(&path).unwrap()))
+            .unwrap();
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
             message.unwrap_or_default()

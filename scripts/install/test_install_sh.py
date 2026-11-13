@@ -181,6 +181,51 @@ class InstallShTest(unittest.TestCase):
             )
             self.assertTrue(os.access(host_path, os.X_OK))
 
+    def test_noninteractive_install_warns_about_existing_npm_codex(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            archive, checksum, metadata = create_package_release(root)
+            (root / "bin").mkdir()
+            write_executable(root / "bin" / "codex", "#!/usr/bin/env node\n")
+
+            result, _ = run_installer_in(
+                root,
+                VERSION,
+                metadata_json=metadata,
+                archive_path=archive,
+                checksum_path=checksum,
+                force_macos=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                "Leaving the existing npm-managed Codex installed", result.stderr
+            )
+
+    def test_latest_installs_verified_fork_package_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            archive_path, checksum_path, metadata_json = create_package_release(root)
+
+            result, requests = run_installer_in(
+                root,
+                "latest",
+                metadata_json=metadata_json,
+                archive_path=archive_path,
+                checksum_path=checksum_path,
+                force_macos=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                requests,
+                [
+                    "https://api.github.com/repos/DOCaCola/codex/releases/latest",
+                    f"https://github.com/DOCaCola/codex/releases/download/doca-v{VERSION}/SHA256SUMS",
+                    f"https://github.com/DOCaCola/codex/releases/download/doca-v{VERSION}/codex-doca-aarch64-apple-darwin.tar.gz",
+                ],
+            )
+
     def test_daemon_install_preserves_visible_cli_and_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir).resolve()

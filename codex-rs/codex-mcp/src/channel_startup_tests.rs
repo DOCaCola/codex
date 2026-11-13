@@ -49,7 +49,12 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
     )?;
     let runtime_context = McpRuntimeContext::new(environments, home.path().to_path_buf());
     let cache = McpToolCatalogCache::default();
-    for channel in [false, true] {
+    for (startup_policy, channel) in [
+        (McpStartupPolicy::DeferCachedStdio, false),
+        (McpStartupPolicy::DeferCachedStdio, true),
+        (McpStartupPolicy::DeferCachedServers, false),
+        (McpStartupPolicy::DeferCachedServers, true),
+    ] {
         let server_config: McpServerConfig = serde_json::from_value(serde_json::json!({
             "command": "unused-channel-fixture",
             "channel": channel,
@@ -59,7 +64,7 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
             let cancellation = CancellationToken::new();
             cancellation.cancel();
             McpRuntimeInput {
-                startup_policy: McpStartupPolicy::LazyWhenCached,
+                startup_policy,
                 config: Arc::new(crate::mcp::tests::test_mcp_config(
                     home.path().to_path_buf(),
                 )),
@@ -82,6 +87,7 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
                 client_mcp_extensions: ClientMcpExtensions::default(),
                 auth: None,
                 auth_manager: None,
+                runtime_auth: None,
                 elicitation_reviewer: None,
                 elicitation_lifecycle: None,
                 mcp_channel_sender: crate::rmcp_client::ignore_mcp_channel_messages(),

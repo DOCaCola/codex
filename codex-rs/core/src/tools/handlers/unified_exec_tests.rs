@@ -378,6 +378,7 @@ async fn exec_command_rejects_login_when_selected_environment_disallows_it() {
 #[tokio::test]
 #[cfg(not(windows))]
 async fn exec_command_reuses_foreign_windows_grant() {
+    use crate::environment_selection::EnvironmentAttachment;
     use crate::session::tests::make_session_and_context_with_auth_and_config_and_rx;
     use codex_features::Feature;
     use codex_protocol::models::AdditionalPermissionProfile;
@@ -407,6 +408,13 @@ async fn exec_command_reuses_foreign_windows_grant() {
         )),
         ..Default::default()
     };
+    let (attachment, _guard, _) = EnvironmentAttachment::new(
+        codex_exec_server::REMOTE_ENVIRONMENT_ID,
+        Arc::new(
+            Environment::create_for_tests(Some("ws://127.0.0.1:1/remote-exec-server".to_string()))
+                .expect("remote environment"),
+        ),
+    );
     {
         let turn = Arc::get_mut(&mut turn).expect("turn should be uniquely owned");
         let TurnEnvironmentState::Ready(environment) = turn
@@ -421,10 +429,7 @@ async fn exec_command_reuses_foreign_windows_grant() {
         environment.selection.cwd = cwd.clone();
         environment.selection.workspace_roots = vec![cwd.clone()];
         environment.config_mut().workspace_roots = vec![cwd];
-        environment.environment = Arc::new(
-            Environment::create_for_tests(Some("ws://127.0.0.1:1/remote-exec-server".to_string()))
-                .expect("remote environment"),
-        );
+        environment.attachment = attachment;
     }
 
     let step_context = StepContext::for_test(Arc::clone(&turn));
@@ -829,7 +834,7 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
     )?;
 
     let selected = handler
-        .maybe_persist_local_shell(&mut args, &session, turn_environment.environment.as_ref())
+        .maybe_persist_local_shell(&mut args, &session, turn_environment.environment().as_ref())
         .map_err(|err| anyhow::anyhow!(err.to_string()))?
         .expect("command-stack exec should persist a requested local shell");
 

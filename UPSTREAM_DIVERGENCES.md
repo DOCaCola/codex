@@ -608,3 +608,28 @@ notes are excluded. The original local development branches retain that history.
 - Retain the existing fork features and defaults. Daemon auto-start remains
   enabled; external dependency pins and Rust 1.95.0 are unchanged.
   Workspace version is `0.167.1-doca`.
+
+## Stable v0.169.0 integration
+
+- Adopt upstream environment attachments and detach ownership, sandbox host
+  preparation, outcome handoffs, and turn identity checks. Persistent local shell
+  changes update active and configured attachments without altering captured turns.
+  hpatch resolves and exposes its companion through the new sandbox runtime paths.
+- Background completion keeps upstream task removal and final-input admission.
+  Stale targeted aborts cannot suppress completion wakes. The optional continuation
+  branch uses a boxed future at the scheduler boundary to bound its future layout.
+  Existing delivery, registry, interruption, idle continuation, and timer behavior
+  remain opt-in.
+- Custom API-key catalogs use upstream's discovery capability and live feature
+  policy instead of impersonating first-party authentication. Catalog commands
+  retain table, JSON, bundled, and direct remote output; active catalog construction
+  uses upstream runtime authentication.
+- Claude channels retain session-owned callbacks and eager listener startup under
+  both upstream deferred-start policies. Upstream connection sharing, runtime auth,
+  and outcome reporting remain authoritative.
+- Exec final output uses upstream bound output handles, retaining final-message
+  selection across automatic background turns. TUI timers coexist with upstream
+  terminal restoration, side chats, and grouped execution labels.
+- External dependency pins, SQLite migration contents, and Rust 1.95.0 follow
+  upstream. Daemon auto-start remains enabled on every platform. Only the fork
+  release workflow is enabled. Workspace version is `0.169.0-doca`.

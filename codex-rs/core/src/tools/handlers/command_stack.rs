@@ -1021,6 +1021,7 @@ end"#,
             Vec::new(),
             codex_protocol::openai_models::ToolMode::Direct,
             BTreeMap::new(),
+            /*exec_definitions*/ None,
             /*tool_namespaces_info*/ None,
             &[],
         ));

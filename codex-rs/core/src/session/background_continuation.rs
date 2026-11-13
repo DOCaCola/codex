@@ -10,6 +10,7 @@ use codex_protocol::turn_input::TurnInputMode;
 use codex_protocol::turn_input::TurnInputRequest;
 use codex_protocol::turn_input::TurnInputSubmission;
 use codex_protocol::turn_input::TurnStartOptions;
+use futures::future::BoxFuture;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -261,63 +262,69 @@ impl Session {
                 == 0
     }
 
-    pub(crate) async fn maybe_start_background_completion(self: &Arc<Self>, sub_id: String) {
-        if !self.background_continuation.enabled {
-            return;
-        }
-        let (expected, shutting_down) = {
-            let state = self.state.lock().await;
-            (state.last_started_turn_id.clone(), state.shutting_down)
-        };
-        if !self
-            .background_continuation
-            .can_wake(self.collaboration_mode().await.mode, shutting_down)
-        {
-            return;
-        }
-        let Some(expected) = expected else {
-            return;
-        };
-        if !self.background_completion_ready().await {
-            return;
-        }
-        let fragment = ContextualUserFragment::into(InternalModelContextFragment::new(
-            InternalContextSource::from_static(TRIGGER),
-            "Background command results are ready. Continue the existing work from the completion results. This is internal context, not new user authorization.",
-        ));
-        let request = TurnInputRequest::new(codex_protocol::turn_input::TurnInput::ResponseItem(
-            fragment,
-        ))
-        .on_start(TurnStartOptions {
-            turn_trigger: Some(TRIGGER.into()),
-            final_output_json_schema: self
+    pub(crate) fn maybe_start_background_completion(
+        self: &Arc<Self>,
+        sub_id: String,
+    ) -> BoxFuture<'_, ()> {
+        // Keep the optional continuation branch out of the shared scheduler's future layout.
+        Box::pin(async move {
+            if !self.background_continuation.enabled {
+                return;
+            }
+            let (expected, shutting_down) = {
+                let state = self.state.lock().await;
+                (state.last_started_turn_id.clone(), state.shutting_down)
+            };
+            if !self
                 .background_continuation
-                .suppression
-                .lock()
-                .await
-                .output_schema
-                .clone(),
-            ..Default::default()
-        });
-        match super::turn_input::handle(
-            self,
-            request,
-            TurnInputMode::ContinueIfIdle {
-                expected_previous_turn_id: expected,
-            },
-            sub_id,
-        )
-        .await
-        {
-            Ok(TurnInputSubmission::Started { .. }) => {}
-            Ok(TurnInputSubmission::NotSubmitted { reason }) => {
-                tracing::debug!(?reason, "background wake not admitted");
+                .can_wake(self.collaboration_mode().await.mode, shutting_down)
+            {
+                return;
             }
-            Ok(TurnInputSubmission::Steered { .. }) => {
-                unreachable!("internal continuation cannot steer")
+            let Some(expected) = expected else {
+                return;
+            };
+            if !self.background_completion_ready().await {
+                return;
             }
-            Err(error) => tracing::warn!(%error, "background continuation admission failed"),
-        }
+            let fragment = ContextualUserFragment::into(InternalModelContextFragment::new(
+                InternalContextSource::from_static(TRIGGER),
+                "Background command results are ready. Continue the existing work from the completion results. This is internal context, not new user authorization.",
+            ));
+            let request = TurnInputRequest::new(
+                codex_protocol::turn_input::TurnInput::ResponseItem(fragment),
+            )
+            .on_start(TurnStartOptions {
+                turn_trigger: Some(TRIGGER.into()),
+                final_output_json_schema: self
+                    .background_continuation
+                    .suppression
+                    .lock()
+                    .await
+                    .output_schema
+                    .clone(),
+                ..Default::default()
+            });
+            match super::turn_input::handle(
+                self,
+                request,
+                TurnInputMode::ContinueIfIdle {
+                    expected_previous_turn_id: expected,
+                },
+                sub_id,
+            )
+            .await
+            {
+                Ok(TurnInputSubmission::Started { .. }) => {}
+                Ok(TurnInputSubmission::NotSubmitted { reason }) => {
+                    tracing::debug!(?reason, "background wake not admitted");
+                }
+                Ok(TurnInputSubmission::Steered { .. } | TurnInputSubmission::Accepted) => {
+                    unreachable!("internal continuation cannot steer")
+                }
+                Err(error) => tracing::warn!(%error, "background continuation admission failed"),
+            }
+        })
     }
 }
 

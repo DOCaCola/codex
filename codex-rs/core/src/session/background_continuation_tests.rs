@@ -24,6 +24,21 @@ fn background_wake_reservation_rejects_a_finishing_turn() {
 }
 
 #[tokio::test]
+async fn stale_turn_abort_does_not_suppress_background_completion() {
+    let (mut session, _) = crate::session::tests::make_session_and_context().await;
+    session.background_continuation = BackgroundContinuation::new(/*enabled*/ true);
+    let session = Arc::new(session);
+    assert!(
+        !session
+            .abort_turn_if_active("finished-turn", TurnAbortReason::Interrupted, None)
+            .await
+    );
+    let suppressed = session.background_continuation.suppression.lock().await;
+    assert_eq!(suppressed.epoch, 0);
+    assert!(suppressed.turns.is_empty());
+}
+
+#[tokio::test]
 async fn interruption_guard_releases_on_drop_and_signals_existing_channel() {
     let (mut session, _) = crate::session::tests::make_session_and_context().await;
     session.background_continuation = BackgroundContinuation::new(/*enabled*/ true);
