@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [windows-2025, macos-15]
+        runner: [windows-2025, macos-26]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
@@ -53,7 +53,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             suffix: .exe
             jobs: 4
-          - runner: macos-15
+          - runner: macos-26
             target: aarch64-apple-darwin
             suffix: ""
             jobs: 2
