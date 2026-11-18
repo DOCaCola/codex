@@ -19,7 +19,7 @@ Settings:
   tools (1; hash=f359ca6f02a419d6):
     - web_search; hash=f103e327c6870a46
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=1339e764270ed88a):
+00:additional_tools/developer (3; hash=c7ddf3892f842ff3):
         - namespace/functions; hash=6475578c7f948d18
           - function/exec_command
           - function/write_stdin
@@ -29,7 +29,7 @@ Settings:
           - function/request_user_input
           - custom/apply_patch
           - function/view_image
-        - namespace/multi_agent_v1: Tools for spawning and managing sub-agents.; hash=91dafeade81df445
+        - namespace/multi_agent_v1: Tools for spawning and managing sub-agents.; hash=ae6003233fdb23d0
           - function/close_agent
           - function/resume_agent
           - function/send_input

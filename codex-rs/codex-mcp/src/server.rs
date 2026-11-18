@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::McpServerKey;
 use crate::auth::McpAuthProvider;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::runtime::McpRuntimeContext;
@@ -486,6 +487,7 @@ impl McpServerOrigin {
 /// Semantic metadata that must survive after the server is launched.
 #[derive(Debug, Clone)]
 pub(crate) struct McpServerMetadata {
+    pub(crate) server_key: McpServerKey,
     pub environment_id: String,
     pub pollutes_memory: bool,
     pub origin: Option<McpServerOrigin>,
@@ -502,12 +504,11 @@ impl McpServerMetadata {
             .or(self.default_tools_approval_mode)
             .unwrap_or_default()
     }
-}
 
-impl From<&EffectiveMcpServer> for McpServerMetadata {
-    fn from(server: &EffectiveMcpServer) -> Self {
+    pub(crate) fn new(server_key: McpServerKey, server: &EffectiveMcpServer) -> Self {
         let config = server.config();
         Self {
+            server_key,
             environment_id: config.environment_id.clone(),
             pollutes_memory: true,
             origin: McpServerOrigin::from_transport(&config.transport),

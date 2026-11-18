@@ -5,7 +5,7 @@ use pretty_assertions::assert_eq;
 fn message(content: &str) -> McpChannelMessage {
     McpChannelMessage {
         registration: Arc::new(()),
-        server_name: "channel".to_string(),
+        server_key: McpServerKey::unscoped("channel"),
         notification: ChannelNotification {
             content: content.to_string(),
             meta: Default::default(),

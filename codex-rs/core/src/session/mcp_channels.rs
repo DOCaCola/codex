@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use codex_mcp::McpChannelMessage;
+use codex_mcp::McpServerKey;
 use codex_mcp::SendMcpChannelMessage;
 use codex_protocol::turn_input::TurnInput;
 use codex_protocol::turn_input::TurnInputMode;
@@ -25,15 +26,15 @@ const CHANNEL_INSTRUCTION_SOURCES: usize = 64;
 pub(super) struct McpChannelState {
     closed: bool,
     pending: VecDeque<McpChannelMessage>,
-    instructions: VecDeque<(String, Option<String>)>,
+    instructions: VecDeque<(McpServerKey, Option<String>)>,
 }
 
 impl McpChannelState {
     fn enqueue(&mut self, message: McpChannelMessage) -> bool {
-        if message.server_name.len() > 256
+        if message.server_key.name().len() > 256
             || !message.notification.is_bounded()
             || ChannelMessage::new(
-                &message.server_name,
+                message.server_key.name(),
                 &message.notification,
                 /*include_instructions*/ true,
             )
@@ -103,12 +104,12 @@ impl Session {
             let mut count = 0;
             for message in &state.pending {
                 let entry = (
-                    message.server_name.clone(),
+                    message.server_key.clone(),
                     message.notification.instructions.clone(),
                 );
                 let include_instructions = !instructions.contains(&entry);
                 let fragment = ChannelMessage::new(
-                    &message.server_name,
+                    message.server_key.name(),
                     &message.notification,
                     include_instructions,
                 );
@@ -123,7 +124,7 @@ impl Session {
                     context = Some(fragment);
                 }
                 if include_instructions {
-                    instructions.retain(|(server, _)| server != &message.server_name);
+                    instructions.retain(|(server, _)| server != &message.server_key);
                     instructions.push_back(entry);
                     if instructions.len() > CHANNEL_INSTRUCTION_SOURCES {
                         instructions.pop_front();

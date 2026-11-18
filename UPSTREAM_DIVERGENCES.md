@@ -639,3 +639,18 @@ notes are excluded. The original local development branches retain that history.
   server exit status. Upstream treats stdin EOF as a connection close and can
   discard an initialize request still in flight. Rust source and dependency pins
   are unchanged.
+
+## Stable v0.170.0 integration
+
+- MCP channel callbacks and instruction deduplication use upstream's exact server
+  registration keys. The callback must also match the current connection's
+  registration token. Channel listeners still start eagerly and stay session owned.
+- Windows provisioning uses upstream's metadata ACL verification and automatic
+  cleanup of Windows allocations. The existing caller grant on the sandbox bin
+  directory still permits ACL maintenance without inheriting that grant to helpers.
+- Upstream now enables incremental tool declarations by default for both Bedrock
+  routes, with their existing opt-out. GCP keeps its separate setting.
+- Regenerated the stable and experimental protocol bundles and updated the
+  scenario fingerprints that include the fork's model-list truncation notice.
+- The fork release workflow and upstream daemon auto-start default stay in place.
+  The workspace version is `0.170.0-doca`.

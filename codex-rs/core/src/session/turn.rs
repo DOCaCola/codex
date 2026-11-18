@@ -3195,7 +3195,10 @@ async fn try_run_sampling_request(
                     .await;
                     should_emit_token_count |= incomplete.token_usage.is_some();
                 }
-                if *draining_for_mailbox && matches!(err.details(), CodexErrorDetails::Stream(_)) {
+                if *draining_for_mailbox
+                    && (matches!(err.details(), CodexErrorDetails::Stream(_))
+                        || err.requires_http_fallback())
+                {
                     // Mail already requires a follow-up, even if the producer exited before
                     // receiving the interrupt. Do not retry without that pending input.
                     break Ok(SamplingRequestResult {
@@ -3212,7 +3215,7 @@ async fn try_run_sampling_request(
         let Some(event) = resampling.filter(event, &step_context.tool_router) else {
             continue;
         };
-        sess.services
+        step_context
             .session_telemetry
             .record_responses(&handle_responses, &event);
 
@@ -3566,6 +3569,7 @@ async fn try_run_sampling_request(
                 response_id,
                 token_usage,
                 usage_metadata,
+                reasoning_removals: _,
                 end_turn,
             } => {
                 if let Some(accepted) = pending_audio.take() {

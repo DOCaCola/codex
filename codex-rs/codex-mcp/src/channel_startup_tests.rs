@@ -21,7 +21,7 @@ async fn channel_events_require_the_current_registration() {
     manager.insert_test_client("docs", create_ready_async_managed_client(Vec::new()).await);
     let registration = Arc::clone(&manager.test_client("docs").channel_registration);
     let mut message = crate::McpChannelMessage {
-        server_name: "docs".to_string(),
+        server_key: McpServerKey::unscoped("docs"),
         registration: Arc::clone(&registration),
         notification: codex_rmcp_client::ChannelNotification {
             content: "event".to_string(),
@@ -31,6 +31,9 @@ async fn channel_events_require_the_current_registration() {
         },
     };
     assert!(manager.accepts_channel_message(&message));
+    message.server_key = McpServerKey::in_environment("other", "docs");
+    assert!(!manager.accepts_channel_message(&message));
+    message.server_key = McpServerKey::unscoped("docs");
     message.registration = Arc::new(());
     assert!(!manager.accepts_channel_message(&message));
     message.registration = registration;
@@ -72,7 +75,7 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
                 network_policy_metadata: None,
                 ready_selected_capability_roots: Vec::new(),
                 mcp_servers: HashMap::from([(
-                    "docs".to_string(),
+                    McpServerKey::unscoped("docs"),
                     EffectiveMcpServer::from_host_config(server_config.clone()),
                 )]),
                 submit_id: "test".to_string(),
@@ -102,7 +105,7 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
             ElicitationRequestRouter::default(),
         )
         .await;
-        let cache_context = first.servers["docs"]
+        let cache_context = first.servers[&McpServerKey::unscoped("docs")]
             .connection
             .client
             .tool_catalog_cache_context
@@ -135,7 +138,9 @@ async fn cached_channel_catalog_does_not_defer_live_startup() -> anyhow::Result<
         )
         .await;
         assert_eq!(
-            refreshed.servers["docs"].connection.startup_is_dormant(),
+            refreshed.servers[&McpServerKey::unscoped("docs")]
+                .connection
+                .startup_is_dormant(),
             !channel,
         );
     }
