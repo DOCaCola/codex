@@ -654,3 +654,18 @@ notes are excluded. The original local development branches retain that history.
   scenario fingerprints that include the fork's model-list truncation notice.
 - The fork release workflow and upstream daemon auto-start default stay in place.
   The workspace version is `0.170.0-doca`.
+
+## Stable v0.171.0 integration
+
+- Background completion uses upstream's turn submission results and atomic task
+  admission. Interruption fences completion wakes before removing the active
+  turn and attributes suppression to the interrupted turn. The local exec
+  session passes its continuation policy through upstream's shared turn loop.
+- MCP channels keep their session-owned callbacks and startup without tools.
+  Apps discovery uses upstream's shared, scope-aware catalog and timeout.
+- Command stack shell selection uses upstream's command handler options, and
+  hpatch uses upstream's wrapped sandbox command while resolving its executor
+  companion for both native and sandboxed runs.
+- The fork workflow uses upstream Rust 1.99.1 with `macos-26` for both installer
+  tests and Apple Silicon builds. Daemon auto-start remains enabled. The
+  workspace version is `0.171.0-doca`.

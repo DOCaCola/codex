@@ -52,7 +52,7 @@ struct Suppression {
 pub(crate) struct BackgroundContinuation {
     pub enabled: bool,
     pub stop: CancellationToken,
-    interruptions: AtomicUsize,
+    interruptions: Arc<AtomicUsize>,
     suppression: Mutex<Suppression>,
 }
 
@@ -61,7 +61,7 @@ impl BackgroundContinuation {
         Self {
             enabled,
             stop: CancellationToken::new(),
-            interruptions: AtomicUsize::new(0),
+            interruptions: Arc::new(AtomicUsize::new(0)),
             suppression: Mutex::new(Suppression::default()),
         }
     }
@@ -84,12 +84,12 @@ impl BackgroundContinuation {
     }
 }
 
-pub(crate) struct BackgroundInterruption<'a> {
-    counter: &'a AtomicUsize,
+pub(crate) struct BackgroundInterruption {
+    counter: Arc<AtomicUsize>,
     changed: Arc<tokio::sync::Notify>,
 }
 
-impl Drop for BackgroundInterruption<'_> {
+impl Drop for BackgroundInterruption {
     fn drop(&mut self) {
         self.counter.fetch_sub(1, Ordering::AcqRel);
         self.changed.notify_waiters();
@@ -131,39 +131,40 @@ impl Session {
         }
     }
 
-    pub(crate) async fn begin_background_interrupt(
+    pub(crate) fn background_interrupt_guard(
         &self,
         reason: Option<&TurnAbortReason>,
-        origin: Option<&str>,
-    ) -> Option<BackgroundInterruption<'_>> {
+    ) -> Option<BackgroundInterruption> {
         if !self.background_continuation.enabled || reason != Some(&TurnAbortReason::Interrupted) {
             return None;
         }
-        self.background_continuation
-            .interruptions
-            .fetch_add(1, Ordering::AcqRel);
-        let guard = BackgroundInterruption {
-            counter: &self.background_continuation.interruptions,
+        let counter = Arc::clone(&self.background_continuation.interruptions);
+        counter.fetch_add(1, Ordering::AcqRel);
+        Some(BackgroundInterruption {
+            counter,
             changed: self
                 .services
                 .unified_exec_manager
                 .background_work_notifications(),
-        };
+        })
+    }
+
+    pub(crate) async fn begin_background_interrupt(
+        &self,
+        reason: Option<&TurnAbortReason>,
+        origin: Option<&str>,
+    ) -> Option<BackgroundInterruption> {
+        let guard = self.background_interrupt_guard(reason)?;
+        self.suppress_background_interrupt(origin).await;
+        Some(guard)
+    }
+
+    pub(crate) async fn suppress_background_interrupt(&self, origin: Option<&str>) {
         let capability = &self.background_continuation;
         let epoch = {
             let mut suppression = capability.suppression.lock().await;
             suppression.epoch += 1;
             suppression.epoch
-        };
-        let originating_turn = match origin {
-            Some(id) => Some(id.to_string()),
-            None => self
-                .active_turn
-                .lock()
-                .await
-                .as_ref()
-                .and_then(|turn| turn.task.as_ref())
-                .map(|task| task.turn_context.sub_id.clone()),
         };
         let pending = self
             .services
@@ -175,11 +176,10 @@ impl Session {
         // whose asynchronous snapshot began before that user turn started.
         if suppression.epoch == epoch {
             suppression.jobs.extend(pending);
-            if let Some(turn) = originating_turn {
-                suppression.turns.insert(turn);
+            if let Some(turn) = origin {
+                suppression.turns.insert(turn.to_owned());
             }
         }
-        Some(guard)
     }
 
     pub(crate) fn start_background_continuation_worker(self: &Arc<Self>) {

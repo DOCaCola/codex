@@ -8,9 +8,11 @@ fn windows_shell_guidance_description() -> String {
 
 #[test]
 fn exec_command_tool_matches_expected_spec() {
-    let tool = create_exec_command_tool(CommandToolOptions {
-        exec_permission_approvals_enabled: false,
-        active_shell_name: None,
+    let tool = create_exec_command_tool(ExecCommandHandlerOptions {
+        include_windows_shell_guidance: cfg!(windows),
+        has_powershell: crate::shell::default_user_shell().shell_type
+            == crate::shell::ShellType::PowerShell,
+        ..Default::default()
     });
 
     let description = if cfg!(windows) {
@@ -66,7 +68,11 @@ fn exec_command_tool_matches_expected_spec() {
         (
             "login".to_string(),
             JsonSchema::boolean(Some(
-                    "True runs the shell with -l/-i semantics; false disables them. Defaults to true.".to_string(),
+                    if crate::shell::default_user_shell().shell_type == crate::shell::ShellType::PowerShell {
+                        "Login-shell startup. In PowerShell, false skips profiles. Keep them enabled for profile-defined commands, even unattended. Omit to inherit."
+                    } else {
+                        "Request login-shell startup. Omit to inherit."
+                    }.to_string(),
                 )),
         ),
     ]);
@@ -93,15 +99,10 @@ fn exec_command_tool_matches_expected_spec() {
 
 #[test]
 fn exec_command_tool_can_describe_persistent_shell_selection() {
-    let tool = create_exec_command_tool_with_environment_id(
-        CommandToolOptions {
-            exec_permission_approvals_enabled: false,
-            active_shell_name: None,
-        },
-        /*include_environment_id*/ false,
-        /*persist_shell_selection*/ true,
-        /*include_windows_shell_guidance*/ cfg!(windows),
-    );
+    let tool = create_exec_command_tool(ExecCommandHandlerOptions {
+        persist_shell_selection: true,
+        ..Default::default()
+    });
 
     let tool_json = serde_json::to_value(tool).expect("tool spec should serialize");
     let shell_description = tool_json
@@ -109,6 +110,26 @@ fn exec_command_tool_can_describe_persistent_shell_selection() {
         .and_then(serde_json::Value::as_str)
         .expect("shell description");
     assert!(shell_description.contains("active for later commands"));
+}
+
+#[test]
+fn login_description_follows_the_reported_shell() {
+    for (has_powershell, expected) in [
+        (false, "Request login-shell startup. Omit to inherit."),
+        (
+            true,
+            "Login-shell startup. In PowerShell, false skips profiles. Keep them enabled for profile-defined commands, even unattended. Omit to inherit.",
+        ),
+    ] {
+        let ToolSpec::Function(tool) = create_exec_command_tool(ExecCommandHandlerOptions {
+            has_powershell,
+            ..Default::default()
+        }) else {
+            panic!("expected a function tool")
+        };
+        let schema = serde_json::to_value(tool.parameters).unwrap();
+        assert_eq!(schema["properties"]["login"]["description"], expected);
+    }
 }
 
 #[test]

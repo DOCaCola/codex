@@ -6,6 +6,7 @@ use crate::session::turn_context::TurnEnvironment;
 use crate::turn_diff_tracker::TurnDiffTracker;
 use crate::unified_exec::output::CapturedStream;
 use crate::unified_exec::resolve_max_tokens;
+use codex_extension_api::ToolCallOutcome;
 use codex_protocol::ResponseItemId;
 use codex_protocol::mcp::CallToolResult;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -25,8 +26,8 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::AtomicBool;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -49,7 +50,8 @@ pub(crate) struct ToolCallState {
     pub(crate) command_stack: Option<CommandStackIdentity>,
     /// Stack dependencies wait for exit, retaining their requested mode and host deadline.
     pub(crate) exec_command_is_dependency: bool,
-    pub(crate) terminal_outcome_reached: AtomicBool,
+    pub(crate) terminal_outcome: OnceLock<ToolCallOutcome>,
+    pub(crate) handler_started_at: OnceLock<Instant>,
     pub(crate) delivered_assistant_message: OnceLock<String>,
     pub(crate) invocation: crate::agent::host::InvocationReservation,
 }
@@ -190,6 +192,10 @@ pub struct McpToolOutput {
 }
 
 impl ToolOutput for McpToolOutput {
+    fn output_budget_applied(&self) -> bool {
+        true
+    }
+
     fn log_output(&self) -> String {
         // Logging has its own budget; do not first apply the model-context budget.
         let output = self.result.log_output();
@@ -404,6 +410,10 @@ pub struct AbortedToolOutput {
 }
 
 impl ToolOutput for AbortedToolOutput {
+    fn was_aborted(&self) -> bool {
+        true
+    }
+
     fn log_output(&self) -> String {
         self.message.clone()
     }

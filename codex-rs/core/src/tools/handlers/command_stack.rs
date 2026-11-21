@@ -652,7 +652,9 @@ fn normalize_child_result(
             } else {
                 Some(result.success_for_logging() && dependency_succeeded)
             };
-            let output = response_text(result.into_response().item);
+            let file_backed_tool_audio =
+                features.enabled(codex_features::Feature::FileBackedToolAudio);
+            let output = response_text(result.into_response(file_backed_tool_audio).item);
             CommandResult {
                 index,
                 step,

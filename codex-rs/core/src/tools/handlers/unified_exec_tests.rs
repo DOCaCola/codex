@@ -817,11 +817,9 @@ async fn command_stack_exec_persists_local_shell_selection() -> anyhow::Result<(
         .primary()
         .expect("primary local environment");
     let handler = ExecCommandHandler::new(ExecCommandHandlerOptions {
-        allow_tty: false,
-        exec_permission_approvals_enabled: false,
-        include_environment_id: false,
         persist_shell_selection: true,
         include_windows_shell_guidance: cfg!(windows),
+        ..Default::default()
     });
     let previous_snapshot = session.services.turn_environments.snapshot().await;
     let previous_shell = previous_snapshot.primary().unwrap().shell.clone();

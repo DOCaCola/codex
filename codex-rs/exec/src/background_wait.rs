@@ -115,7 +115,7 @@ impl BackgroundWait {
 
     pub(crate) async fn read(
         &mut self,
-        client: &codex_app_server_client::InProcessAppServerClient,
+        client: &codex_app_server_client::AppServerClient,
         ids: &mut super::RequestIdSequencer,
         thread_id: &str,
     ) -> Result<(), String> {
