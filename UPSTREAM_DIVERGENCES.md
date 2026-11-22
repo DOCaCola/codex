@@ -669,3 +669,5 @@ notes are excluded. The original local development branches retain that history.
 - The fork workflow uses upstream Rust 1.99.1 with `macos-26` for both installer
   tests and Apple Silicon builds. Daemon auto-start remains enabled. The
   workspace version is `0.171.0-doca`.
+- Release revision `0.171.0-doca.1` restores the fork's `fast-release` Cargo
+  profile, shared by the GitHub package builder and local release scripts.

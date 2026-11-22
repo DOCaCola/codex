@@ -1,6 +1,7 @@
 import hashlib
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +10,9 @@ import build_fork_release as release
 
 class ForkReleaseTest(unittest.TestCase):
     def test_native_builds_package_matching_companions_and_checksums(self):
+        manifest = tomllib.loads(
+            (release.REPO / "codex-rs" / "Cargo.toml").read_text(encoding="utf-8")
+        )
         for platform, machine, target, suffix, archive_suffix in [
             ("win32", "AMD64", "x86_64-pc-windows-msvc", ".exe", ".zip"),
             ("darwin", "arm64", "aarch64-apple-darwin", "", ".tar.gz"),
@@ -23,6 +27,8 @@ class ForkReleaseTest(unittest.TestCase):
 
                 def package(command, **kwargs):
                     self.assertEqual(command[command.index("--target") + 1], target)
+                    profile = command[command.index("--cargo-profile") + 1]
+                    self.assertIn(profile, manifest["profile"])
                     companion = Path(command[command.index("--hpatch-bin") + 1])
                     self.assertEqual(companion.name, "hpatch" + suffix)
                     self.assertEqual(
