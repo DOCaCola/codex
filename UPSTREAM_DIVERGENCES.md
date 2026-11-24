@@ -671,3 +671,13 @@ notes are excluded. The original local development branches retain that history.
   workspace version is `0.171.0-doca`.
 - Release revision `0.171.0-doca.1` restores the fork's `fast-release` Cargo
   profile, shared by the GitHub package builder and local release scripts.
+
+## Stable v0.172.0 integration
+
+- Background command completion participates in upstream's turn checkpoint.
+  Aborted turns release parked commands after upstream's graceful join.
+- Command stack dispatch retains its selected tool router and uses upstream's
+  tool timing attribution. hpatch passes its companion through the executor's
+  sandbox executable configuration.
+- The fork's `fast-release` profile and `macos-26` workflow remain in use.
+  The workspace version is `0.172.0-doca`.

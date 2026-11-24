@@ -37,6 +37,7 @@ use codex_history::ResponseItemEnvelope;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::models::ToolResultMetadata;
 use codex_protocol::parse_command::ParsedCommand;
 use codex_protocol::protocol::EventMsg;
 use codex_rollout::state_db;
@@ -396,7 +397,7 @@ impl ToolOutput for PostToolUseFeedbackOutput {
         self.original.code_mode_result(payload)
     }
 
-    fn tool_result_metadata(&self) -> Option<&Value> {
+    fn tool_result_metadata(&self) -> ToolResultMetadata {
         self.original.tool_result_metadata()
     }
 }
@@ -445,6 +446,7 @@ pub(crate) struct RegisteredTool {
     pub(crate) runtime: Arc<dyn CoreToolRuntime>,
     pub(crate) exposure: ToolExposure,
     pub(crate) native_review: NativeReview,
+    pub(super) is_trusted: bool,
     /// Per-step description override; never written back to a shared runtime.
     pub(crate) model_spec: Option<Arc<ToolSpec>>,
 }
@@ -519,6 +521,7 @@ impl ToolRegistry {
             runtime,
             exposure,
             native_review: NativeReview::Disabled,
+            is_trusted: false,
             model_spec,
         }
     }
@@ -580,6 +583,7 @@ impl ToolRegistry {
         }
         let mut tool = self.prepare_tool(runtime, exposure);
         tool.native_review = native_review;
+        tool.is_trusted = true;
         match self.tools.entry(tool_name) {
             Entry::Vacant(entry) => {
                 entry.insert(tool);
@@ -602,7 +606,8 @@ impl ToolRegistry {
         }
 
         let exposure = runtime.exposure();
-        let tool = self.prepare_tool(runtime, exposure);
+        let mut tool = self.prepare_tool(runtime, exposure);
+        tool.is_trusted = true;
         self.tools.shift_insert(0, tool_name, tool);
     }
 
